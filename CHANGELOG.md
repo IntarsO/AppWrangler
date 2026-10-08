@@ -2,6 +2,16 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Rules matched by bundle ID didn't apply to menu bar / background apps (`LSUIElement`) launched after AppWrangler started, because macOS doesn't announce those launches. AppWrangler now watches the running-apps list directly.
+- Runaway-CPU suggestions now clear once the app quits or gets a rule, instead of lingering in the panel.
+
+### Added
+- `appwrangler status` lists apps currently flagged as using a lot of CPU in the background.
+- End-to-end tests against a real menu bar app with an in-bundle helper: grouping, bundle-ID limits on an app launched later, and memory limit → Quit closing the app and its helper (23 checks).
+
 ## [1.0.0] — 2026-10-08
 
 The first release of AppWrangler: a ground-up rewrite of [AppPolice](https://github.com/fuyu/AppPolice) 1.1 for Apple Silicon, under a new name.

@@ -54,6 +54,7 @@ final class AppModel: ObservableObject {
 	private var cancellables: Set<AnyCancellable> = []
 	private var pendingTick: DispatchWorkItem?
 	private var started = false
+	private var runningAppsObservation: NSKeyValueObservation?
 
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
 		self.rules = rules
@@ -67,14 +68,16 @@ final class AppModel: ObservableObject {
 	func start() {
 		guard !started else { return }
 		started = true
-		let ws = NSWorkspace.shared.notificationCenter
-		for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
-					 NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
-			ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+		// Watch the running-apps list itself: macOS posts no didLaunchApplication
+		// notification for menu bar / background (LSUIElement) apps, so relying on
+		// it left their bundle-ID rules unapplied until something else refreshed.
+		runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications, options: []) { [weak self] _, _ in
+			DispatchQueue.main.async {
 				self?.appsDirty = true
 				self?.tickSoon(0.2)
 			}
 		}
+		let ws = NSWorkspace.shared.notificationCenter
 		ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
 			guard let self else { return }
 			let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -248,6 +251,9 @@ final class AppModel: ObservableObject {
 	// MARK: Runaway apps
 
 	private func detectRunaways(_ snapshot: Snapshot) {
+		// Drop suggestions for apps that have quit (or now have a rule).
+		let present = Set(snapshot.groups.filter { rules.rule(for: $0) == nil }.map(\.id))
+		suggestions.removeAll { !present.contains($0.groupID) }
 		let raised = runaway.observe(snapshot, frontmostPid: frontmostPid) { [rules] group in
 			rules.rule(for: group) != nil
 		}
@@ -261,6 +267,7 @@ final class AppModel: ObservableObject {
 				"groupID": s.groupID, "name": s.name, "bundleID": s.bundleID ?? "", "path": s.path,
 			])
 		}
+		writeState()
 	}
 
 	func applySuggestion(_ action: Notifier.Action, info: [String: String]) {
@@ -284,11 +291,13 @@ final class AppModel: ObservableObject {
 		runaway.snooze(groupID)
 		suggestions.removeAll { $0.groupID == groupID }
 		log.add(name, rule.summary)
+		writeState()
 	}
 
 	func dismissSuggestion(_ s: RunawaySuggestion) {
 		runaway.snooze(s.groupID)
 		suggestions.removeAll { $0.groupID == s.groupID }
+		writeState()
 	}
 
 	// MARK: CLI commands
@@ -313,14 +322,15 @@ final class AppModel: ObservableObject {
 		}
 	}
 
-	private var lastWrittenState: (Bool, [String])?
+	private var lastWrittenState: (Bool, [String], [String])?
 
 	/// Status for the CLI; only rewritten when it changes.
 	private func writeState() {
 		let frozen = enforcer.frozen.keys.sorted()
-		if let last = lastWrittenState, last.0 == paused, last.1 == frozen { return }
-		lastWrittenState = (paused, frozen)
-		AppState(pid: getpid(), paused: paused, frozen: frozen, updated: Date()).write()
+		let runaway = suggestions.map(\.name)
+		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway { return }
+		lastWrittenState = (paused, frozen, runaway)
+		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, updated: Date()).write()
 	}
 
 	// MARK: Actions from UI

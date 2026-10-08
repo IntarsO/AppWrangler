@@ -18,6 +18,24 @@ clang -O2 -w Tests/e2e/burner.c -o "$WORK/e2e-burner"
 cp "$WORK/e2e-burner" "$WORK/e2e-memhog"
 clang -O2 -w -I Sources/ProcKit/include Sources/ProcKit/ProcKit.c Tests/e2e/cpu.c -o "$WORK/cpu"
 
+# A real .app (LSUIElement, like a menu bar app) with a helper inside its bundle.
+HOG="$WORK/E2EHog.app"
+mkdir -p "$HOG/Contents/MacOS" "$HOG/Contents/Helpers"
+swiftc -O Tests/e2e/TestApp.swift -o "$HOG/Contents/MacOS/E2EHog" 2>&1 | grep -v "search path" || true
+cp "$WORK/e2e-burner" "$HOG/Contents/Helpers/Helper"
+cat > "$HOG/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>E2EHog</string>
+<key>CFBundleIdentifier</key><string>io.github.intarso.AppWrangler.e2e-hog</string>
+<key>CFBundleName</key><string>E2EHog</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSUIElement</key><true/>
+</dict></plist>
+PLIST
+codesign --force --deep -s - "$HOG" 2>/dev/null
+
 PASS=0
 FAIL=0
 PIDS=()
@@ -128,6 +146,29 @@ cli memlimit e2e-memhog 200 freeze
 frozen=no
 for _ in $(seq 40); do [ "$(state "$M")" = "T" ] && { frozen=yes; break; }; sleep 0.25; done
 [ "$frozen" = yes ] && ok "memory limit (400 MB > 200 MB) froze the process" || bad "memory limit didn't freeze"
+
+# --- A real app launched after AppWrangler, matched by bundle ID ------------------
+open -g "$HOG" --args 300
+hog_main=""; hog_helper=""
+for _ in $(seq 40); do
+	hog_main=$(pgrep -f "$HOG/Contents/MacOS/E2EHog" | head -1)
+	hog_helper=$(pgrep -f "$HOG/Contents/Helpers/Helper" | head -1)
+	[ -n "$hog_main" ] && [ -n "$hog_helper" ] && break
+	sleep 0.25
+done
+PIDS+=("$hog_main" "$hog_helper")
+"$APP_BIN" list | grep -q "E2EHog +1" && ok "real app is grouped with its in-bundle helper" || bad "E2EHog not grouped with helper"
+cli limit E2EHog 50
+sleep 2
+v=$(cpu 2 "$hog_main" "$hog_helper")
+between "$v" 0.38 0.62 && ok "bundle-ID rule limits a menu bar app + helper launched later: $v cores" || bad "bundle-ID rule on real app measured $v"
+grep -q '"io.github.intarso.AppWrangler.e2e-hog"' "$APPWRANGLER_DATA_DIR/rules.json" && ok "rule stored by bundle ID" || bad "rule not stored by bundle ID"
+cli memlimit E2EHog 200 quit
+gone=no
+for _ in $(seq 40); do kill -0 "$hog_main" 2>/dev/null || { gone=yes; break; }; sleep 0.25; done
+[ "$gone" = yes ] && ok "memory limit → Quit closed the real app (helper held 300 MB)" || bad "app not quit by memory limit"
+sleep 0.5
+kill -0 "$hog_helper" 2>/dev/null && bad "helper left running after quit" || ok "its helper exited with it"
 
 # --- Removal, persistence, crash safety -----------------------------------------
 cli unlimit e2e-burner

@@ -42,7 +42,7 @@ Lists running apps with CPU, memory, helper count and either their rule or a des
 Shows saved rules: ● enabled, ○ disabled.
 
 ### `status`
-Shows whether AppWrangler is running, whether limits are paused, what's frozen, and how many rules are active.
+Shows whether AppWrangler is running, whether limits are paused, what's frozen, any apps currently flagged by [runaway alerts](user-guide.md#runaway-alerts), and how many rules are active.
 
 ### `limit <app> <percent> [--background-only]`
 Caps CPU (100 = one core). With `--background-only`, the limit applies only while the app isn't frontmost.

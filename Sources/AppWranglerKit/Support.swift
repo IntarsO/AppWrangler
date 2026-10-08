@@ -137,6 +137,8 @@ struct AppState: Codable {
 	var pid: Int32
 	var paused: Bool
 	var frozen: [String]
+	/// Apps currently flagged as using lots of CPU in the background.
+	var runaway: [String]? = nil
 	var updated: Date
 
 	static var url: URL { DataDirectory.url.appendingPathComponent("state.json") }

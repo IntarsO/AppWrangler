@@ -150,6 +150,9 @@ enum CLI {
 			if let state = AppState.read() {
 				print("AppWrangler is running (pid \(state.pid))\(state.paused ? ", limits PAUSED" : "").")
 				if !state.frozen.isEmpty { print("Frozen: " + state.frozen.joined(separator: ", ")) }
+				if let runaway = state.runaway, !runaway.isEmpty {
+					print("Using a lot of CPU in the background: " + runaway.joined(separator: ", "))
+				}
 			} else {
 				print("AppWrangler isn't running.")
 			}
@@ -254,7 +257,7 @@ enum CLI {
 
 	  list [--all] [--json]          running apps with CPU, memory and what they are
 	  rules                          show saved rules
-	  status                         is AppWrangler running, paused, what's frozen
+	  status                         running? paused? what's frozen or hogging the CPU
 	  limit <app> <percent>          cap CPU (100 = one core). --background-only to
 	                                 limit only while the app isn't frontmost
 	  ecores <app> on|off            run the app on efficiency cores only
