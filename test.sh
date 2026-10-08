@@ -23,5 +23,5 @@ fi
 
 # Serial: the limiter integration tests measure real CPU time, and other suites
 # running beside them (e.g. MCP tests sampling every process) skew the numbers.
-swift test --no-parallel "${EXTRA[@]}" "$@" 2>&1 | grep -v "ld: warning: search path"
+swift test --no-parallel ${EXTRA[@]+"${EXTRA[@]}"} "$@" 2>&1 | grep -v "ld: warning: search path"
 exit "${PIPESTATUS[0]}"
