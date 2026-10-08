@@ -442,3 +442,16 @@
 "Open in a window that stays open, like Activity Monitor" = "Открыть в окне, которое остаётся открытым, как Мониторинг системы";
 "Open in a window" = "Открыть в окне";
 "Open in a Window" = "Открыть в окне";
+
+/* Widget */
+"Limits paused" = "Ограничения приостановлены";
+"%d frozen" = "Заморожено: %d";
+"Auto · %d on E-cores" = "Авто · %d на E-ядрах";
+"Auto off" = "Авторежим выключен";
+"%@ swap" = "подкачка %@";
+"AppWrangler isn't running" = "AppWrangler не запущен";
+"Click to open it." = "Нажмите, чтобы открыть.";
+"Saved %@ today" = "Сегодня сэкономлено %@";
+"Busiest apps" = "Самые загруженные";
+"(+%d more)" = "(и ещё %d)";
+"CPU, memory, Auto mode and the busiest apps at a glance." = "ЦП, память, авторежим и самые загруженные приложения — с первого взгляда.";

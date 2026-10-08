@@ -76,6 +76,8 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds t
 
 Run `./test.sh` and `./Tests/e2e/run.sh` locally before sending a change that touches the limiter, the enforcer or Auto mode.
 
+The widget (`Widget/`) is built by `build.sh` with plain `swiftc` into `Contents/PlugIns/AppWranglerWidget.appex`. It shares only `Sources/AppWranglerKit/WidgetSnapshot.swift` with the app. To check its layout without adding it to the desktop, run `scripts/render-widget.sh`.
+
 Releases are built locally with `./build.sh --zip`. Uploading one with `gh release create` also needs an update to [`Casks/appwrangler.rb`](Casks/appwrangler.rb) (version and `sha256`).
 
 For a signed, notarized build, which requires an Apple Developer ID, see the comments at the top of `build.sh`.

@@ -37,6 +37,7 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, right in the panel, each with the reason, the benefit and a one-click fix. `appwrangler undo` takes any change back. |
 | 🤖 **AI assistants (MCP)** | Talk to Claude, OpenAI Codex or your own agents about your Mac: they audit it, explain any app, suggest settings and, with your OK, configure each app for you. Set up with one command: `appwrangler mcp install`. |
 | ⌨️ **Command line** | `appwrangler suggest`, `appwrangler show Slack`, `appwrangler set Slack efficiency_cores=on`, `appwrangler stats`, … |
+| 🖥 **Desktop widget** | CPU, memory, Auto mode, the busiest apps and the top suggestion on your desktop or in Notification Center (macOS 14+). |
 | 📖 **Built-in help** | The full manual inside the app, searchable and offline, with a **?** next to every setting. |
 
 It uses well under 1% of one core. It never connects to the network.
@@ -45,6 +46,11 @@ It uses well under 1% of one core. It never connects to the network.
   <img src="docs/images/panel.png" width="380" alt="The AppWrangler panel: CPU and memory meters, Auto mode status, suggestions for this Mac (Brave uses more than the Mac's 8 GB of RAM — turn on Memory Saver, or freeze it in the background when memory runs out), and running apps with their rules">
   &nbsp;
   <img src="docs/images/help.png" width="440" alt="The built-in Help window showing the User Manual's Auto mode chapter, with topics and search in the sidebar">
+</p>
+<p align="center">
+  <img src="docs/images/widget-small.png" width="170" alt="Small desktop widget: CPU and memory rings, Auto mode status and CPU time saved today">
+  &nbsp;
+  <img src="docs/images/widget-medium.png" width="364" alt="Medium desktop widget: CPU and memory rings, Auto status, the three busiest apps and the top suggestion">
 </p>
 
 ## Get started

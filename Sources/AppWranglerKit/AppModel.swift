@@ -15,6 +15,7 @@
 import AppKit
 import Combine
 import ProcKit
+import WidgetKit
 
 final class AppModel: ObservableObject {
 	static let shared = AppModel()
@@ -65,6 +66,9 @@ final class AppModel: ObservableObject {
 	/// Apps not used since AppWrangler started count as idle since then.
 	private let launchedAt = Date()
 	private var lastUsageWrite = Date.distantPast
+	private var lastWidgetWrite = Date.distantPast
+	private var lastWidgetReload = Date.distantPast
+	private var lastWidgetKey = ""
 	private var runningAppsObservation: NSKeyValueObservation?
 
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
@@ -381,6 +385,7 @@ final class AppModel: ObservableObject {
 					   autoFreeze: autoFreezeCandidates(snapshot, state: state))
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
+		if Date().timeIntervalSince(lastWidgetWrite) >= 60 { updateWidget() }
 		if Date().timeIntervalSince(lastUsageWrite) >= 60 {
 			lastUsageWrite = Date()
 			UsageAverages(updated: Date(), apps: UsageAverages.compute(groups: snapshot.groups, history: history))
@@ -450,6 +455,10 @@ final class AppModel: ObservableObject {
 	func refreshAdvice() {
 		lastAdvice = Date()
 		guard lastSnapshot.full else { return }
+		advice = computeAdvice()
+	}
+
+	private func computeAdvice() -> [Suggestion] {
 		var mem = pk_memory_stats()
 		pk_memory_stats_get(&mem)
 		let week = stats.summary(days: 7)
@@ -462,9 +471,48 @@ final class AppModel: ObservableObject {
 			averages: UsageAverages.compute(groups: lastSnapshot.groups, history: history),
 			autoFreezeIdle: d.bool(forKey: Prefs.autoFreezeIdle))
 		let dismissed = d.dictionary(forKey: Prefs.dismissedAdvice) as? [String: Date] ?? [:]
-		advice = Suggestions.make(input).filter { s in
+		return Suggestions.make(input).filter { s in
 			guard let when = dismissed[s.id] else { return true }
 			return Date().timeIntervalSince(when) > 7 * 86_400
+		}
+	}
+
+	// MARK: Widget
+
+	/// Write what the desktop widget shows, and ask WidgetKit to refresh it —
+	/// at once when something you'd notice changed (paused, frozen, Auto), and
+	/// otherwise every few minutes, which keeps within WidgetKit's budget.
+	func updateWidget() {
+		lastWidgetWrite = Date()
+		var mem = pk_memory_stats()
+		pk_memory_stats_get(&mem)
+		let today = stats.summary(days: 1)
+		let s = autoSummary
+		let suggestions = computeAdvice()
+		let top = lastSnapshot.groups.filter { $0.kind == .app || $0.kind == .background }.sorted { $0.cpu > $1.cpu }.prefix(3)
+		let snapshot = WidgetSnapshot(
+			updated: Date(), chip: SystemInfo.chip, cores: SystemInfo.ncpu, cpu: lastSnapshot.systemCPU,
+			memoryUsedBytes: mem.used, memoryTotalBytes: SystemInfo.info.memsize, memoryPressure: Int(mem.pressure_level),
+			swapUsedBytes: Swap.usedBytes, paused: paused, autoOn: autoPilot.settings.enabled, autoManaged: s.managed,
+			autoOnEfficiency: s.onEfficiency, autoCapped: s.capped, frozen: enforcer.frozen.keys.compactMap { id in
+				lastSnapshot.groups.first { $0.id == id }?.name ?? enforcer.knownGroup(matching: id)?.name
+			}.sorted(),
+			savedCPUSecondsToday: today.total.savedCPUSeconds, savedEnergyWhToday: today.total.totalSavedEnergyJ / 3600,
+			topApps: top.map { g in
+				let state: String
+				if enforcer.isFrozen(g.id) { state = "frozen" }
+				else if let r = rules.rule(for: g), r.enabled, r.cpuLimitEnabled || r.backgroundMode { state = "rule" }
+				else if let d = enforcer.autoDecisions[g.id] { state = d.efficiency ? "auto-ecores" : "auto-full" }
+				else { state = "" }
+				return WidgetSnapshot.App(name: g.name, cpu: g.cpu, memoryBytes: g.footprint, state: state)
+			},
+			suggestionCount: suggestions.count, topSuggestion: suggestions.first?.title)
+		snapshot.write(directory: rules.fileURL.deletingLastPathComponent())
+		let key = "\(paused)|\(snapshot.frozen)|\(snapshot.autoOn)|\(snapshot.memoryPressure)"
+		if key != lastWidgetKey || Date().timeIntervalSince(lastWidgetReload) >= 300 {
+			lastWidgetKey = key
+			lastWidgetReload = Date()
+			WidgetCenter.shared.reloadAllTimelines()
 		}
 	}
 
@@ -566,8 +614,10 @@ final class AppModel: ObservableObject {
 		let auto = autoDescription
 		let apps = autoAppStates
 		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto, last.4 == apps { return }
+		let pausedOrFrozenChanged = lastWrittenState.map { $0.0 != paused || $0.1 != frozen } ?? false
 		lastWrittenState = (paused, frozen, runaway, auto, apps)
 		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, autoApps: apps, updated: Date()).write()
+		if pausedOrFrozenChanged { updateWidget() }
 	}
 
 	// MARK: Actions from UI

@@ -53,6 +53,10 @@ cleanup() {
 	for p in "${PIDS[@]}"; do kill -CONT "$p" 2>/dev/null; kill -KILL "$p" 2>/dev/null; done
 	wait 2>/dev/null
 	rm -rf "${WORK:?}"
+	# Launching the test copy registers it with LaunchServices; unregister it so
+	# its widget doesn't shadow the installed app's.
+	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+		-u "$ROOT/build/AppWrangler.app" 2>/dev/null || true
 }
 trap cleanup EXIT
 

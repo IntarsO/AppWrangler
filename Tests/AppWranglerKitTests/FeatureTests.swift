@@ -176,10 +176,13 @@ import Testing
 	static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
 	static func keysInSources() throws -> Set<String> {
-		let sources = root.appendingPathComponent("Sources/AppWranglerKit")
-		let regex = try NSRegularExpression(pattern: #"\bL\("((?:[^"\\]|\\.)*)""#)
+		// The app's L("…") and the widget's W("…") share one strings file.
+		let regex = try NSRegularExpression(pattern: #"\b[LW]\("((?:[^"\\]|\\.)*)""#)
 		var keys = Set<String>()
-		for case let url as URL in FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)! where url.pathExtension == "swift" {
+		let files = ["Sources/AppWranglerKit", "Widget"].flatMap { dir in
+			(FileManager.default.enumerator(at: root.appendingPathComponent(dir), includingPropertiesForKeys: nil)?.allObjects as? [URL]) ?? []
+		}
+		for url in files where url.pathExtension == "swift" {
 			let text = try String(contentsOf: url, encoding: .utf8)
 			for m in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
 				let raw = String(text[Range(m.range(at: 1), in: text)!])

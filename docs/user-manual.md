@@ -19,6 +19,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 - [Pausing all limits](#pausing-all-limits)
 - [Runaway alerts](#runaway-alerts)
 - [Impact: how much it helped](#impact)
+- [Desktop widget](#desktop-widget)
 - [Suggestions: what to change](#suggestions-what-to-change)
 - [Every setting of an app](#every-setting-of-an-app)
 - [Asking an AI assistant](#asking-an-ai-assistant)
@@ -89,6 +90,8 @@ The **Auto** switch in the panel header turns it off; `appwrangler auto on|off` 
 ## The main panel
 
 Click the menu bar icon.
+
+![The AppWrangler panel: CPU and memory meters, the Auto mode line, suggestions for this Mac, and running apps with their rules](images/panel.png)
 
 | Area | What it shows |
 |---|---|
@@ -278,6 +281,30 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 ---
 
+## Desktop widget
+
+AppWrangler has a widget for the desktop and Notification Center (macOS 14 Sonoma or later).
+
+**Add it:** right-click the desktop → **Edit Widgets…**, search for **AppWrangler**, and drag the small or medium size onto your desktop. You can also add it in Notification Center by clicking *Edit Widgets* at the bottom.
+
+![The medium AppWrangler widget: CPU and memory rings, Auto status, the busiest apps and the top suggestion](images/widget-medium.png)
+
+| Size | Shows |
+|---|---|
+| Small | CPU and memory rings (the memory ring turns orange or red under memory pressure, with how much is swapped), what Auto mode is doing, whether limits are paused or apps are frozen, and the CPU time saved today |
+| Medium | All of that, plus the three busiest apps (🍃 on efficiency cores, ⚡ full speed, ❄️ frozen, gauge = own rule) and the top [suggestion](#suggestions-what-to-change) |
+
+Click the widget to open AppWrangler's [window](#the-main-panel).
+
+**Colour or grey?** With the default widget style, macOS shows desktop widgets in full colour only when the desktop itself is active. While you're working in an app, it shows them in a muted, monochrome style; AppWrangler's rings and status then take your accent colour. To keep them in colour all the time, choose **System Settings → Desktop & Dock → Widgets → Widget style → Full-color**.
+
+**Good to know:**
+- **Refresh rate.** macOS decides how often widgets refresh. AppWrangler updates the widget's data every minute and asks for a refresh when something you'd notice changes (paused, an app frozen, memory pressure). Expect it to be a few minutes behind at worst; it isn't a live meter.
+- **When AppWrangler isn't running,** the widget says so; click it to start AppWrangler.
+- **Privacy.** The widget is sandboxed and can only read the small status file the app writes (`widget.json` in the data folder). It can't measure or change anything.
+
+---
+
 ## Suggestions: what to change
 
 AppWrangler looks at your Mac and recommends settings. You'll find them:
@@ -401,6 +428,8 @@ Changes go through `configure_app`, which takes the same settings as [`appwrangl
 ---
 
 ## Help inside the app
+
+![The Help window: topics and search on the left, the manual on the right](images/help.png)
 
 The Help window shows this manual, [Getting Started](getting-started.md), the [command line](cli.md), [AI assistants](mcp.md), the [FAQ](faq.md) and [How it works](how-it-works.md). They're bundled with the app, so they work offline and always match the version you have.
 

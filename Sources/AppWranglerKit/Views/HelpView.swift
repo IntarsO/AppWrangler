@@ -133,13 +133,13 @@ enum HelpLibrary {
 	pre { background: var(--code); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 	pre code { padding: 0; background: none; }
 	table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 13px; }
-	th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-	td code { white-space: normal; }
+	th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; overflow-wrap: break-word; }
+	td code { white-space: normal; word-break: break-word; }
 	th { background: var(--code); }
 	blockquote { margin: 12px 0; padding: 4px 14px; background: var(--quote); border-left: 3px solid var(--link); border-radius: 4px; }
 	hr { border: none; border-top: 1px solid var(--line); margin: 26px 0; }
 	ul, ol { padding-left: 22px; } li { margin: 3px 0; }
-	img { max-width: 100%; }
+	img { max-width: min(100%, 520px); border-radius: 8px; display: block; margin: 12px 0; }
 	.flash { animation: flash 1.6s ease-out; border-radius: 4px; }
 	@keyframes flash { from { background: rgba(255, 204, 0, .45); } to { background: transparent; } }
 	"""

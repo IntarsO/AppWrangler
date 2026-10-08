@@ -20,6 +20,11 @@ This is a tour of the internals for curious users and contributors.
 | Sampling schedule, instant re-apply on any change | `Sources/AppWranglerKit/AppModel.swift` |
 | Notifications, login item, global shortcut | `Sources/AppWranglerKit/Services.swift` |
 | UI (SwiftUI in an `NSPopover` and a Settings window) | `Sources/AppWranglerKit/Views/` |
+| Auto mode (focus, E-cores, fair share, idle-app freezing) | `Sources/AppWranglerKit/AutoPilot.swift` |
+| Suggestions, per-app settings, undo journal | `Suggestions.swift`, `AppSettings.swift` |
+| `appwrangler mcp install` (Claude / Codex config files) | `Sources/AppWranglerKit/MCPInstaller.swift` |
+| In-app Help (Markdown → HTML in a web view) | `Markdown.swift`, `Views/HelpView.swift` |
+| Desktop widget (sandboxed WidgetKit extension; reads `widget.json`) | `Widget/AppWranglerWidget.swift` + `WidgetSnapshot.swift` |
 | Entry point (app or CLI) | `Sources/AppWrangler/main.swift` → `AppWranglerMain.run()` |
 
 Almost everything lives in the `AppWranglerKit` library, so tests can `@testable import` it; the executable is two lines.

@@ -2,6 +2,23 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-10-08
+
+### Added
+- **Desktop and Notification Center widget** (macOS 14+), in small and medium sizes.
+  - It shows CPU and memory (with swap), what Auto mode is doing, paused or frozen apps, CPU time saved today, the three busiest apps and the top suggestion.
+  - Clicking it opens AppWrangler's window.
+  - It's a sandboxed WidgetKit extension that only reads the `widget.json` the app writes every minute, and it's built with the Command Line Tools like the rest of the app.
+- `appwrangler://window`, `appwrangler://settings` and `appwrangler://help/<page>#<section>` links open those parts of AppWrangler.
+- `scripts/render-widget.sh` renders the widget's views to PNGs for checking layout changes.
+- In macOS's monochrome widget style, the widget's rings, status and app icons take your accent colour.
+- Screenshots of the panel, Help window and widget in the User Manual, also shown in the in-app Help.
+
+### Fixed
+- In the Help window, narrow table columns were squeezed to one letter per line.
+- Build numbers are now `YYYYMMDD.HHMM`. A single large number made WidgetKit reject the widget ("Bundle version did not match").
+- `build.sh --install` and the end-to-end tests now keep only the installed copy registered with macOS, and stop an old widget process, so the widget always runs the installed build.
+
 ## [1.1.0] — 2026-10-08
 
 ### Added

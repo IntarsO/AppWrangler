@@ -109,6 +109,24 @@ import Testing
 		#expect(broken.isEmpty, "broken links: \(broken)")
 	}
 
+	@Test func everyImageInTheDocsExists() throws {
+		let image = try NSRegularExpression(pattern: #"!\[[^\]]*\]\(([^)\s]+)\)|<img src="([^"]+)""#)
+		var missing: [String] = []
+		for (dir, files) in [(docs, try FileManager.default.contentsOfDirectory(atPath: docs.path).filter { $0.hasSuffix(".md") }), (root, ["README.md"])] {
+			for file in files {
+				let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
+				let ns = text as NSString
+				for m in image.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+					let r = m.range(at: 1).location != NSNotFound ? m.range(at: 1) : m.range(at: 2)
+					let src = ns.substring(with: r)
+					guard !src.hasPrefix("http") else { continue }
+					if !FileManager.default.fileExists(atPath: dir.appendingPathComponent(src).path) { missing.append("\(file) → \(src)") }
+				}
+			}
+		}
+		#expect(missing.isEmpty, "missing images: \(missing)")
+	}
+
 	@Test func everyHelpButtonPointsAtARealSection() throws {
 		let sources = root.appendingPathComponent("Sources/AppWranglerKit")
 		let manual = anchors(HelpTopic.manual.file)

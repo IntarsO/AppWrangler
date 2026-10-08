@@ -111,6 +111,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		#endif
 	}
 
+	/// `appwrangler://window` (the widget), `appwrangler://settings`, `appwrangler://help[/topic#section]`.
+	func application(_ application: NSApplication, open urls: [URL]) {
+		for url in urls where url.scheme == "appwrangler" {
+			switch url.host {
+			case "settings": showSettings()
+			case "help":
+				let topic = HelpTopic(rawValue: url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) ?? .manual
+				HelpCenter.open(topic, anchor: url.fragment)
+			default: showMainWindow()
+			}
+		}
+	}
+
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
 		terminating = true
 		return .terminateNow
