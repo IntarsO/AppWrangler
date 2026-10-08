@@ -85,13 +85,22 @@ import Testing
 		var f = frozen, l = limited
 		pk_lim_set_group(9005, &f, 1, 0, 1)
 		pk_lim_set_group(9006, &l, 1, 0.1, 0)	// stopped ~90% of every 50 ms cycle
+		_ = pk_set_background(limited, 1)
 		usleep(500_000)
 		#expect(isStopped(frozen))
+		#expect(priority(limited) == 4, "on the efficiency cores")
 		pk_release_all()
 		#expect(!isStopped(frozen))
+		#expect(priority(limited) != 4, "taken off the efficiency cores")
 		// Several limiter cycles later, both still run freely.
 		usleep(300_000)
 		#expect(measureCPU([frozen, limited], seconds: 0.5) > 1.5)
+	}
+
+	private func priority(_ pid: pid_t) -> Int32 {
+		var info = proc_taskinfo()
+		proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(MemoryLayout<proc_taskinfo>.size))
+		return info.pti_priority
 	}
 
 	private func isStopped(_ pid: pid_t) -> Bool {

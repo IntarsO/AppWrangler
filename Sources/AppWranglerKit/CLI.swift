@@ -47,7 +47,7 @@ enum RunningApps {
 
 enum CLI {
 	static let commands: Set<String> = [
-		"help", "list", "rules", "status", "limit", "unlimit", "ecores", "memlimit", "lowmem",
+		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
 	]
 
@@ -119,23 +119,17 @@ enum CLI {
 		case "list":
 			let all = rest.contains("--all")
 			let json = rest.contains("--json")
-			let appMap = Dictionary(uniqueKeysWithValues: apps.map { ($0.pid, $0) })
+			if json {
+				print(Reports.json(Reports.apps(store: store, apps: apps, includeProcesses: all)))
+				return 0
+			}
+			let appMap = Dictionary(apps.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
 			let sampler = Sampler()
 			let request = SampleRequest(apps: appMap, includeAll: true, includeOtherUsers: false, withThreads: false, matcher: GroupMatcher())
 			_ = sampler.sampleNow(request)
 			usleep(1_000_000)
 			var groups = sampler.sampleNow(request).groups.filter { all || $0.kind != .process }
 			groups.sort { $0.cpu > $1.cpu }
-			if json {
-				let rows: [[String: Any]] = groups.map { g in
-					["name": g.name, "kind": "\(g.kind)", "bundleID": g.bundleID ?? "", "path": g.path,
-					 "cpuPercent": (g.cpu * 1000).rounded() / 10, "memoryMB": Double(g.footprint) / 1_048_576,
-					 "processes": g.processes.count, "rule": store.rule(for: g)?.summary ?? ""]
-				}
-				let data = (try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])) ?? Data()
-				print(String(decoding: data, as: UTF8.self))
-				return 0
-			}
 			print("   CPU     MEMORY  NAME                              WHAT IT IS")
 			for g in groups {
 				let name = g.name + (g.processes.count > 1 ? " +\(g.processes.count - 1)" : "")
@@ -150,6 +144,7 @@ enum CLI {
 			if let state = AppState.read() {
 				print("AppWrangler is running (pid \(state.pid))\(state.paused ? ", limits PAUSED" : "").")
 				if !state.frozen.isEmpty { print("Frozen: " + state.frozen.joined(separator: ", ")) }
+				if let auto = state.auto { print("Auto mode: " + auto) }
 				if let runaway = state.runaway, !runaway.isEmpty {
 					print("Using a lot of CPU in the background: " + runaway.joined(separator: ", "))
 				}
@@ -157,6 +152,57 @@ enum CLI {
 				print("AppWrangler isn't running.")
 			}
 			print("\(store.rules.filter(\.isActive).count) active rules — data in \(store.fileURL.deletingLastPathComponent().path)")
+			return 0
+
+		case "auto":
+			guard let mode = rest.first, ["on", "off"].contains(mode) else {
+				let on = UserDefaults.standard.bool(forKey: Prefs.autoEnabled)
+				print("Auto mode is \(on ? "on" : "off"). Use: auto on|off")
+				return 0
+			}
+			UserDefaults.standard.set(mode == "on", forKey: Prefs.autoEnabled)
+			UserDefaults.standard.synchronize()
+			_ = postToApp("prefs", nil)
+			print(mode == "on"
+				  ? "Auto mode on: the app you're using runs at full speed; background apps go to efficiency cores and share the CPU when the Mac is busy."
+				  : "Auto mode off: only your rules apply.")
+			return 0
+
+		case "stats":
+			let days = rest.contains("today") ? 1 : rest.contains("month") ? 30 : 7
+			let s = StatsStore(directory: store.fileURL.deletingLastPathComponent()).summary(days: days)
+			if rest.contains("--json") {
+				print(Reports.json(Reports.stats(directory: store.fileURL.deletingLastPathComponent(), days: days)))
+				return 0
+			}
+			let label = days == 1 ? "today" : "last \(days) days"
+			print("AppWrangler impact — \(label)")
+			print("")
+			print("  CPU time saved      \(Fmt.coreTime(s.total.savedCPUSeconds))")
+			print("  Energy saved (est.) \(Fmt.energy(s.total.savedEnergyJ))" + (Battery.capacityWh.map { s.total.savedEnergyJ > 0 ? String(format: "  (%.1f%% of battery)", s.total.savedEnergyJ / 3600 / $0 * 100) : "" } ?? ""))
+			print("  Apps held back      \(Fmt.duration(s.total.heldBackSeconds))")
+			print("  Apps frozen         \(Fmt.duration(s.total.frozenSeconds))")
+			print("  On efficiency cores \(Fmt.duration(s.total.efficiencySeconds))")
+			print("  Actions             \(s.total.memoryActions) memory-limit, \(s.total.lowMemoryActions) low-memory, \(s.runawayAlerts) runaway alerts")
+			print("")
+			print("  AppWrangler itself  \(Fmt.percent(s.averageSelfCPU)) CPU on average, \(Fmt.coreTime(s.selfCPUSeconds)) total, \(Fmt.bytes(UInt64(s.averageFootprint))) memory")
+			if let ratio = s.efficiencyRatio { print(String(format: "  Efficiency          saved %.0f× more CPU time than it used", ratio)) }
+			if let acc = s.accuracyError { print(String(format: "  Limit accuracy      ±%.1f%%", acc * 100)) }
+			if !s.apps.isEmpty {
+				print("")
+				print("  APP                         SAVED         ENERGY     WANTED → ALLOWED   HELD BACK")
+				for row in s.apps {
+					let a = row.impact
+					let wa = a.limitedSeconds > 0 ? Fmt.percent(a.averageWanted) + " → " + Fmt.percent(a.averageAllowed) : "—"
+					print("  " + a.name.padding(toLength: 26, withPad: " ", startingAt: 0) + "  "
+						  + Fmt.coreTime(a.savedCPUSeconds).padding(toLength: 12, withPad: " ", startingAt: 0) + "  "
+						  + Fmt.energy(a.savedEnergyJ).padding(toLength: 9, withPad: " ", startingAt: 0) + "  "
+						  + wa.padding(toLength: 17, withPad: " ", startingAt: 0) + "  "
+						  + (a.heldBackSeconds > 0 ? Fmt.duration(a.heldBackSeconds) : "—"))
+				}
+			}
+			print("")
+			print("  Savings are estimates (see docs/user-guide.md#impact). Updated by the running app every 30 s.")
 			return 0
 
 		case "limit":
@@ -258,6 +304,8 @@ enum CLI {
 	  list [--all] [--json]          running apps with CPU, memory and what they are
 	  rules                          show saved rules
 	  status                         running? paused? what's frozen or hogging the CPU
+	  stats [today|week|month] [--json]  how much CPU/energy was saved, and what it cost
+	  auto [on|off]                  Auto mode: full speed for the app you use, efficiency for the rest
 	  limit <app> <percent>          cap CPU (100 = one core). --background-only to
 	                                 limit only while the app isn't frontmost
 	  ecores <app> on|off            run the app on efficiency cores only
@@ -269,6 +317,7 @@ enum CLI {
 	  freeze|unfreeze <app>          suspend / resume an app now (AppWrangler must be running)
 	  pause|resume                   pause or resume all CPU limits
 	  export [file] / import <file>  share rules as JSON
+	  mcp [--read-only]              run as an MCP server for Claude / OpenAI tools (docs/mcp.md)
 
 	<app> is an app name ("Google Chrome"), bundle id (com.google.Chrome),
 	process name (node), path (/usr/local/bin/x) or pattern ("*Helper*").

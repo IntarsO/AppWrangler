@@ -13,6 +13,9 @@ public enum AppWranglerMain {
 	public static func run() -> Never {
 		let args = CommandLine.arguments
 		if !DataDirectory.isOverridden { Migration.importAppPoliceRules() }
+		if args.count > 1 && args[1] == "mcp" {
+			MCPServer.serve(readOnly: args.contains("--read-only"))
+		}
 		if CLI.isInvocation(args) {
 			exit(CLI.main(args))
 		}
@@ -43,8 +46,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	private var lastLoad: Double = 0
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
-		statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-		if let button = statusItem.button {
+		// `-AWHeadless YES`: enforce rules without a menu bar icon (used by the
+		// end-to-end tests so a test copy never shows up next to your real one).
+		if !UserDefaults.standard.bool(forKey: "AWHeadless") {
+			statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+		}
+		if let button = statusItem?.button {
 			button.image = Self.statusImage()
 			button.imagePosition = .imageLeading
 			button.target = self
@@ -141,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	}
 
 	private func showPopover(activate: Bool) {
-		guard let button = statusItem.button else { return }
+		guard let button = statusItem?.button else { return }
 		if activate { NSApp.activate(ignoringOtherApps: true) }
 		popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 		if activate { popover.contentViewController?.view.window?.makeKey() }
@@ -161,9 +168,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		menu.addItem(help)
 		menu.addItem(.separator())
 		menu.addItem(NSMenuItem(title: L("Quit AppWrangler"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-		statusItem.menu = menu
-		statusItem.button?.performClick(nil)
-		statusItem.menu = nil	// restore left-click popover behaviour
+		statusItem?.menu = menu
+		statusItem?.button?.performClick(nil)
+		statusItem?.menu = nil	// restore left-click popover behaviour
 	}
 
 	@objc private func togglePause() {

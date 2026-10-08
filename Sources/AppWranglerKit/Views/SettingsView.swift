@@ -15,6 +15,8 @@ struct SettingsView: View {
 		TabView {
 			RulesSettings(model: model, rules: model.rules)
 				.tabItem { Label(L("App Rules"), systemImage: "list.bullet.rectangle") }
+			ImpactView(stats: model.stats)
+				.tabItem { Label(L("Impact"), systemImage: "chart.bar.xaxis") }
 			GeneralSettings(model: model)
 				.tabItem { Label(L("General"), systemImage: "gearshape") }
 			ActivityView(log: model.log)
@@ -241,6 +243,11 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.runawayMinutes) private var runawayMinutes = 3.0
 	@AppStorage(Prefs.pressureLevel) private var pressureLevel = 4
 	@AppStorage(Prefs.hotKeyEnabled) private var hotKeyEnabled = true
+	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
+	@AppStorage(Prefs.autoUseEfficiency) private var autoUseEfficiency = true
+	@AppStorage(Prefs.autoEfficiencyAfter) private var autoEfficiencyAfter = 30.0
+	@AppStorage(Prefs.autoShareCPU) private var autoShareCPU = true
+	@AppStorage(Prefs.autoBusyPercent) private var autoBusyPercent = 75.0
 	@Local private var launchAtLogin = LoginItem.isEnabled
 	@Local private var loginError: String?
 
@@ -256,6 +263,31 @@ struct GeneralSettings: View {
 					}
 				if let loginError {
 					Text(loginError).font(.caption).foregroundStyle(.red)
+				}
+			}
+
+			Section(L("Auto mode")) {
+				Toggle(L("Manage apps automatically"), isOn: $autoEnabled)
+				Text(L("The app you're using (and anything playing or recording audio) always runs at full speed. Apps without their own CPU or efficiency-core rule are managed for you."))
+					.font(.caption).foregroundStyle(.secondary)
+				if autoEnabled {
+					Toggle(L("Move background apps to efficiency cores"), isOn: $autoUseEfficiency)
+					if autoUseEfficiency {
+						Picker(L("After the app has been in the background for"), selection: $autoEfficiencyAfter) {
+							Text("10 s").tag(10.0)
+							Text("30 s").tag(30.0)
+							Text("1 min").tag(60.0)
+							Text("5 min").tag(300.0)
+						}
+					}
+					Toggle(L("Share the CPU fairly when the Mac is busy"), isOn: $autoShareCPU)
+					if autoShareCPU {
+						Stepper(L("Mac counts as busy above %d%% CPU", Int(autoBusyPercent)), value: $autoBusyPercent, in: 30...95, step: 5)
+						Text(L("Then background apps share what the foreground isn't using, each keeping a minimum, so nothing starves. On battery, the threshold is at most 50%."))
+							.font(.caption).foregroundStyle(.secondary)
+					}
+					Text(L("To exclude an app, give it a rule and turn on “Ignore this app”."))
+						.font(.caption).foregroundStyle(.secondary)
 				}
 			}
 

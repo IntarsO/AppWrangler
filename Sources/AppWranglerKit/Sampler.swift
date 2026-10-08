@@ -145,7 +145,8 @@ final class Sampler {
 		for (key, pids) in appMembers {
 			guard let app = appHeads[key] else { continue }
 			let path = app.bundlePath ?? idents[app.pid]?.path ?? ""
-			guard req.includeAll || req.matcher.matches(id: key, bundleID: app.bundleID, path: path, name: app.name) else { continue }
+			let autoManaged = req.includeApps && (app.kind == .app || app.kind == .background)
+			guard req.includeAll || autoManaged || req.matcher.matches(id: key, bundleID: app.bundleID, path: path, name: app.name) else { continue }
 			var group = AppGroup(id: key, ownerPid: app.pid, name: app.name, bundleID: app.bundleID, path: path, kind: app.kind)
 			measure(&group, pids: pids, now: now, withThreads: req.withThreads)
 			groups.append(group)

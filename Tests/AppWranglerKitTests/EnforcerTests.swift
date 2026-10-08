@@ -151,6 +151,20 @@ import Testing
 		#expect(!e.isFrozen(g.id))
 	}
 
+	@Test func lowMemorySparesTheAppYouAreUsing() {
+		_ = rule { $0.pressureAction = .freeze }
+		let e = enforcer
+		var state = SystemState()
+		state.memoryPressure = 4
+		e.apply(makeSnapshot([makeGroup()], seq: 1), rules: store, state: state, frontmostPid: 50_000)
+		#expect(controller.frozenGroups.isEmpty, "frontmost app not frozen")
+		let audio = [makeGroup().id: AutoDecision(reason: .audio)]
+		e.apply(makeSnapshot([makeGroup()], seq: 2), rules: store, state: state, frontmostPid: 1, auto: audio)
+		#expect(controller.frozenGroups.isEmpty, "app on a call / playing audio not frozen")
+		e.apply(makeSnapshot([makeGroup()], seq: 3), rules: store, state: state, frontmostPid: 1)
+		#expect(controller.frozenGroups.count == 1, "in the background: frozen")
+	}
+
 	@Test func manualFreezeSurvivesMemoryRecovery() {
 		let e = enforcer
 		let g = makeGroup()
@@ -167,6 +181,33 @@ import Testing
 		store.remove(id: r.id)
 		e.apply(makeSnapshot([makeGroup(helpers: [50_001])], seq: 2), rules: store, state: SystemState(), frontmostPid: 0)
 		#expect(controller.background == [50_000: false, 50_001: false])
+	}
+
+	@Test func turningOffEfficiencyAlsoRestoresInheritingDescendants() {
+		let r = rule { $0.backgroundMode = true }
+		let e = enforcer
+		// A terminal app whose shell (outside the app group) started a build.
+		controller.children = [50_000: [60_000], 60_000: [60_001]]
+		e.apply(makeSnapshot([makeGroup()], seq: 1), rules: store, state: SystemState(), frontmostPid: 0)
+		store.remove(id: r.id)
+		e.apply(makeSnapshot([makeGroup()], seq: 2), rules: store, state: SystemState(), frontmostPid: 0)
+		#expect(controller.background[60_000] == false)
+		#expect(controller.background[60_001] == false)
+	}
+
+	@Test func descendantsWithTheirOwnEfficiencyRuleKeepIt() {
+		let r = rule { $0.backgroundMode = true }
+		var other = AppRule(matchKind: .bundleID, matchValue: "com.example.child", displayName: "Child")
+		other.backgroundMode = true
+		store.upsert(other)
+		let e = enforcer
+		let child = makeGroup(name: "Child", bundleID: "com.example.child", pid: 60_000)
+		controller.children = [50_000: [60_000]]
+		e.apply(makeSnapshot([makeGroup(), child], seq: 1), rules: store, state: SystemState(), frontmostPid: 0)
+		store.remove(id: r.id)
+		e.apply(makeSnapshot([makeGroup(), child], seq: 2), rules: store, state: SystemState(), frontmostPid: 0)
+		#expect(controller.background[50_000] == false)
+		#expect(controller.background[60_000] == true, "its own rule still wants E-cores")
 	}
 
 	@Test func protectedProcessesAreNeverTouched() {

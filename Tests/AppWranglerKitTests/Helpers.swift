@@ -22,6 +22,7 @@ final class FakeController: ProcessController {
 	var paused = false
 	var background: [pid_t: Bool] = [:]
 	var terminated: [pid_t] = []
+	var children: [pid_t: [pid_t]] = [:]
 	var killed: [pid_t] = []
 	/// Current limiter table, as the real C limiter would hold it.
 	var groups: [UInt32: SetCall] = [:]
@@ -35,6 +36,9 @@ final class FakeController: ProcessController {
 	func removeAllGroups() { groups.removeAll() }
 	func setPaused(_ paused: Bool) { self.paused = paused }
 	func setBackground(_ pid: pid_t, on: Bool) -> Int32 { background[pid] = on; return 0 }
+	func descendants(of pid: pid_t) -> [pid_t] {
+		(children[pid] ?? []).flatMap { [$0] + descendants(of: $0) }
+	}
 	func terminate(_ group: AppGroup) { terminated.append(group.ownerPid) }
 	func forceKill(_ pids: [pid_t]) { killed.append(contentsOf: pids) }
 	func limiterStatus() -> [pk_lim_status] { [] }
@@ -83,6 +87,8 @@ func spawnBurner() -> pid_t {
 	posix_spawn(&pid, "/usr/bin/yes", &actions, nil, argv, environ)
 	posix_spawn_file_actions_destroy(&actions)
 	argv.forEach { free($0) }
+	// Don't inherit an efficiency-cores policy from whatever launched the tests.
+	_ = pk_set_background(pid, 0)
 	return pid
 }
 

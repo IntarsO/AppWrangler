@@ -145,12 +145,35 @@ struct PopoverView: View {
 				Meter(title: L("Memory"), value: used, text: Fmt.bytes(model.snapshot.memory.used) + pressureText,
 					  tint: model.snapshot.memory.pressure_level >= 4 ? .red : model.snapshot.memory.pressure_level >= 2 ? .orange : .accentColor)
 			}
+			autoLine
 			if !conditionsText.isEmpty {
 				Label(conditionsText, systemImage: "bolt.badge.clock")
 					.font(.caption2).foregroundStyle(.secondary)
 			}
 		}
 		.padding(12)
+	}
+
+	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
+
+	private var autoLine: some View {
+		HStack(spacing: 6) {
+			Toggle(isOn: $autoEnabled) {
+				Label(L("Auto"), systemImage: "wand.and.stars").font(.caption.weight(.semibold))
+			}
+			.toggleStyle(.switch)
+			.controlSize(.mini)
+			.help(L("Auto mode keeps the app you're using at full speed, moves background apps to efficiency cores, and shares the CPU fairly when the Mac is busy."))
+			if autoEnabled {
+				let s = model.autoSummary
+				Text(L("%d apps · %d in use · %d on E-cores · %d capped", s.managed, s.inUse, s.onEfficiency, s.capped)
+					 + " · " + (s.busy ? L("Mac busy") : L("Mac not busy")))
+					.font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+			} else {
+				Text(L("Off — only your rules apply")).font(.caption2).foregroundStyle(.secondary)
+			}
+			Spacer()
+		}
 	}
 
 	private var conditionsText: String {
@@ -307,8 +330,12 @@ struct PopoverView: View {
 	private var footer: some View {
 		HStack {
 			let active = rules.rules.filter(\.isActive).count
-			Text(model.paused ? L("CPU limits paused") : L("%d active rules", active))
+			let saved = model.stats.summary(days: 1).total.savedCPUSeconds
+			Text(model.paused ? L("CPU limits paused")
+				 : saved >= 1 ? L("%d active rules", active) + " · " + L("saved %@ today", Fmt.coreTime(saved))
+				 : L("%d active rules", active))
 				.font(.caption).foregroundStyle(.secondary)
+				.help(L("See Settings → Impact for details"))
 			Spacer()
 			Button(L("Settings…"), action: openSettings)
 			Button(L("Quit")) { NSApp.terminate(nil) }
@@ -413,6 +440,8 @@ struct GroupRow: View {
 				}
 				if let rule, rule.enabled, rule.hasLimits {
 					Text(rule.summary).font(.caption2).foregroundStyle(.orange).lineLimit(1)
+				} else if let auto = autoText {
+					Text(auto).font(.caption2).foregroundStyle(.teal).lineLimit(1)
 				} else {
 					Text(description.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
 				}
@@ -434,6 +463,17 @@ struct GroupRow: View {
 		.accessibilityElement(children: .combine)
 		.accessibilityLabel(accessibilityText(rule: rule, frozen: frozen, description: description))
 		.accessibilityHint(L("Shows details and limits"))
+	}
+
+	/// What Auto mode is doing to this app, if anything visible.
+	private var autoText: String? {
+		guard let d = model.enforcer.autoDecisions[group.id] else { return nil }
+		switch (d.reason, d.cap, d.efficiency) {
+		case (.audio, _, _): return L("Auto · full speed (playing or recording audio)")
+		case (.background, let cap?, _): return L("Auto · shared CPU %@ (Mac busy)", Fmt.percent(cap))
+		case (.background, nil, true): return L("Auto · efficiency cores (in background)")
+		default: return nil
+		}
 	}
 
 	private func accessibilityText(rule: AppRule?, frozen: Bool, description: AppDescription) -> String {

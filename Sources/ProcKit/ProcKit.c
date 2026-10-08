@@ -192,9 +192,44 @@ static int pk_proc_cpu_ns(pid_t pid, uint64_t *cpu_ns) {
 
 /* ============================================================== scheduling */
 
+int pk_list_children(pid_t pid, pid_t *buf, int max) {
+	int n = proc_listchildpids(pid, buf, max * (int)sizeof(pid_t));
+	return n < 0 ? 0 : (n > max ? max : n);
+}
+
+/* Processes we put on the efficiency cores, so the crash/exit path can
+   restore them. Lock-free; read from signal handlers. */
+#define PK_MAX_BACKGROUND 4096
+static _Atomic pid_t g_background[PK_MAX_BACKGROUND];
+
+static void pk_track_background(pid_t pid, int on) {
+	if (on) {
+		for (int i = 0; i < PK_MAX_BACKGROUND; ++i)
+			if (atomic_load(&g_background[i]) == pid)
+				return;
+		for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
+			pid_t empty = 0;
+			if (atomic_compare_exchange_strong(&g_background[i], &empty, pid))
+				return;
+		}
+	} else {
+		for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
+			pid_t expected = pid;
+			atomic_compare_exchange_strong(&g_background[i], &expected, 0);
+		}
+	}
+}
+
 int pk_set_background(pid_t pid, int on) {
-	if (setpriority(PRIO_DARWIN_PROCESS, pid, on ? PRIO_DARWIN_BG : 0) != 0)
-		return errno;
+	if (on)
+		pk_track_background(pid, 1);	/* record first: a crash right after still restores it */
+	if (setpriority(PRIO_DARWIN_PROCESS, pid, on ? PRIO_DARWIN_BG : 0) != 0) {
+		int err = errno;
+		pk_track_background(pid, 0);
+		return err;
+	}
+	if (!on)
+		pk_track_background(pid, 0);
 	return 0;
 }
 
@@ -215,6 +250,7 @@ typedef struct {
 	double gain;			/* slow integral correction for signal latency */
 	double w;				/* work fraction for the next period */
 	double w_applied;		/* work fraction actually used last period */
+	uint32_t periods;		/* periods since the last measurement */
 } pk_group;
 
 static pk_group g_groups[PK_MAX_GROUPS];
@@ -420,7 +456,18 @@ static void *pk_limiter_thread(void *arg) {
 				g->last_t = 0;
 				continue;
 			}
-			pk_measure_locked(g, gi, t0);
+			/*
+			 Measuring costs one proc_pid_rusage() per process, so measure only as
+			 often as control needs: every 2nd period while the group is being held
+			 back, every 5th while it's under its limit (a spike is still caught
+			 within ~250 ms), and every 5th for frozen groups (to drop exited pids).
+			 The duty cycle itself still runs every period.
+			*/
+			uint32_t every = (g->frozen || g->w >= 0.995) ? 5 : 2;
+			if (++g->periods >= every || g->last_t == 0) {
+				g->periods = 0;
+				pk_measure_locked(g, gi, t0);
+			}
 			if (g->frozen) {
 				g->w_applied = 0;
 				events[nevents++] = (pk_event){ gi, g->gid, 0 };
@@ -609,6 +656,7 @@ int pk_lim_status_get(pk_lim_status *out, int max) {
 			continue;
 		out[n].gid = g->gid;
 		out[n].usage_cores = g->usage_ema < 0 ? 0 : g->usage_ema;
+		out[n].demand_cores = g->demand_ema < 0 ? 0 : g->demand_ema;
 		out[n].work_fraction = g->frozen ? 0 : g->w;
 		out[n].npids = g->npids;
 		out[n].denied = g->denied;
@@ -635,6 +683,12 @@ void pk_release_all(void) {
 		pid_t pid = atomic_exchange(&g_stopped_scratch[i], 0);
 		if (pid > 0)
 			kill(pid, SIGCONT);
+	}
+	/* Take apps off the efficiency cores too (setpriority is a plain syscall). */
+	for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
+		pid_t pid = atomic_exchange(&g_background[i], 0);
+		if (pid > 0)
+			setpriority(PRIO_DARWIN_PROCESS, pid, 0);
 	}
 }
 

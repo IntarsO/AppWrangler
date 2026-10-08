@@ -44,6 +44,29 @@ Shows saved rules: ● enabled, ○ disabled.
 ### `status`
 Shows whether AppWrangler is running, whether limits are paused, what's frozen, any apps currently flagged by [runaway alerts](user-guide.md#runaway-alerts), and how many rules are active.
 
+### `auto [on|off]`
+Turns [Auto mode](user-guide.md#auto-mode) on or off. Without an argument, shows whether it's on. `status` also shows what Auto is doing (apps managed, in use, on E-cores, capped).
+
+### `stats [today|week|month] [--json]`
+Shows what AppWrangler achieved and what it cost over today, the last 7 days (default) or 30 days:
+- CPU time saved and estimated energy saved;
+- time apps were held back, frozen or on E-cores;
+- actions taken;
+- AppWrangler's own CPU and memory, its efficiency ratio and limit accuracy;
+- a per-app breakdown.
+
+The running app updates the numbers every 30 seconds.
+
+```text
+AppWrangler impact — today
+
+  CPU time saved      2.4 core-h
+  Energy saved (est.) 13.1 Wh  (17.6% of battery)
+  ...
+  AppWrangler itself  0.2% CPU on average, 41 core-s total, 48 MB memory
+  Efficiency          saved 210× more CPU time than it used
+```
+
 ### `limit <app> <percent> [--background-only]`
 Caps CPU (100 = one core). With `--background-only`, the limit applies only while the app isn't frontmost.
 

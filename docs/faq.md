@@ -11,6 +11,9 @@ Builds you make yourself with `./build.sh` aren't affected.
 ### I can't find the menu bar icon
 AppWrangler has no Dock icon; it lives in the menu bar (a lasso loop with a needle inside). On MacBooks with a notch, a full menu bar can hide icons behind the notch. Quit a few other menu bar apps, or rearrange icons by ⌘-dragging. `appwrangler status` tells you whether it's running.
 
+### An app I limited is unusable / really slow when I use it
+Its rule applies even while the app is in front. Open the app's settings and turn on **Only while the app is in the background**, which is the default for new rules. Better still, remove the CPU and efficiency-core settings and let [Auto mode](user-guide.md#auto-mode) handle it: full speed while you use it, efficient in the background. Also check memory limits whose action is *Freeze*; a frozen app doesn't respond at all.
+
 ### The limited app feels choppy or beachballs
 CPU limiting works by pausing and resuming the app many times a second. At very low limits, apps with a UI can feel jerky. Options:
 - Raise the limit a little, or use **Only while the app is in the background**.
@@ -29,6 +32,9 @@ Usually yes. `mds_stores`, `mdworker`, `photoanalysisd`, `mediaanalysisd`, `clou
 - Limiting Spotlight or iCloud just makes indexing and sync slower.
 
 Processes owned by `root` (e.g. `kernel_task`, `backupd`'s privileged parts) can't be limited.
+
+### Everything I start from a terminal is slow after I put the terminal on efficiency cores
+macOS passes the efficiency-core (background) policy on to processes an app starts. If Terminal, iTerm or an AI coding app (Claude, Cursor…) is on *Efficiency cores only*, the shells, builds and tests it launches run on the E-cores too. Turn the setting off for that app; AppWrangler then restores those child processes as well. Or keep it on deliberately for background-friendly terminals.
 
 ### "Efficiency cores only" doesn't seem to do anything
 - The app has to do real CPU work for it to matter. Watch its CPU in the detail chart.

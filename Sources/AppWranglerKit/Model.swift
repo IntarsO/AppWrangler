@@ -117,6 +117,8 @@ struct SampleRequest {
 	var apps: [pid_t: RunningApp]
 	/// Measure every group (UI visible / runaway scan) rather than only matched ones.
 	var includeAll: Bool
+	/// Also measure every app (not plain processes) — needed by Auto mode.
+	var includeApps = false
 	var includeOtherUsers: Bool
 	var withThreads: Bool
 	var matcher: GroupMatcher

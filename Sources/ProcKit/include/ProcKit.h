@@ -95,8 +95,12 @@ int pk_proc_usage_get(pid_t pid, int with_threads, pk_proc_usage *out);
 /* --------------------------------------------------------- scheduling */
 
 /* Darwin background policy: on Apple Silicon this confines the process to the
-   efficiency cores and throttles its disk and network I/O. */
+   efficiency cores and throttles its disk and network I/O. Processes started
+   by a background process inherit the policy. */
 int pk_set_background(pid_t pid, int on);
+
+/* Direct children of pid; returns count. */
+int pk_list_children(pid_t pid, pid_t *buf, int max);
 
 /* ------------------------------------------------------------ limiter */
 
@@ -120,6 +124,7 @@ void pk_lim_set_period_ms(uint32_t ms);
 typedef struct {
 	uint32_t gid;
 	double usage_cores;			/* smoothed measured usage */
+	double demand_cores;		/* estimated usage if it weren't limited */
 	double work_fraction;		/* share of each period the group is allowed to run */
 	int npids;
 	int denied;					/* a signal failed with EPERM */
@@ -128,7 +133,8 @@ typedef struct {
 
 int pk_lim_status_get(pk_lim_status *out, int max);
 
-/* Resume every process this module has stopped. Async-signal-safe.
+/* Resume every process this module has stopped, and take every process it
+   put on the efficiency cores back off them. Async-signal-safe.
    Terminal: afterwards the limiter never stops anything again (it's called
    when AppWrangler is exiting or crashing).
    Pausing (pk_lim_set_paused) lifts CPU limits but keeps frozen groups frozen. */

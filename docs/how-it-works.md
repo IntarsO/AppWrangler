@@ -14,6 +14,9 @@ This is a tour of the internals for curious users and contributors.
 | Runaway detection, history | `Runaway.swift`, `History.swift` |
 | "What is this?" descriptions | `Sources/AppWranglerKit/Catalog.swift` |
 | Command line | `Sources/AppWranglerKit/CLI.swift` |
+| MCP server (stdio JSON-RPC) for AI assistants | `Sources/AppWranglerKit/MCP.swift` |
+| JSON reports shared by CLI and MCP | `Sources/AppWranglerKit/Reports.swift` |
+| Impact statistics (savings, cost, accuracy) | `Sources/AppWranglerKit/Stats.swift` |
 | Sampling schedule, instant re-apply on any change | `Sources/AppWranglerKit/AppModel.swift` |
 | Notifications, login item, global shortcut | `Sources/AppWranglerKit/Services.swift` |
 | UI (SwiftUI in an `NSPopover` and a Settings window) | `Sources/AppWranglerKit/Views/` |

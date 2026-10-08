@@ -156,8 +156,9 @@ struct AppRule: Codable, Identifiable, Equatable {
 	var cpuLimitEnabled = false
 	/// Percent of one core; may exceed 100 on multi-core machines.
 	var cpuLimit: Double = 50
-	/// Only throttle while the app is not frontmost.
-	var onlyWhenInactive = false
+	/// Apply the CPU limit and efficiency cores only while the app isn't
+	/// frontmost, so it's at full speed while you use it. On for new rules.
+	var onlyWhenInactive = true
 
 	/// Darwin background policy: E-cores only + throttled disk/network I/O.
 	var backgroundMode = false
@@ -197,10 +198,9 @@ struct AppRule: Codable, Identifiable, Equatable {
 		guard enabled else { return L("Disabled") }
 		if ignored { return L("Ignored") }
 		var parts: [String] = []
-		if cpuLimitEnabled {
-			parts.append(L("CPU %d%%", Int(cpuLimit)) + (onlyWhenInactive ? " " + L("(background)") : ""))
-		}
+		if cpuLimitEnabled { parts.append(L("CPU %d%%", Int(cpuLimit))) }
 		if backgroundMode { parts.append(L("E-cores")) }
+		if onlyWhenInactive && (cpuLimitEnabled || backgroundMode) { parts.append(L("background only")) }
 		if memoryLimitEnabled { parts.append(L("RAM %@", Fmt.megabytes(memoryLimitMB))) }
 		if pressureAction != .none { parts.append(L("low-memory: %@", pressureAction == .freeze ? L("freeze") : L("quit"))) }
 		if parts.isEmpty { return L("No limits") }

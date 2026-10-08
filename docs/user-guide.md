@@ -1,6 +1,7 @@
 # AppWrangler User Guide
 
 - [Key ideas](#key-ideas)
+- [Auto mode](#auto-mode)
 - [The main panel](#the-main-panel)
 - [Rules](#rules)
   - [Limit CPU](#limit-cpu)
@@ -13,6 +14,7 @@
 - [Freeze, quit and force quit](#freeze-quit-and-force-quit)
 - [Pausing all limits](#pausing-all-limits)
 - [Runaway alerts](#runaway-alerts)
+- [Impact: how much it helped](#impact)
 - [Settings window](#settings-window)
 - [Safety](#safety)
 - [Where your data lives](#where-your-data-lives)
@@ -28,6 +30,39 @@
 **Rules follow the app.** A rule is saved for the app, not for one running copy. It applies immediately, again every time the app launches, and after you restart your Mac. Rules are matched by bundle ID (for apps), path, process name, or a name pattern.
 
 **Nothing needs a restart.** Changing a rule in the panel, in Settings, from the [command line](cli.md), or by editing `rules.json` takes effect within about half a second. So do switching apps, plugging in or unplugging, Low Power Mode, the Mac heating up, and memory pressure changing.
+
+---
+
+## Auto mode
+
+**Auto mode is on by default and needs no setup.** It keeps every app usable while you're using it, and efficient while you're not:
+
+| Situation | What Auto does |
+|---|---|
+| The app you're using | Full speed, on the performance cores. Switching to an app restores it instantly. |
+| An app you left a moment ago | Stays at full speed for 15 s, so quick switching back and forth never stutters. |
+| Apps playing or recording audio | Treated as in use, even in the background: music, video calls, dictation tools like Whispr. |
+| Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
+| The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
+
+So AppWrangler adapts to **how many apps you're running and how hard they work**. With little running, nothing is held back. With a lot going on, the apps in the background share fairly, and the one in front stays fast.
+
+The panel header shows what Auto is doing, e.g. *"Auto · 12 apps · 1 in use · 9 on E-cores · 0 capped · Mac not busy"*. Each row says how Auto is treating that app (*"Auto · efficiency cores (in background)"*).
+
+**Auto and your own rules:**
+- An app with its own **CPU limit** or **Efficiency cores** setting follows that rule; Auto leaves it alone.
+- A rule with only memory or low-memory settings still lets Auto handle the app's CPU.
+- To keep Auto away from an app completely, give it a rule and turn on **Ignore this app**.
+- Plain processes (command-line tools, builds) and macOS services aren't managed by Auto.
+
+Settings → General → **Auto mode** lets you change:
+- the 30 s delay;
+- whether background apps use efficiency cores;
+- whether the CPU is shared when the Mac is busy, and above which load.
+
+The **Auto** switch in the panel header turns it off; `appwrangler auto on|off` works too.
+
+> **Tip:** prefer Auto over fixed limits for everyday apps. A fixed limit like "Slack 25%" applies even while you use Slack (unless *Only while the app is in the background* is on) and makes it feel broken. Auto gives you the efficiency without the slowness.
 
 ---
 
@@ -78,11 +113,13 @@ Click the menu bar icon.
 
 ## Rules
 
+### Only while the app is in the background
+
+**On by default for new rules.** The rule's CPU limit and efficiency-core setting apply only while the app isn't the one you're using. When you bring it to the front it runs at full speed on the performance cores; when you switch away, the rule applies again. Turn it off only for apps you never want at full speed. The editor warns that this can make them feel slow.
+
 ### Limit CPU
 
 Caps the app's combined CPU use. Choose anything from 1% up to 100% × the number of cores, using the slider, the number field, or the preset buttons.
-
-- **Only while the app is in the background**: the limit switches off the moment you bring the app to the front and back on when you switch away. It's ideal for apps that should be snappy while you use them but quiet otherwise.
 
 How it works: AppWrangler lets the app run for part of each short cycle (50 ms by default) and pauses it for the rest, adjusting the split continuously to hit your target. A heavily limited app may feel less smooth; if that bothers you, try *Efficiency cores only* instead.
 
@@ -113,6 +150,7 @@ The action happens once each time the app goes over the limit. It can trigger ag
 Separate from the per-app limit: this decides what happens to an app when **the whole Mac** runs short of memory, i.e. when macOS reports memory pressure.
 
 - **Freeze until memory frees up** suspends the app while pressure is high, and resumes it automatically when it eases.
+- The app you're using, and any app playing or recording audio, is never frozen or quit for this. Only background apps are.
 - **Quit app** quits it once.
 
 By default this happens at *critical* pressure. In Settings → General you can make it happen earlier, at *warning* pressure.
@@ -178,6 +216,42 @@ Each app is suggested at most once an hour. Turn alerts off, or change the thres
 
 ---
 
+## Impact
+
+**Settings → Impact** shows what AppWrangler has achieved, and what it cost to run, for **Today**, **7 days** or **30 days**. The same numbers are available from `appwrangler stats` and the [MCP server](mcp.md). The panel footer shows "saved … today".
+
+**How it helped:**
+
+| Number | How it's measured |
+|---|---|
+| **CPU time saved** | While an app is held back, the limiter measures how much CPU it *wanted* and how much it *got*; the difference adds up. A frozen app is credited with the CPU it was using when frozen. Shown in core-minutes or core-hours (1 core-hour = one core busy for an hour). |
+| **Energy saved (est.)** | CPU saved × that app's own measured watts per core (1.5 W/core until it's been measured). On a MacBook it's also shown as a share of a full battery. |
+| **Apps held back** | Time apps wanted more than their limit. |
+| **Apps frozen / on efficiency cores** | Time spent in those states. |
+| **Memory freed** | Memory released by memory-limit *Quit/Force quit* actions. |
+| **Actions** | Memory-limit actions, low-memory actions and runaway alerts. |
+
+A daily bar chart shows CPU time saved per day.
+
+**What AppWrangler cost:**
+- its average CPU use and total CPU time;
+- its memory (average and peak);
+- **limit accuracy:** how closely held-back apps stayed at their limit, e.g. ±1.5%;
+- an **efficiency ratio:** "saved N× more CPU time than it used".
+
+These are measured only while AppWrangler is actively watching or limiting apps. When there's nothing to do, it doesn't run at all.
+
+**Per app:**
+- CPU and energy saved;
+- average **wanted → allowed** CPU;
+- time held back and frozen.
+
+Statistics are kept for 35 days in `stats.json` next to your rules, and are written every 30 seconds and on quit. **Reset Statistics…** clears them.
+
+> These are estimates. "Wanted" comes from the limiter's measurement of how much the app uses whenever it's allowed to run. An app that would have finished its work sooner isn't modelled, so treat the numbers as a good indication rather than an exact meter.
+
+---
+
 ## Settings window
 
 **App Rules:** every rule, including ones for apps that aren't running.
@@ -224,6 +298,7 @@ Each app is suggested at most once an hour. Turn alerts off, or change the thres
 | What | Where |
 |---|---|
 | Rules | `~/Library/Application Support/AppWrangler/rules.json` (plain JSON; edits apply immediately) |
+| Impact statistics | `~/Library/Application Support/AppWrangler/stats.json` (35 days) |
 | Status for the CLI | `~/Library/Application Support/AppWrangler/state.json` |
 | Preferences | `defaults read io.github.intarso.AppWrangler` |
 

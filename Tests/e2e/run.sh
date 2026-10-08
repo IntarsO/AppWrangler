@@ -8,6 +8,10 @@
 #
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+# Measurements assume normal scheduling. If whatever launched us runs on
+# efficiency cores (e.g. an AppWrangler E-cores rule on your terminal app), we'd
+# inherit that; opt this script and everything it starts out of it.
+taskpolicy -B -p $$ 2>/dev/null || true
 ROOT="$PWD"
 APP_BIN="$ROOT/build/AppWrangler.app/Contents/MacOS/AppWrangler"
 [ -x "$APP_BIN" ] || ./build.sh >/dev/null
@@ -58,7 +62,7 @@ cli()  { "$APP_BIN" "$@" >/dev/null; }
 
 start_app() {
 	# Argument-domain defaults keep the test from prompting for notifications.
-	"$APP_BIN" -AWNotifications NO -AWRunawayEnabled NO >>"$WORK/app.log" 2>&1 &
+	"$APP_BIN" -AWHeadless YES -AWNotifications NO -AWRunawayEnabled NO -AWStatsFlushSeconds 1 -AWAutoEfficiencyAfter 2 -AWAutoScope io.github.intarso.AppWrangler.e2e >>"$WORK/app.log" 2>&1 &
 	APP=$!
 	for _ in $(seq 50); do [ -f "$APPWRANGLER_DATA_DIR/state.json" ] && return 0; sleep 0.1; done
 	return 1
@@ -99,6 +103,11 @@ t=$(time_until_below "$B" 0.9)
 sleep 1.5
 v=$(cpu 2 "$B")
 between "$v" 0.38 0.62 && ok "holds 50% limit: $v cores" || bad "50% limit measured $v"
+
+sleep 2
+saved=$("$APP_BIN" stats today --json | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["apps"] if x["name"]=="e2e-burner"]; print(round(a[0]["savedCPUSeconds"],1) if a else 0, round(a[0]["heldBackSeconds"]) if a else 0, d["self"]["uptimeSeconds"] > 0)')
+read sv hb up <<<"$saved"
+awk -v s="$sv" 'BEGIN{exit !(s>3)}' && [ "$up" = True ] && ok "impact stats: ${sv} core-s saved while held back ${hb}s (appwrangler stats)" || bad "impact stats not recorded: $saved"
 
 cli limit e2e-burner 150
 sleep 2.5
@@ -158,7 +167,14 @@ for _ in $(seq 40); do
 done
 PIDS+=("$hog_main" "$hog_helper")
 "$APP_BIN" list | grep -q "E2EHog +1" && ok "real app is grouped with its in-bundle helper" || bad "E2EHog not grouped with helper"
+pri() { ps -o pri= -p "$1" | tr -d ' '; }
+on_e=no
+for _ in $(seq 40); do [ "$(pri "$hog_main")" = 4 ] && [ "$(pri "$hog_helper")" = 4 ] && { on_e=yes; break; }; sleep 0.25; done
+[ "$on_e" = yes ] && ok "Auto mode moved the background app + helper to efficiency cores" || bad "Auto didn't apply E-cores (pri $(pri "$hog_main")/$(pri "$hog_helper"))"
+"$APP_BIN" status | grep -q "Auto mode: on" && ok "status reports Auto mode: $("$APP_BIN" status | grep 'Auto mode' | cut -c12-)" || bad "status lacks Auto mode"
 cli limit E2EHog 50
+sleep 1.5
+[ "$(pri "$hog_main")" != 4 ] && ok "a manual rule takes over from Auto (E-cores released: pri $(pri "$hog_main"))" || bad "Auto E-cores kept despite manual rule"
 sleep 2
 v=$(cpu 2 "$hog_main" "$hog_helper")
 between "$v" 0.38 0.62 && ok "bundle-ID rule limits a menu bar app + helper launched later: $v cores" || bad "bundle-ID rule on real app measured $v"
@@ -169,6 +185,22 @@ for _ in $(seq 40); do kill -0 "$hog_main" 2>/dev/null || { gone=yes; break; }; 
 [ "$gone" = yes ] && ok "memory limit → Quit closed the real app (helper held 300 MB)" || bad "app not quit by memory limit"
 sleep 0.5
 kill -0 "$hog_helper" 2>/dev/null && bad "helper left running after quit" || ok "its helper exited with it"
+
+# --- MCP server (what Claude / OpenAI tools talk to) ----------------------------
+mcp() {
+	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}' \
+		'{"jsonrpc":"2.0","method":"notifications/initialized"}' "$@" | "$APP_BIN" mcp 2>/dev/null
+}
+reply=$(mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_cpu_limit","arguments":{"app":"e2e-burner","percent":70}}}')
+echo "$reply" | grep -q '"id":2' && ok "MCP server answers over stdio" || bad "no MCP reply: $reply"
+sleep 2.5
+v=$(cpu 2 "$B")
+between "$v" 0.55 0.85 && ok "limit set through MCP is enforced by the running app: $v cores" || bad "MCP limit measured $v"
+stats=$(mcp '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_impact_stats","arguments":{"period":"today"}}}')
+echo "$stats" | grep '"id":3' | python3 -c 'import json,sys; r=json.loads(sys.stdin.read())["result"]["structuredContent"]; sys.exit(0 if r["savedCPUSeconds"]>0 and r["self"]["uptimeSeconds"]>0 else 1)' \
+	&& ok "MCP get_impact_stats reports savings and AppWrangler's own cost" || bad "MCP stats missing"
+ro=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$APP_BIN" mcp --read-only 2>/dev/null)
+echo "$ro" | grep -q set_cpu_limit && bad "read-only MCP exposes changing tools" || ok "mcp --read-only exposes only audit tools"
 
 # --- Removal, persistence, crash safety -----------------------------------------
 cli unlimit e2e-burner

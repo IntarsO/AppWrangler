@@ -37,6 +37,27 @@ enum Fmt {
 		bytesPerSecond < 1024 ? L("0 KB/s") : ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file) + L("/s")
 	}
 
+	/// CPU time in core-seconds → "12 core-min" / "3.4 core-h".
+	static func coreTime(_ coreSeconds: Double) -> String {
+		if coreSeconds < 60 { return L("%d core-s", Int(coreSeconds.rounded())) }
+		if coreSeconds < 3600 { return L("%d core-min", Int((coreSeconds / 60).rounded())) }
+		return L("%@ core-h", String(format: "%.1f", coreSeconds / 3600))
+	}
+
+	static func duration(_ seconds: Double) -> String {
+		let f = DateComponentsFormatter()
+		f.unitsStyle = .abbreviated
+		f.maximumUnitCount = 2
+		f.allowedUnits = seconds >= 3600 ? [.day, .hour, .minute] : [.minute, .second]
+		return f.string(from: max(0, seconds)) ?? "0"
+	}
+
+	/// Joules → "120 mWh" / "3.2 Wh".
+	static func energy(_ joules: Double) -> String {
+		let wh = joules / 3600
+		return wh < 1 ? String(format: "%.0f mWh", wh * 1000) : String(format: "%.1f Wh", wh)
+	}
+
 	static func watts(_ w: Double) -> String {
 		w < 0.1 ? String(format: "%.0f mW", w * 1000) : String(format: "%.1f W", w)
 	}
@@ -96,6 +117,24 @@ enum Prefs {
 	static let runawayMinutes = "AWRunawayMinutes"
 	static let pressureLevel = "AWPressureLevel"
 	static let hotKeyEnabled = "AWHotKeyEnabled"
+	static let statsFlushSeconds = "AWStatsFlushSeconds"
+	static let autoEnabled = "AWAutoEnabled"
+	static let autoEfficiencyAfter = "AWAutoEfficiencyAfter"
+	static let autoUseEfficiency = "AWAutoUseEfficiency"
+	static let autoShareCPU = "AWAutoShareCPU"
+	static let autoBusyPercent = "AWAutoBusyPercent"
+
+	static var autoSettings: AutoSettings {
+		let d = UserDefaults.standard
+		var s = AutoSettings()
+		s.enabled = d.bool(forKey: autoEnabled)
+		s.efficiencyAfter = max(0, d.double(forKey: autoEfficiencyAfter))
+		s.useEfficiencyCores = d.bool(forKey: autoUseEfficiency)
+		s.shareCPU = d.bool(forKey: autoShareCPU)
+		s.busyThreshold = min(max(d.double(forKey: autoBusyPercent), 5), 100) / 100
+		s.busyThresholdOnBattery = min(s.busyThreshold, 0.5)
+		return s
+	}
 
 	static func register() {
 		UserDefaults.standard.register(defaults: [
@@ -112,6 +151,12 @@ enum Prefs {
 			runawayMinutes: 3,
 			pressureLevel: 4,
 			hotKeyEnabled: true,
+			statsFlushSeconds: 30,
+			autoEnabled: true,
+			autoEfficiencyAfter: 30,
+			autoUseEfficiency: true,
+			autoShareCPU: true,
+			autoBusyPercent: 75,
 		])
 	}
 }
@@ -137,8 +182,10 @@ struct AppState: Codable {
 	var pid: Int32
 	var paused: Bool
 	var frozen: [String]
-	/// Apps currently flagged as using lots of CPU in the background.
+	/// Apps currently flagged as using a lot of CPU in the background.
 	var runaway: [String]? = nil
+	/// Auto mode, e.g. "on — 9 apps: 2 in use, 6 on efficiency cores, 0 capped".
+	var auto: String? = nil
 	var updated: Date
 
 	static var url: URL { DataDirectory.url.appendingPathComponent("state.json") }

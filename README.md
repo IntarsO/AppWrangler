@@ -25,6 +25,7 @@ AppWrangler shows **every running app and process** with a plain-language explan
 
 | | |
 |---|---|
+| 🪄 **Auto mode** | On by default. The app you're using runs at full speed. Background apps move to efficiency cores, and only when your Mac is busy do they share the CPU fairly, so everything stays usable. |
 | 🎛 **CPU limit** | Cap an app *and all of its helper processes* (Chrome tabs, Electron helpers, Safari web content…) at any share of the CPU. Optionally limit it only while it's in the background. |
 | 🍃 **Efficiency cores only** | Move an app onto the Apple Silicon E-cores, with slower disk and network access. It stays usable while saving battery and heat. |
 | 🧠 **Memory limit** | When an app's memory stays above your limit, get notified, or freeze, quit or force-quit it. |
@@ -32,7 +33,9 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | ⏱ **Conditions** | Make any rule apply only on battery or on the charger, in Low Power Mode, when the Mac is hot, or during set hours and days. |
 | 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — with *Limit*, *E-cores* and *Ignore* buttons. |
 | ❄️ **Freeze, quit, force quit** | Suspend any app instantly and resume it later. |
-| ⌨️ **Command line** | `appwrangler limit Slack 30`, `appwrangler list`, … for scripts and power users. |
+| 📊 **Impact & efficiency** | See how much CPU time and battery it saved — per app, per day — and what AppWrangler itself cost to run. |
+| 🤖 **AI assistants (MCP)** | Let Claude, OpenAI Codex or your own agents audit your Mac, analyse the savings and suggest (or, with your OK, apply) better limits. |
+| ⌨️ **Command line** | `appwrangler limit Slack 30`, `appwrangler stats`, … for scripts and power users. |
 
 It uses about 0.1–0.3% of one core, and nothing at all when there's nothing to do. It never connects to the network.
 
@@ -49,6 +52,7 @@ It uses about 0.1–0.3% of one core, and nothing at all when there's nothing to
 - [Getting Started](docs/getting-started.md): install, first limit, launch at login, uninstall
 - [User Guide](docs/user-guide.md): every feature and setting explained
 - [Command-line reference](docs/cli.md)
+- [AI assistants via MCP](docs/mcp.md): Claude Desktop, Claude Code, OpenAI Codex, Agents SDK
 - [FAQ & Troubleshooting](docs/faq.md)
 - [How it works](docs/how-it-works.md): architecture, for the curious and for contributors
 

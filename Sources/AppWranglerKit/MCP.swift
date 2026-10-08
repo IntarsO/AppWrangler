@@ -1,0 +1,385 @@
+//
+//  MCP.swift
+//  AppWrangler
+//  SPDX-License-Identifier: GPL-2.0-only
+//
+//  Model Context Protocol server: lets AI assistants (Claude Desktop, Claude
+//  Code, OpenAI Codex, the OpenAI Agents SDK, …) audit what's running, analyse
+//  AppWrangler's impact, and propose or apply limits.
+//
+//      AppWrangler mcp              all tools (clients ask you before each change)
+//      AppWrangler mcp --read-only  audit/analysis tools only
+//
+//  Transport: JSON-RPC 2.0, one message per line on stdin/stdout. Logs go to stderr.
+//
+
+import AppKit
+
+final class MCPServer {
+	static let supportedVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
+
+	let readOnly: Bool
+	private let directory: URL
+	private let runningApps: () -> [RunningApp]
+	private let postToApp: (String, String?) -> Bool
+	private let sampleSeconds: Double
+
+	init(readOnly: Bool, directory: URL = DataDirectory.url,
+		 runningApps: @escaping () -> [RunningApp] = { Array(RunningApps.collect().values) },
+		 postToApp: @escaping (String, String?) -> Bool = CLI.postToApp,
+		 sampleSeconds: Double = 1) {
+		self.readOnly = readOnly
+		self.directory = directory
+		self.runningApps = runningApps
+		self.postToApp = postToApp
+		self.sampleSeconds = sampleSeconds
+	}
+
+	// MARK: Entry point
+
+	/// Run over stdin/stdout until stdin closes.
+	static func serve(readOnly: Bool) -> Never {
+		let server = MCPServer(readOnly: readOnly)
+		FileHandle.standardError.write("AppWrangler MCP server ready (\(readOnly ? "read-only" : "full access")).\n".data(using: .utf8)!)
+		// Read on a background thread; handle on the main thread so NSWorkspace's
+		// running-apps list keeps updating between requests.
+		Thread.detachNewThread {
+			while let line = readLine(strippingNewline: true) {
+				let semaphore = DispatchSemaphore(value: 0)
+				DispatchQueue.main.async {
+					if let reply = server.handle(line) {
+						FileHandle.standardOutput.write((reply + "\n").data(using: .utf8)!)
+					}
+					semaphore.signal()
+				}
+				semaphore.wait()
+			}
+			exit(0)
+		}
+		RunLoop.main.run()
+		exit(0)
+	}
+
+	// MARK: JSON-RPC
+
+	/// Handle one line; returns the response line, or nil for notifications.
+	func handle(_ line: String) -> String? {
+		let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmed.isEmpty else { return nil }
+		guard let data = trimmed.data(using: .utf8),
+			  let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+			return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "Parse error"]])
+		}
+		let id = message["id"]
+		guard let method = message["method"] as? String else {
+			if let id { return error(id, -32600, "Invalid request") }
+			return nil
+		}
+		let params = message["params"] as? [String: Any] ?? [:]
+		// Notifications (no id) get no reply.
+		guard let id else { return nil }
+
+		switch method {
+		case "initialize":
+			let requested = params["protocolVersion"] as? String ?? ""
+			let version = Self.supportedVersions.contains(requested) ? requested : Self.supportedVersions[0]
+			return result(id, [
+				"protocolVersion": version,
+				"capabilities": ["tools": ["listChanged": false], "prompts": ["listChanged": false]],
+				"serverInfo": ["name": "appwrangler", "title": "AppWrangler",
+							   "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"],
+				"instructions": Self.instructions(readOnly: readOnly),
+			])
+		case "ping":
+			return result(id, [:])
+		case "tools/list":
+			return result(id, ["tools": tools.map(\.descriptor)])
+		case "tools/call":
+			guard let name = params["name"] as? String, let tool = tools.first(where: { $0.name == name }) else {
+				return error(id, -32602, "Unknown tool: \(params["name"] as? String ?? "?")")
+			}
+			let args = params["arguments"] as? [String: Any] ?? [:]
+			let outcome = tool.run(args)
+			var body: [String: Any] = ["content": [["type": "text", "text": outcome.text]], "isError": outcome.isError]
+			if let structured = outcome.structured { body["structuredContent"] = structured }
+			return result(id, body)
+		case "prompts/list":
+			return result(id, ["prompts": Self.prompts.map(\.descriptor)])
+		case "prompts/get":
+			guard let name = params["name"] as? String, let prompt = Self.prompts.first(where: { $0.name == name }) else {
+				return error(id, -32602, "Unknown prompt")
+			}
+			let args = params["arguments"] as? [String: String] ?? [:]
+			return result(id, ["description": prompt.description,
+							   "messages": [["role": "user", "content": ["type": "text", "text": prompt.text(args)]]]])
+		default:
+			return error(id, -32601, "Method not found: \(method)")
+		}
+	}
+
+	private func result(_ id: Any, _ value: [String: Any]) -> String {
+		encode(["jsonrpc": "2.0", "id": id, "result": value])
+	}
+
+	private func error(_ id: Any, _ code: Int, _ message: String) -> String {
+		encode(["jsonrpc": "2.0", "id": id, "error": ["code": code, "message": message]])
+	}
+
+	private func encode(_ object: [String: Any]) -> String {
+		let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+		return String(decoding: data, as: UTF8.self)
+	}
+
+	// MARK: Tools
+
+	struct Outcome {
+		var text: String
+		var structured: [String: Any]?
+		var isError = false
+	}
+
+	struct Tool {
+		let name: String
+		let title: String
+		let description: String
+		let properties: [String: Any]
+		let required: [String]
+		let readOnly: Bool
+		let destructive: Bool
+		let run: ([String: Any]) -> Outcome
+
+		var descriptor: [String: Any] {
+			[
+				"name": name, "title": title, "description": description,
+				"inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false],
+				"annotations": ["title": title, "readOnlyHint": readOnly, "destructiveHint": destructive,
+								"idempotentHint": readOnly || !destructive, "openWorldHint": false],
+			]
+		}
+	}
+
+	private func store() -> RuleStore {
+		RuleStore(directory: directory, defaults: Migration.legacyDefaults)
+	}
+
+	/// Run a CLI command against a fresh rule store and capture its output.
+	private func cli(_ args: [String]) -> Outcome {
+		let s = store()
+		var lines: [String] = []
+		let code = CLI.run(args, store: s, apps: runningApps(), print: { lines.append($0) }, postToApp: postToApp)
+		s.saveNow()
+		let text = lines.joined(separator: "\n").replacingOccurrences(of: "  (AppWrangler isn't running — applies when it starts)", with: " (AppWrangler isn't running; applies when it starts)")
+		return Outcome(text: text.isEmpty ? (code == 0 ? "Done." : "Failed.") : text, isError: code != 0)
+	}
+
+	private static let appProperty: [String: Any] = [
+		"type": "string",
+		"description": "App name (\"Google Chrome\"), bundle ID (com.google.Chrome), process name (node), path, or pattern (\"*Helper*\").",
+	]
+
+	private lazy var tools: [Tool] = {
+		var all: [Tool] = [
+			Tool(name: "get_status", title: "AppWrangler status",
+				 description: "Whether AppWrangler is running, paused, what's frozen or flagged as a runaway, the Mac's chip, cores and memory, and battery/thermal/memory-pressure state.",
+				 properties: [:], required: [], readOnly: true, destructive: false) { [unowned self] _ in
+				let status = Reports.status(store: self.store())
+				return Outcome(text: Reports.json(status), structured: status)
+			},
+			Tool(name: "list_apps", title: "List running apps",
+				 description: "Measure running apps for about a second and return each one's CPU %, memory, energy, disk I/O, helper count, a plain description of what it is, how safe it is to limit, and its current rule. Sorted by CPU.",
+				 properties: ["include_processes": ["type": "boolean", "description": "Also include command-line tools and background processes (default false)."],
+							  "limit": ["type": "integer", "minimum": 1, "maximum": 500, "description": "Return at most this many (default 40)."]],
+				 required: [], readOnly: true, destructive: false) { [unowned self] args in
+				let rows = Reports.apps(store: self.store(), apps: self.runningApps(),
+										includeProcesses: args["include_processes"] as? Bool ?? false,
+										limit: args["limit"] as? Int ?? 40, seconds: self.sampleSeconds)
+				return Outcome(text: Reports.json(rows), structured: ["apps": rows])
+			},
+			Tool(name: "explain_app", title: "Explain an app",
+				 description: "What a running app or process is, who makes it, whether it's safe to limit, its current usage and rule.",
+				 properties: ["app": Self.appProperty], required: ["app"], readOnly: true, destructive: false) { [unowned self] args in
+				let target = (args["app"] as? String ?? "").lowercased()
+				let rows = Reports.apps(store: self.store(), apps: self.runningApps(), includeProcesses: true, seconds: self.sampleSeconds)
+				let matches = rows.filter {
+					($0["name"] as? String)?.lowercased() == target || ($0["bundleID"] as? String)?.lowercased() == target
+						|| ($0["name"] as? String)?.lowercased().contains(target) == true
+				}
+				guard !matches.isEmpty else { return Outcome(text: "No running app or process matches \"\(target)\".", isError: true) }
+				return Outcome(text: Reports.json(Array(matches.prefix(5))), structured: ["matches": Array(matches.prefix(5))])
+			},
+			Tool(name: "get_impact_stats", title: "Impact statistics",
+				 description: "What AppWrangler achieved and cost: CPU time and estimated energy saved, time apps were held back/frozen/on E-cores, actions taken, AppWrangler's own CPU and memory, efficiency ratio, limit accuracy, per-app and per-day breakdowns. Savings are estimates.",
+				 properties: ["period": ["type": "string", "enum": ["today", "week", "month"], "description": "Default week."]],
+				 required: [], readOnly: true, destructive: false) { [unowned self] args in
+				let days = ["today": 1, "week": 7, "month": 30][args["period"] as? String ?? "week"] ?? 7
+				let stats = Reports.stats(directory: self.directory, days: days)
+				return Outcome(text: Reports.json(stats), structured: stats)
+			},
+			Tool(name: "list_rules", title: "List rules",
+				 description: "All saved per-app rules (limits, conditions, actions), including for apps that aren't running.",
+				 properties: [:], required: [], readOnly: true, destructive: false) { [unowned self] _ in
+				let rules = Reports.rules(store: self.store())
+				return Outcome(text: Reports.json(rules), structured: ["rules": rules])
+			},
+		]
+		guard !readOnly else { return all }
+		all += [
+			Tool(name: "set_cpu_limit", title: "Set CPU limit",
+				 description: "Cap an app's CPU (and its helpers'). 100 = one full core. Applies immediately and whenever the app runs.",
+				 properties: ["app": Self.appProperty,
+							  "percent": ["type": "number", "minimum": 1, "description": "Limit in percent of one core."],
+							  "background_only": ["type": "boolean", "description": "Only limit while the app isn't frontmost."]],
+				 required: ["app", "percent"], readOnly: false, destructive: false) { [unowned self] args in
+				var cli = ["limit", args["app"] as? String ?? "", self.number(args["percent"])]
+				if args["background_only"] as? Bool == true { cli.append("--background-only") }
+				return self.cli(cli)
+			},
+			Tool(name: "set_efficiency_cores", title: "Efficiency cores only",
+				 description: "Run an app on the efficiency cores with throttled disk/network I/O (saves energy, never pauses the app).",
+				 properties: ["app": Self.appProperty, "enabled": ["type": "boolean"]],
+				 required: ["app", "enabled"], readOnly: false, destructive: false) { [unowned self] args in
+				self.cli(["ecores", args["app"] as? String ?? "", (args["enabled"] as? Bool ?? true) ? "on" : "off"])
+			},
+			Tool(name: "set_memory_limit", title: "Set memory limit",
+				 description: "When the app's memory footprint stays above the limit: notify, freeze, quit or forcequit. Omit megabytes to remove the limit.",
+				 properties: ["app": Self.appProperty,
+							  "megabytes": ["type": "number", "minimum": 16],
+							  "action": ["type": "string", "enum": ["notify", "freeze", "quit", "forcequit"], "description": "Default notify."]],
+				 required: ["app"], readOnly: false, destructive: true) { [unowned self] args in
+				guard args["megabytes"] != nil else { return self.cli(["memlimit", args["app"] as? String ?? "", "off"]) }
+				return self.cli(["memlimit", args["app"] as? String ?? "", self.number(args["megabytes"]), args["action"] as? String ?? "notify"])
+			},
+			Tool(name: "set_low_memory_action", title: "Low-memory action",
+				 description: "What to do with the app when the whole Mac runs low on memory: none, freeze (resumed when memory frees up) or quit.",
+				 properties: ["app": Self.appProperty, "action": ["type": "string", "enum": ["none", "freeze", "quit"]]],
+				 required: ["app", "action"], readOnly: false, destructive: true) { [unowned self] args in
+				self.cli(["lowmem", args["app"] as? String ?? "", args["action"] as? String ?? "none"])
+			},
+			Tool(name: "set_rule_conditions", title: "Set rule conditions",
+				 description: "Restrict when an app's existing rule applies: power source, Low Power Mode, when the Mac is hot, and/or a daily schedule.",
+				 properties: ["app": Self.appProperty,
+							  "power": ["type": "string", "enum": ["any", "battery", "charger"]],
+							  "low_power_mode_only": ["type": "boolean"],
+							  "hot_only": ["type": "boolean"],
+							  "schedule": ["type": "object", "description": "Omit to leave unchanged; {\"enabled\": false} to remove.",
+										   "properties": ["enabled": ["type": "boolean"],
+														  "start": ["type": "string", "pattern": "^\\d{1,2}:\\d{2}$"],
+														  "end": ["type": "string", "pattern": "^\\d{1,2}:\\d{2}$"],
+														  "weekdays": ["type": "array", "items": ["type": "integer", "minimum": 1, "maximum": 7],
+																	   "description": "1 = Sunday … 7 = Saturday; empty = every day."]]]],
+				 required: ["app"], readOnly: false, destructive: false) { [unowned self] args in
+				self.setConditions(args)
+			},
+			Tool(name: "set_rule_enabled", title: "Enable or disable a rule",
+				 description: "Turn an app's rule on or off without deleting it.",
+				 properties: ["app": Self.appProperty, "enabled": ["type": "boolean"]],
+				 required: ["app", "enabled"], readOnly: false, destructive: false) { [unowned self] args in
+				self.cli([(args["enabled"] as? Bool ?? true) ? "enable" : "disable", args["app"] as? String ?? ""])
+			},
+			Tool(name: "remove_rule", title: "Remove rule",
+				 description: "Delete an app's rule; its limits are lifted immediately.",
+				 properties: ["app": Self.appProperty], required: ["app"], readOnly: false, destructive: true) { [unowned self] args in
+				self.cli(["unlimit", args["app"] as? String ?? ""])
+			},
+			Tool(name: "freeze_app", title: "Freeze or unfreeze an app",
+				 description: "Suspend a running app and its helpers now (frozen = 0 CPU, memory kept), or resume it. Needs AppWrangler running.",
+				 properties: ["app": Self.appProperty, "frozen": ["type": "boolean"]],
+				 required: ["app", "frozen"], readOnly: false, destructive: true) { [unowned self] args in
+				self.cli([(args["frozen"] as? Bool ?? true) ? "freeze" : "unfreeze", args["app"] as? String ?? ""])
+			},
+			Tool(name: "set_auto_mode", title: "Auto mode on/off",
+				 description: "Auto mode keeps the focused app (and anything playing/recording audio) at full speed, moves other apps to efficiency cores after 30 s in the background, and shares the CPU fairly between background apps only when the Mac is busy. Apps with their own CPU/E-core rule are not affected.",
+				 properties: ["enabled": ["type": "boolean"]], required: ["enabled"], readOnly: false, destructive: false) { [unowned self] args in
+				self.cli(["auto", (args["enabled"] as? Bool ?? true) ? "on" : "off"])
+			},
+			Tool(name: "pause_limits", title: "Pause or resume all limits",
+				 description: "Pause all CPU limits (frozen apps stay frozen) or resume them. Needs AppWrangler running.",
+				 properties: ["paused": ["type": "boolean"]], required: ["paused"], readOnly: false, destructive: false) { [unowned self] args in
+				self.cli([(args["paused"] as? Bool ?? true) ? "pause" : "resume"])
+			},
+		]
+		return all
+	}()
+
+	private func number(_ value: Any?) -> String {
+		if let i = value as? Int { return String(i) }
+		if let d = value as? Double { return String(d) }
+		if let s = value as? String { return s }
+		return ""
+	}
+
+	private func setConditions(_ args: [String: Any]) -> Outcome {
+		let s = store()
+		let target = (args["app"] as? String ?? "").lowercased()
+		guard var rule = s.rules.first(where: { $0.displayName.lowercased() == target || $0.matchValue.lowercased() == target }) else {
+			return Outcome(text: "No rule for \"\(target)\". Create one first (e.g. set_cpu_limit).", isError: true)
+		}
+		if let p = args["power"] as? String {
+			guard let power = PowerCondition(rawValue: p) else { return Outcome(text: "power must be any, battery or charger", isError: true) }
+			rule.conditions.power = power
+		}
+		if let v = args["low_power_mode_only"] as? Bool { rule.conditions.lowPowerModeOnly = v }
+		if let v = args["hot_only"] as? Bool { rule.conditions.hotOnly = v }
+		if let sched = args["schedule"] as? [String: Any] {
+			func minutes(_ text: Any?) -> Int? {
+				guard let t = text as? String else { return nil }
+				let parts = t.split(separator: ":").compactMap { Int($0) }
+				guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+				return parts[0] * 60 + parts[1]
+			}
+			rule.conditions.schedule.enabled = sched["enabled"] as? Bool ?? true
+			if sched["start"] != nil {
+				guard let m = minutes(sched["start"]) else { return Outcome(text: "start must be HH:MM", isError: true) }
+				rule.conditions.schedule.start = m
+			}
+			if sched["end"] != nil {
+				guard let m = minutes(sched["end"]) else { return Outcome(text: "end must be HH:MM", isError: true) }
+				rule.conditions.schedule.end = m
+			}
+			if let days = sched["weekdays"] as? [Int] { rule.conditions.schedule.weekdays = Set(days.filter { (1...7).contains($0) }) }
+		}
+		s.upsert(rule)
+		s.saveNow()
+		return Outcome(text: "\(rule.displayName): \(rule.summary)", structured: ["rule": rule.displayName, "summary": rule.summary])
+	}
+
+	// MARK: Prompts
+
+	struct Prompt {
+		let name: String
+		let description: String
+		let arguments: [[String: Any]]
+		let text: ([String: String]) -> String
+		var descriptor: [String: Any] { ["name": name, "description": description, "arguments": arguments] }
+	}
+
+	static let prompts: [Prompt] = [
+		Prompt(name: "audit_mac", description: "Audit this Mac's resource use and how well AppWrangler's rules are working, and suggest improvements.",
+			   arguments: [["name": "focus", "description": "battery, performance or memory (optional)", "required": false]]) { args in
+			let focus = args["focus"].map { " Focus on \($0)." } ?? ""
+			return """
+			Audit my Mac's resource usage with AppWrangler.\(focus)
+			1. Call get_status, list_apps (include_processes: true), list_rules and get_impact_stats (period: week).
+			2. Identify what uses the most CPU, memory and energy — especially in the background — and explain in plain words what each of those apps is.
+			3. Judge whether my existing rules are working: compare wanted vs allowed CPU, time held back, savings, and AppWrangler's own cost and limit accuracy.
+			4. Recommend specific changes (new limits, efficiency cores, memory or low-memory actions, conditions such as "only on battery"), each with the reason and expected benefit. Avoid apps marked protected, and be careful with ones marked caution.
+			Don't apply any change until I confirm.
+			"""
+		},
+		Prompt(name: "explain_impact", description: "Summarise in plain words what AppWrangler has saved and what it cost.",
+			   arguments: [["name": "period", "description": "today, week or month", "required": false]]) { args in
+			"Call get_impact_stats (period: \(args["period"] ?? "week")) and explain in plain words what AppWrangler saved (CPU time, estimated energy, battery share), which apps benefited most, what it cost to run, and how efficient it was. Mention that savings are estimates."
+		},
+	]
+
+	static func instructions(readOnly: Bool) -> String {
+		"""
+		AppWrangler limits per-app CPU, runs apps on efficiency cores, and enforces memory limits on this Mac. \
+		Auto mode (see get_status → autoMode) keeps the focused app at full speed and manages background apps; \
+		prefer it over fixed limits that also apply while an app is in use. \
+		Use get_status, list_apps, explain_app, list_rules and get_impact_stats to audit and analyse. \
+		CPU percentages are per core (100 = one full core). Savings in get_impact_stats are estimates. \
+		\(readOnly ? "This server is read-only." : "Changes apply immediately to the running app; ask the user before changing rules, and never limit apps marked protected.")
+		"""
+	}
+}

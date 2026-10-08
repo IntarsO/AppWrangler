@@ -162,6 +162,8 @@ import Testing
 		r.cpuLimit = 25
 		r.backgroundMode = true
 		r.conditions.power = .battery
+		#expect(r.summary == "CPU 25% · E-cores · background only — on battery")
+		r.onlyWhenInactive = false
 		#expect(r.summary == "CPU 25% · E-cores — on battery")
 	}
 }

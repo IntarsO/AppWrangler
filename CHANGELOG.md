@@ -4,11 +4,29 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+- *Only while the app is in the background* now covers efficiency cores as well as the CPU limit, is on by default for new rules, and is shown at the top of the rule editor with a warning when off. Rule summaries say "background only".
+- The limiter measures apps under their limit every 250 ms and held-back apps every 100 ms (was every 50 ms), cutting AppWrangler's own CPU use roughly in half with many rules.
+
 ### Fixed
+- Low-memory freeze/quit no longer hits the app you're using or one playing/recording audio, only background apps.
+- An app you're using is forced back to full speed even if an earlier AppWrangler (or anything else) left it on the efficiency cores.
+- If AppWrangler crashes or is killed, apps it moved to efficiency cores are now restored too, not only paused apps.
 - Rules matched by bundle ID didn't apply to menu bar / background apps (`LSUIElement`) launched after AppWrangler started, because macOS doesn't announce those launches. AppWrangler now watches the running-apps list directly.
 - Runaway-CPU suggestions now clear once the app quits or gets a rule, instead of lingering in the panel.
+- Turning off *Efficiency cores only* now also restores processes the app had started while in efficiency mode, since macOS passes the policy on to children (e.g. shells and builds started from a terminal or AI-coding app).
+- The test scripts opt out of any inherited efficiency-core policy, so timing measurements are reliable however they're launched.
 
 ### Added
+- **Auto mode** (on by default):
+  - the focused app, a just-left app (15 s grace) and apps playing or recording audio always run at full speed;
+  - other apps move to efficiency cores after 30 s in the background;
+  - only when the Mac is busy (75%, or 50% on battery) do background apps share the free CPU (max-min fairness with a per-app floor and a core kept free for the foreground).
+
+  Apps with their own CPU / E-core rule, ignored apps, processes and macOS services are left alone. Shown in the panel header and rows, in Settings → General, via `appwrangler auto on|off` and `status`, and via the MCP `set_auto_mode` tool.
+- **MCP server for AI assistants.** `AppWrangler mcp [--read-only]` lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK and other MCP clients audit running apps, analyse impact statistics, and propose or apply rules. It has 5 read-only and 9 approval-gated tools, plus `audit_mac` / `explain_impact` prompts. See docs/mcp.md.
+- **Impact statistics.** CPU time saved, estimated energy saved (also as % of battery), time apps were held back, frozen or on E-cores, and actions taken, per app and per day, kept for 35 days. Also AppWrangler's own CPU and memory, its efficiency ratio and limit accuracy. Shown in Settings → Impact (with a daily chart), the panel footer, and `appwrangler stats [today|week|month] [--json]`.
+- `-AWHeadless YES` runs without a menu bar icon; the end-to-end test uses it so its copy doesn't appear next to yours.
 - `appwrangler status` lists apps currently flagged as using a lot of CPU in the background.
 - End-to-end tests against a real menu bar app with an in-bundle helper: grouping, bundle-ID limits on an app launched later, and memory limit → Quit closing the app and its helper (23 checks).
 

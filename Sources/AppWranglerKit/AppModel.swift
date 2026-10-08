@@ -25,6 +25,11 @@ final class AppModel: ObservableObject {
 	let history = HistoryStore()
 	let runaway = RunawayDetector()
 	let system = SystemStateMonitor()
+	let stats = StatsStore()
+	let autoPilot = AutoPilot()
+	@Published private(set) var autoSummary = AutoSummary()
+	/// When each app pid was last frontmost (Auto's grace period).
+	private var lastActive: [pid_t: Date] = [:]
 
 	@Published private(set) var snapshot = Snapshot()
 	@Published private(set) var limiterStatus: [String: pk_lim_status] = [:]
@@ -60,6 +65,9 @@ final class AppModel: ObservableObject {
 		self.rules = rules
 		self.enforcer = Enforcer(controller: controller)
 		enforcer.onEvent = { [weak self] app, message, notify in self?.log.add(app, message, notify: notify) }
+		enforcer.onImpact = { [weak self] group, event in
+			self?.stats.record(event, key: ImpactKey.of(group), name: group.name)
+		}
 		log.notifier = { title, body in Notifier.shared.post(title: title, body: body) }
 	}
 
@@ -81,6 +89,7 @@ final class AppModel: ObservableObject {
 		ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
 			guard let self else { return }
 			let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+			if self.frontmostPid > 0 { self.lastActive[self.frontmostPid] = Date() }
 			self.frontmostPid = app?.processIdentifier ?? 0
 			self.reapply()	// "only while in background" rules switch instantly
 		}
@@ -122,7 +131,62 @@ final class AppModel: ObservableObject {
 
 		preferencesChanged()
 		writeState()
+		scheduleStatsFlush()
 		tick()
+	}
+
+	// MARK: Impact statistics
+
+	private var lastStatsTime: Date?
+	private var lastSelfCPU: (ns: UInt64, at: UInt64)?
+
+	/// Credit this interval's savings: throttled, frozen and E-core apps, plus our own cost.
+	private func recordImpact(_ snapshot: Snapshot, status: [String: pk_lim_status], state: SystemState) {
+		let now = Date()
+		defer { lastStatsTime = now }
+		guard let last = lastStatsTime else { return }
+		let dt = now.timeIntervalSince(last)
+		// A long gap means the Mac slept or we stalled: don't credit it.
+		guard dt > 0, dt <= max(10, (timerInterval ?? 2) * 3) else { return }
+
+		var ticks: [ImpactTick] = []
+		for group in snapshot.groups {
+			let frozen = enforcer.isFrozen(group.id)
+			let efficiency = enforcer.isInBackgroundMode(group)
+			var throttle: (Double, Double, Double)?
+			if !frozen, !paused, let st = status[group.id], let limit = enforcer.effectiveLimit[group.id] {
+				throttle = (st.usage_cores, st.demand_cores, limit)
+			}
+			guard throttle != nil || frozen || efficiency else { continue }
+			var tick = ImpactTick(key: ImpactKey.of(group), name: group.name)
+			tick.throttle = throttle
+			tick.frozenDemand = frozen ? (enforcer.frozenDemand[group.id] ?? 0) : nil
+			tick.efficiency = efficiency
+			tick.cpu = group.cpu
+			tick.power = group.power
+			ticks.append(tick)
+		}
+
+		var usage = pk_proc_usage()
+		var selfCPU = 0.0
+		var footprint: UInt64 = 0
+		if pk_proc_usage_get(getpid(), 0, &usage) == 0 {
+			footprint = usage.footprint
+			let t = pk_now_ns()
+			if let prev = lastSelfCPU, t > prev.at {
+				selfCPU = Double(usage.cpu_ns &- prev.ns) / Double(t - prev.at)
+			}
+			lastSelfCPU = (usage.cpu_ns, t)
+		}
+		stats.record(ticks, selfCPU: selfCPU, selfFootprint: footprint, dt: dt, at: now)
+	}
+
+	private func scheduleStatsFlush() {
+		let seconds = max(1, UserDefaults.standard.double(forKey: Prefs.statsFlushSeconds))
+		DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+			self?.stats.flush()
+			self?.scheduleStatsFlush()
+		}
 	}
 
 	// MARK: Visibility
@@ -149,13 +213,14 @@ final class AppModel: ObservableObject {
 		enforcer.pressureThreshold = d.integer(forKey: Prefs.pressureLevel) >= 4 ? 4 : 2
 		runaway.threshold = max(0.1, d.double(forKey: Prefs.runawayPercent) / 100)
 		runaway.duration = max(60, d.double(forKey: Prefs.runawayMinutes) * 60)
+		autoPilot.settings = Prefs.autoSettings
 		reschedule()
 	}
 
 	private var runawayEnabled: Bool { UserDefaults.standard.bool(forKey: Prefs.runawayEnabled) }
 
 	private var needsBackgroundSampling: Bool {
-		rules.rules.contains { $0.isActive } || !enforcer.frozen.isEmpty || runawayEnabled
+		rules.rules.contains { $0.isActive } || !enforcer.frozen.isEmpty || runawayEnabled || autoPilot.settings.enabled
 			|| UserDefaults.standard.bool(forKey: Prefs.menuBarCPU)
 	}
 
@@ -197,8 +262,44 @@ final class AppModel: ObservableObject {
 	private func reapply() {
 		var state = system.current
 		state.now = Date()
-		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid)
+		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
+		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto)
 		writeState()
+	}
+
+	/// Apps Auto may manage: real apps without their own CPU / E-core rule,
+	/// not ignored, not protected, not frozen.
+	private func autoEligible(_ snapshot: Snapshot) -> [AppGroup] {
+		let me = getpid()
+		// Test-only: `-AWAutoScope <bundle-id prefix>` keeps a test copy's Auto
+		// mode away from the user's real apps.
+		let scope = UserDefaults.standard.string(forKey: "AWAutoScope")
+		return snapshot.groups.filter { g in
+			guard g.kind == .app || g.kind == .background, g.ownerPid != me, !Protected.contains(g),
+				  !enforcer.isFrozen(g.id) else { return false }
+			if let scope, !(g.bundleID ?? "").hasPrefix(scope) { return false }
+			guard let rule = rules.rule(for: g) else { return true }
+			return !rule.ignored && !(rule.enabled && (rule.cpuLimitEnabled || rule.backgroundMode))
+		}
+	}
+
+	private func decideAuto(_ snapshot: Snapshot, state: SystemState, newSample: Bool) -> [String: AutoDecision] {
+		guard autoPilot.settings.enabled else {
+			if autoSummary != AutoSummary() { autoSummary = AutoSummary() }
+			return [:]
+		}
+		guard newSample else {
+			// Focus changed: recompute who's in use without counting a new load sample.
+			return autoPilot.refocus(frontmostPid: frontmostPid, lastActive: lastActive)
+		}
+		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
+		let decisions = autoPilot.decide(groups: autoEligible(snapshot), frontmostPid: frontmostPid, lastActive: lastActive,
+										 audioPids: AudioActivity.activePids(), systemCPU: snapshot.systemCPU,
+										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu, demand: demand)
+		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
+		// Forget focus times of apps that have quit.
+		if lastActive.count > 200 { lastActive = lastActive.filter { kill($0.key, 0) == 0 } }
+		return decisions
 	}
 
 	func tick() {
@@ -222,6 +323,7 @@ final class AppModel: ObservableObject {
 		let request = SampleRequest(
 			apps: apps,
 			includeAll: full,
+			includeApps: autoPilot.settings.enabled,
 			includeOtherUsers: d.bool(forKey: Prefs.showOtherUsers),
 			withThreads: uiVisible,
 			matcher: matcher)
@@ -235,11 +337,13 @@ final class AppModel: ObservableObject {
 
 	private func didSample(_ snapshot: Snapshot, state: SystemState) {
 		lastSnapshot = snapshot
-		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid)
+		let auto = decideAuto(snapshot, state: state, newSample: true)
+		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		if snapshot.full && runawayEnabled { detectRunaways(snapshot) }
 		let status = enforcer.limiterStatus()
+		recordImpact(snapshot, status: status, state: state)
 		// Only publish complete lists, and only while something is on screen.
 		if snapshot.full && uiVisible {
 			self.snapshot = snapshot
@@ -261,6 +365,7 @@ final class AppModel: ObservableObject {
 			guard !suggestions.contains(s) else { continue }
 			suggestions.removeAll { $0.groupID == s.groupID }
 			suggestions.insert(s, at: 0)
+			stats.record(.runawayAlert, key: "bundle:" + (s.bundleID ?? s.path), name: s.name)
 			let body = L("Has used %@ CPU for %d minutes in the background.", Fmt.percent(s.averageCPU), s.minutes)
 			log.add(s.name, body)
 			Notifier.shared.post(title: L("%@ is using a lot of CPU", s.name), body: body, suggestion: [
@@ -305,6 +410,10 @@ final class AppModel: ObservableObject {
 	private func handleCommand(_ info: [String: String]) {
 		let target = info["target"] ?? ""
 		switch info["command"] {
+		case "prefs":
+			preferencesChanged()
+			reapply()
+			tickSoon(0.1)
 		case "pause": paused = true
 		case "resume": paused = false
 		case "freeze", "unfreeze":
@@ -322,15 +431,22 @@ final class AppModel: ObservableObject {
 		}
 	}
 
-	private var lastWrittenState: (Bool, [String], [String])?
+	private var lastWrittenState: (Bool, [String], [String], String)?
+
+	var autoDescription: String {
+		guard autoPilot.settings.enabled else { return "off" }
+		let s = autoSummary
+		return "on — \(s.managed) apps: \(s.inUse) in use, \(s.onEfficiency) on efficiency cores, \(s.capped) capped" + (s.busy ? " (Mac busy)" : "")
+	}
 
 	/// Status for the CLI; only rewritten when it changes.
 	private func writeState() {
 		let frozen = enforcer.frozen.keys.sorted()
 		let runaway = suggestions.map(\.name)
-		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway { return }
-		lastWrittenState = (paused, frozen, runaway)
-		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, updated: Date()).write()
+		let auto = autoDescription
+		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto { return }
+		lastWrittenState = (paused, frozen, runaway, auto)
+		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, updated: Date()).write()
 	}
 
 	// MARK: Actions from UI
@@ -386,6 +502,7 @@ final class AppModel: ObservableObject {
 	func isFrozen(_ group: AppGroup) -> Bool { enforcer.isFrozen(group.id) }
 
 	func shutdown() {
+		stats.flush()
 		enforcer.releaseAll()
 		rules.saveNow()
 		AppState.remove()

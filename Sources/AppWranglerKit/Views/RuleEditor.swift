@@ -24,6 +24,15 @@ struct RuleEditor: View {
 				Divider()
 			}
 
+			Toggle(isOn: $rule.onlyWhenInactive) {
+				Label(L("Only while the app is in the background"), systemImage: "rectangle.on.rectangle")
+			}
+			Text(rule.onlyWhenInactive
+				 ? L("CPU limit and efficiency cores apply only while you're not using the app — it runs at full speed when it's in front.")
+				 : L("CPU limit and efficiency cores apply even while you're using the app, which can make it feel slow."))
+				.font(.caption).foregroundStyle(rule.onlyWhenInactive ? Color.secondary : Color.orange)
+				.fixedSize(horizontal: false, vertical: true)
+			Divider()
 			cpuSection
 			Divider()
 			efficiencySection
@@ -72,14 +81,16 @@ struct RuleEditor: View {
 				}
 				Text(L("100%% = one full core. This Mac has %d cores (%d%% max).", SystemInfo.ncpu, Int(maxCPU)))
 					.font(.caption).foregroundStyle(.secondary)
-				Toggle(L("Only while the app is in the background"), isOn: $rule.onlyWhenInactive)
-					.padding(.leading, 18)
 			}
 		}
 	}
 
 	private var efficiencySection: some View {
 		VStack(alignment: .leading, spacing: 6) {
+			if !rule.cpuLimitEnabled && !rule.backgroundMode {
+				Label(L("No CPU or efficiency-core setting here, so Auto mode manages this app."), systemImage: "wand.and.stars")
+					.font(.caption).foregroundStyle(.teal)
+			}
 			Toggle(isOn: $rule.backgroundMode) {
 				Label(L("Efficiency cores only"), systemImage: "leaf")
 			}
