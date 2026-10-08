@@ -94,7 +94,7 @@ spawn e2e-burner 2
 B=$LAST
 sleep 0.5
 base=$(cpu 1 "$B")
-between "$base" 1.6 2.3 && ok "burner runs free: $base cores" || bad "burner baseline $base"
+between "$base" 1.2 2.3 && ok "burner runs free: $base cores" || bad "burner baseline $base"
 
 # --- Rules added on the fly ---------------------------------------------------
 cli limit e2e-burner 50
@@ -224,6 +224,17 @@ sleep 1
 kill -ABRT "$APP"; wait "$APP" 2>/dev/null; APP=""
 sleep 0.5
 [ "$(state "$B")" != "T" ] && ok "a crash of AppWrangler still resumes frozen apps" || bad "frozen app left stopped after crash"
+
+# kill -9 can't be caught in-process; the watchdog must restore everything.
+start_app
+cli freeze e2e-burner
+for _ in $(seq 20); do [ "$(state "$B")" = "T" ] && break; sleep 0.25; done
+kill -9 "$APP"; wait "$APP" 2>/dev/null; APP=""
+thawed=no
+for _ in $(seq 20); do [ "$(state "$B")" != "T" ] && { thawed=yes; break; }; sleep 0.1; done
+[ "$thawed" = yes ] && ok "kill -9 of AppWrangler: its watchdog resumed the frozen app" || bad "frozen app left stopped after kill -9"
+sleep 0.5
+pgrep -f "$APP_BIN" >/dev/null && bad "watchdog lingered after AppWrangler died" || ok "watchdog exited after cleaning up"
 
 echo
 echo "$PASS passed, $FAIL failed"

@@ -183,6 +183,8 @@ final class Sampler {
 					stat.diskWrite = Double(usage.disk_written &- p.write) / dt * 1e9
 					stat.power = Double(usage.energy_nj &- p.energy) / dt		// nJ/ns == W
 				}
+				// Same pid, different process (pid reused): refresh its identity next tick.
+				if let p = prev[pid], p.start != usage.start_abstime { idents[pid] = nil }
 				prev[pid] = Prev(start: usage.start_abstime, cpu: usage.cpu_ns, read: usage.disk_read,
 								 write: usage.disk_written, energy: usage.energy_nj, time: now)
 				anyMeasured = true

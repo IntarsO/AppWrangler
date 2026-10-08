@@ -143,8 +143,13 @@ void pk_release_all(void);
 /* Tests only: undo pk_release_all()'s shutdown so later tests can limit again. */
 void pk_release_all_reset_for_testing(void);
 
-/* Install handlers so a crash or kill of AppWrangler never leaves apps frozen. */
+/* Install handlers so a crash or kill of AppWrangler never leaves apps frozen,
+   and fork a watchdog that restores everything even after kill -9. Call once,
+   first thing in main, before other threads exist. */
 void pk_install_safety_handlers(void);
+
+/* True for a shell's foreground job (SIGSTOP would suspend it as a job). */
+int pk_is_terminal_foreground(pid_t pid);
 
 #ifdef __cplusplus
 }

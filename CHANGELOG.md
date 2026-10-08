@@ -9,6 +9,18 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
 - The limiter measures apps under their limit every 250 ms and held-back apps every 100 ms (was every 50 ms), cutting AppWrangler's own CPU use roughly in half with many rules.
 
 ### Fixed
+- **Crash safety:** a watchdog process now restores paused and efficiency-core apps (and children that inherited the policy) even after `kill -9` or a system kill.
+- CLI commands (`freeze`, `pause`…) only reach the AppWrangler using the same data folder. Before, a test copy's commands also paused and froze things in your real copy.
+- Frozen apps or processes that quit are no longer listed as frozen, and a relaunched app doesn't come back frozen.
+- Absurd numbers in rules (from files, the CLI or MCP) are clamped instead of crashing AppWrangler. MCP `list_apps` with a negative limit no longer crashes the server, batches get a proper JSON-RPC error, and missing or empty arguments are rejected.
+- A command running in a terminal's foreground is no longer paused, which made the shell suspend it. Efficiency cores still apply.
+- Ctrl-Z on AppWrangler run from a terminal no longer disables limiting for the rest of the session.
+- `appwrangler limit` keeps a rule's "background only" setting unless `--background-only` / `--always` is given. CLI-created rules are background-only, like UI-created ones.
+- The CLI and MCP report Auto mode's real default ("on").
+- Auto: an app counts as in use if any of its processes is frontmost; efficiency cores start 30 s after you leave an app (not 45 s); "busy" needs readings at least ~1 s apart, and a middle-band reading breaks a streak; turning Auto off and on starts fresh.
+- Low-memory actions spare apps playing or recording audio even when Auto mode is off.
+- Housekeeping no longer grows with every short-lived process; the rules file is re-read only when it changed; a reused pid gets a fresh identity.
+- Statistics: AppWrangler's own CPU is measured correctly across gaps, and freezes are credited for at most their first hour.
 - Low-memory freeze/quit no longer hits the app you're using or one playing/recording audio, only background apps.
 - An app you're using is forced back to full speed even if an earlier AppWrangler (or anything else) left it on the efficiency cores.
 - If AppWrangler crashes or is killed, apps it moved to efficiency cores are now restored too, not only paused apps.

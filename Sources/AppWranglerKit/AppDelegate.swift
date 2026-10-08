@@ -12,17 +12,18 @@ import SwiftUI
 public enum AppWranglerMain {
 	public static func run() -> Never {
 		let args = CommandLine.arguments
-		if !DataDirectory.isOverridden { Migration.importAppPoliceRules() }
+		// Defaults first, so the CLI and MCP report the same settings as the app.
+		Prefs.register()
 		if args.count > 1 && args[1] == "mcp" {
 			MCPServer.serve(readOnly: args.contains("--read-only"))
 		}
+		if !DataDirectory.isOverridden { Migration.importAppPoliceRules() }
 		if CLI.isInvocation(args) {
 			exit(CLI.main(args))
 		}
 
 		// Before anything can be throttled: never leave apps SIGSTOP'd if we die.
 		pk_install_safety_handlers()
-		Prefs.register()
 
 		guard InstanceLock.acquire() else {
 			FileHandle.standardError.write("AppWrangler is already running for \(DataDirectory.url.path).\n".data(using: .utf8)!)

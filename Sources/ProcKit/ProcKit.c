@@ -19,6 +19,8 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <time.h>
@@ -200,22 +202,45 @@ int pk_list_children(pid_t pid, pid_t *buf, int max) {
 /* Processes we put on the efficiency cores, so the crash/exit path can
    restore them. Lock-free; read from signal handlers. */
 #define PK_MAX_BACKGROUND 4096
-static _Atomic pid_t g_background[PK_MAX_BACKGROUND];
+
+/*
+ Every pid we've stopped or put on the efficiency cores, kept in memory that's
+ shared with a watchdog process (see pk_install_safety_handlers). If
+ AppWrangler dies in any way — even kill -9 — the watchdog reads these tables
+ and restores everything. Lock-free atomics; also read from signal handlers.
+*/
+typedef struct {
+	_Atomic pid_t stopped[PK_MAX_GROUPS][PK_MAX_GROUP_PIDS];
+	/* Holds stopped pids while a group's slots are being rearranged. */
+	_Atomic pid_t scratch[PK_MAX_GROUP_PIDS];
+	_Atomic pid_t background[PK_MAX_BACKGROUND];
+} pk_tables_t;
+
+static pk_tables_t *g_tables;
+
+static pk_tables_t *pk_tables(void) {
+	static dispatch_once_t once;
+	dispatch_once(&once, ^{
+		void *m = mmap(NULL, sizeof(pk_tables_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
+		g_tables = (m == MAP_FAILED) ? calloc(1, sizeof(pk_tables_t)) : m;
+	});
+	return g_tables;
+}
 
 static void pk_track_background(pid_t pid, int on) {
 	if (on) {
 		for (int i = 0; i < PK_MAX_BACKGROUND; ++i)
-			if (atomic_load(&g_background[i]) == pid)
+			if (atomic_load(&pk_tables()->background[i]) == pid)
 				return;
 		for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
 			pid_t empty = 0;
-			if (atomic_compare_exchange_strong(&g_background[i], &empty, pid))
+			if (atomic_compare_exchange_strong(&pk_tables()->background[i], &empty, pid))
 				return;
 		}
 	} else {
 		for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
 			pid_t expected = pid;
-			atomic_compare_exchange_strong(&g_background[i], &expected, 0);
+			atomic_compare_exchange_strong(&pk_tables()->background[i], &expected, 0);
 		}
 	}
 }
@@ -256,10 +281,6 @@ typedef struct {
 static pk_group g_groups[PK_MAX_GROUPS];
 /* Mirrors g_groups[i].pids[j] while that process is stopped by us, 0 otherwise.
    Read lock-free from signal handlers. */
-static _Atomic pid_t g_stopped[PK_MAX_GROUPS][PK_MAX_GROUP_PIDS];
-/* Holds stopped pids while a group's slots are being rearranged, so the
-   signal-safe release path never loses track of one mid-update. */
-static _Atomic pid_t g_stopped_scratch[PK_MAX_GROUP_PIDS];
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_cv = PTHREAD_COND_INITIALIZER;
@@ -273,13 +294,13 @@ static int g_thread_started;
 static _Atomic int g_shutting_down;
 
 static void pk_stop_pid(pk_group *g, int gi, int i) {
-	if (atomic_load(&g_stopped[gi][i]) || atomic_load(&g_shutting_down))
+	if (atomic_load(&pk_tables()->stopped[gi][i]) || atomic_load(&g_shutting_down))
 		return;
 	pid_t pid = g->pids[i];
 	/* Publish before signalling so a crash between the two still resumes it. */
-	atomic_store(&g_stopped[gi][i], pid);
+	atomic_store(&pk_tables()->stopped[gi][i], pid);
 	if (kill(pid, SIGSTOP) != 0) {
-		atomic_store(&g_stopped[gi][i], 0);
+		atomic_store(&pk_tables()->stopped[gi][i], 0);
 		if (errno == EPERM)
 			g->denied = 1;
 		return;
@@ -295,7 +316,7 @@ static void pk_stop_pid(pk_group *g, int gi, int i) {
 }
 
 static void pk_cont_pid(int gi, int i) {
-	pid_t pid = atomic_exchange(&g_stopped[gi][i], 0);
+	pid_t pid = atomic_exchange(&pk_tables()->stopped[gi][i], 0);
 	if (pid > 0)
 		kill(pid, SIGCONT);
 }
@@ -311,7 +332,7 @@ static void pk_remove_slot(pk_group *g, int gi, int i) {
 	if (i != last) {
 		g->pids[i] = g->pids[last];
 		g->last_cpu[i] = g->last_cpu[last];
-		atomic_store(&g_stopped[gi][i], atomic_exchange(&g_stopped[gi][last], 0));
+		atomic_store(&pk_tables()->stopped[gi][i], atomic_exchange(&pk_tables()->stopped[gi][last], 0));
 	}
 	g->npids = last;
 }
@@ -564,7 +585,7 @@ void pk_lim_set_group(uint32_t gid, const pid_t *pids, int npids, double limit_c
 		for (int i = 0; i < g->npids; ++i) {
 			if (g->pids[i] == p) {
 				new_cpu[n] = g->last_cpu[i];
-				new_stopped[n] = atomic_load(&g_stopped[gi][i]);
+				new_stopped[n] = atomic_load(&pk_tables()->stopped[gi][i]);
 				retained[i] = 1;
 				break;
 			}
@@ -582,11 +603,17 @@ void pk_lim_set_group(uint32_t gid, const pid_t *pids, int npids, double limit_c
 			pk_cont_pid(gi, i);
 	/* Park stopped pids in the scratch table while slots move around. */
 	for (int k = 0; k < n; ++k)
-		atomic_store(&g_stopped_scratch[k], new_stopped[k]);
+		atomic_store(&pk_tables()->scratch[k], new_stopped[k]);
 	for (int i = 0; i < PK_MAX_GROUP_PIDS; ++i)
-		atomic_store(&g_stopped[gi][i], i < n ? new_stopped[i] : 0);
+		atomic_store(&pk_tables()->stopped[gi][i], i < n ? new_stopped[i] : 0);
 	for (int k = 0; k < n; ++k)
-		atomic_store(&g_stopped_scratch[k], 0);
+		atomic_store(&pk_tables()->scratch[k], 0);
+	/* A release on another thread may have scanned mid-rewrite and missed a
+	   moved pid; it set the shutdown flag first, so resume them here. */
+	if (atomic_load(&g_shutting_down))
+		for (int k = 0; k < n; ++k)
+			if (new_stopped[k] > 0)
+				kill(new_stopped[k], SIGCONT);
 	memcpy(g->pids, new_pids, (size_t)n * sizeof(pid_t));
 	memcpy(g->last_cpu, new_cpu, (size_t)n * sizeof(uint64_t));
 	g->npids = n;
@@ -669,34 +696,45 @@ int pk_lim_status_get(pk_lim_status *out, int max) {
 
 /* ============================================================ safety net */
 
-void pk_release_all(void) {
-	/* Lock-free on purpose: called from signal handlers and atexit. */
-	atomic_store(&g_shutting_down, 1);
+/* Resume stopped pids; with `everything`, also restore efficiency-core pids. */
+static void pk_release_tables(pk_tables_t *t, int everything) {
+	if (!t)
+		return;
 	for (int gi = 0; gi < PK_MAX_GROUPS; ++gi) {
 		for (int i = 0; i < PK_MAX_GROUP_PIDS; ++i) {
-			pid_t pid = atomic_exchange(&g_stopped[gi][i], 0);
+			pid_t pid = atomic_exchange(&t->stopped[gi][i], 0);
 			if (pid > 0)
 				kill(pid, SIGCONT);
 		}
 	}
 	for (int i = 0; i < PK_MAX_GROUP_PIDS; ++i) {
-		pid_t pid = atomic_exchange(&g_stopped_scratch[i], 0);
+		pid_t pid = atomic_exchange(&t->scratch[i], 0);
 		if (pid > 0)
 			kill(pid, SIGCONT);
 	}
-	/* Take apps off the efficiency cores too (setpriority is a plain syscall). */
+	if (!everything)
+		return;
+	/* setpriority is a plain syscall, fine in a signal handler. Entries are
+	   left in place so the watchdog can also restore children that inherited
+	   the policy once we're gone. */
 	for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
-		pid_t pid = atomic_exchange(&g_background[i], 0);
+		pid_t pid = atomic_load(&t->background[i]);
 		if (pid > 0)
 			setpriority(PRIO_DARWIN_PROCESS, pid, 0);
 	}
 }
 
-static void pk_install_handlers(void);
+void pk_release_all(void) {
+	/* Lock-free on purpose: called from signal handlers and atexit. */
+	atomic_store(&g_shutting_down, 1);
+	pk_release_tables(g_tables, 1);
+}
 
 void pk_release_all_reset_for_testing(void) {
 	atomic_store(&g_shutting_down, 0);
 }
+
+static void pk_install_handlers(void);
 
 static void pk_fatal_handler(int sig) {
 	pk_release_all();
@@ -704,14 +742,25 @@ static void pk_fatal_handler(int sig) {
 	raise(sig);
 }
 
-/* After a SIGTSTP stop + SIGCONT, re-arm the one-shot handlers. */
+/*
+ Ctrl-Z on AppWrangler run from a terminal: resume everything we paused (so
+ nothing stays frozen while we're suspended) but don't shut the limiter down —
+ it picks up again on SIGCONT.
+*/
+static void pk_tstp_handler(int sig) {
+	pk_release_tables(g_tables, 0);
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+/* After a SIGTSTP stop + SIGCONT, re-arm the handlers. */
 static void pk_cont_handler(int sig) {
 	(void)sig;
 	pk_install_handlers();
 }
 
 static void pk_install_handlers(void) {
-	static const int sigs[] = { SIGTERM, SIGINT, SIGHUP, SIGQUIT, SIGTSTP,
+	static const int sigs[] = { SIGTERM, SIGINT, SIGHUP, SIGQUIT,
 								SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP };
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
@@ -720,12 +769,74 @@ static void pk_install_handlers(void) {
 	sa.sa_flags = SA_NODEFER | SA_RESETHAND;
 	for (size_t i = 0; i < sizeof(sigs) / sizeof(sigs[0]); ++i)
 		sigaction(sigs[i], &sa, NULL);
+	sa.sa_handler = pk_tstp_handler;
+	sigaction(SIGTSTP, &sa, NULL);
 	sa.sa_handler = pk_cont_handler;
 	sa.sa_flags = 0;
 	sigaction(SIGCONT, &sa, NULL);
 }
 
+/* Restore a process and everything it started from the efficiency cores. */
+static void pk_watchdog_unbackground(pid_t pid, int depth) {
+	setpriority(PRIO_DARWIN_PROCESS, pid, 0);
+	if (depth > 6)
+		return;
+	pid_t kids[256];
+	int n = proc_listchildpids(pid, kids, (int)sizeof(kids));
+	for (int i = 0; i < n && i < 256; ++i)
+		if (kids[i] > 1 && kids[i] != pid)
+			pk_watchdog_unbackground(kids[i], depth + 1);
+}
+
+/* Runs in the forked watchdog: wait for AppWrangler to go away, then clean up. */
+static void pk_watchdog(int fd, pk_tables_t *t) {
+	signal(SIGINT, SIG_IGN);	/* Ctrl-C in a terminal reaches us too; outlive the app */
+	signal(SIGHUP, SIG_IGN);
+	signal(SIGTSTP, SIG_IGN);
+	signal(SIGTERM, SIG_IGN);	/* logout: wait for the app to exit, then clean up */
+	char c;
+	for (;;) {
+		ssize_t r = read(fd, &c, 1);
+		if (r == 0 || (r < 0 && errno != EINTR))
+			break;
+	}
+	pk_release_tables(t, 0);
+	for (int i = 0; i < PK_MAX_BACKGROUND; ++i) {
+		pid_t pid = atomic_exchange(&t->background[i], 0);
+		if (pid > 0)
+			pk_watchdog_unbackground(pid, 0);
+	}
+	_exit(0);
+}
+
 void pk_install_safety_handlers(void) {
+	pk_tables_t *t = pk_tables();
 	pk_install_handlers();
 	atexit(pk_release_all);
+
+	/* Watchdog: holds the read end of a pipe; when every write end closes
+	   (AppWrangler exited, crashed or was SIGKILLed) read() returns 0. */
+	int fds[2];
+	if (pipe(fds) != 0)
+		return;
+	pid_t child = fork();
+	if (child == 0) {
+		close(fds[1]);
+		pk_watchdog(fds[0], t);
+	}
+	close(fds[0]);
+	if (child < 0) {
+		close(fds[1]);
+		return;
+	}
+	/* Don't leak the write end into processes we spawn, or they'd keep it open. */
+	fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+}
+
+/* A shell's foreground job: SIGSTOP would make the shell treat it as suspended. */
+int pk_is_terminal_foreground(pid_t pid) {
+	struct proc_bsdinfo info;
+	if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, PROC_PIDTBSDINFO_SIZE) != PROC_PIDTBSDINFO_SIZE)
+		return 0;
+	return (info.pbi_flags & PROC_FLAG_CONTROLT) && info.e_tpgid > 0 && (pid_t)info.pbi_pgid == (pid_t)info.e_tpgid;
 }

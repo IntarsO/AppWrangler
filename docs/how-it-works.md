@@ -37,7 +37,7 @@ One `proc_pid_rusage` call per process returns CPU time, physical footprint, dis
 
 **Adaptive cadence** (`AppModel`):
 - Panel open: everything, every second.
-- Panel closed: only apps with rules or freezes, every 2 s, plus a full scan every 5 s if runaway detection is on.
+- Panel closed: apps with rules or freezes, plus every app (not plain processes) while Auto mode is on, every 2 s; plus a full scan every 5 s if runaway detection is on.
 - Nothing to do: no timer at all.
 
 ## Enforcing
@@ -67,12 +67,14 @@ One `proc_pid_rusage` call per process returns CPU time, physical footprint, dis
 ## Safety net
 
 The C module keeps a lock-free table of every PID it has stopped. Several things all resume them:
-- a handler for `SIGTERM`, `SIGINT`, `SIGHUP`, `SIGQUIT`, `SIGTSTP`;
+- a handler for `SIGTERM`, `SIGINT`, `SIGHUP`, `SIGQUIT` (`SIGTSTP` only resumes paused apps; the limiter carries on after `SIGCONT`);
 - the crash signals (`SIGSEGV`, `SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`, `SIGTRAP`);
 - `atexit`;
 - normal termination.
 
-The handler is async-signal-safe: atomics and `kill` only. Only `SIGKILL` of AppWrangler can't be caught. Release is terminal: it sets a shutdown flag that the limiter checks before *and after* each stop, so a stop racing with the exit can't leave an app suspended.
+The handler is async-signal-safe: atomics, `kill` and `setpriority` only.
+
+The tables live in memory shared with a **watchdog**: a process forked at launch that waits on a pipe. When AppWrangler dies in any way, including `SIGKILL`, the pipe closes. The watchdog then resumes every stopped pid and restores efficiency-core pids and their children, then exits. Release is terminal: it sets a shutdown flag that the limiter checks before *and after* each stop, so a stop racing with the exit can't leave an app suspended.
 
 Session-critical processes are on a protected list. An `flock` on the data folder ensures one instance.
 

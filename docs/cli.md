@@ -67,12 +67,13 @@ AppWrangler impact — today
   Efficiency          saved 210× more CPU time than it used
 ```
 
-### `limit <app> <percent> [--background-only]`
-Caps CPU (100 = one core). With `--background-only`, the limit applies only while the app isn't frontmost.
+### `limit <app> <percent> [--background-only | --always]`
+Caps CPU (100 = one core). New rules apply only while the app isn't frontmost, so it runs at full speed while you use it. `--always` applies the limit even then; `--background-only` switches back. Updating an existing rule keeps its setting unless you pass one of the flags.
 
 ```bash
 appwrangler limit "Google Chrome" 150
-appwrangler limit Slack 25 --background-only
+appwrangler limit Slack 25            # background only (the default for new rules)
+appwrangler limit ffmpeg 200 --always
 ```
 
 ### `ecores <app> on|off`
@@ -126,8 +127,8 @@ Shows usage.
 ## Scripting examples
 
 ```bash
-# Quiet everything while recording audio, then restore
-appwrangler pause && record-podcast.sh; appwrangler resume
+# Freeze a noisy sync client while recording audio, then let it catch up
+appwrangler freeze Dropbox && record-podcast.sh; appwrangler unfreeze Dropbox
 
 # Back up rules nightly (e.g. from cron or launchd)
 appwrangler export ~/Backups/appwrangler-rules-$(date +%F).json

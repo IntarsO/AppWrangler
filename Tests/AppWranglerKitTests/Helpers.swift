@@ -36,6 +36,10 @@ final class FakeController: ProcessController {
 	func removeAllGroups() { groups.removeAll() }
 	func setPaused(_ paused: Bool) { self.paused = paused }
 	func setBackground(_ pid: pid_t, on: Bool) -> Int32 { background[pid] = on; return 0 }
+	var alive: Set<pid_t> = []
+	func isAlive(_ pid: pid_t) -> Bool { alive.contains(pid) }
+	var terminalJobs: Set<pid_t> = []
+	func isTerminalForeground(_ pid: pid_t) -> Bool { terminalJobs.contains(pid) }
 	func descendants(of pid: pid_t) -> [pid_t] {
 		(children[pid] ?? []).flatMap { [$0] + descendants(of: $0) }
 	}

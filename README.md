@@ -37,7 +37,7 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | 🤖 **AI assistants (MCP)** | Let Claude, OpenAI Codex or your own agents audit your Mac, analyse the savings and suggest (or, with your OK, apply) better limits. |
 | ⌨️ **Command line** | `appwrangler limit Slack 30`, `appwrangler stats`, … for scripts and power users. |
 
-It uses about 0.1–0.3% of one core, and nothing at all when there's nothing to do. It never connects to the network.
+It uses well under 1% of one core. It never connects to the network.
 
 ## Get started
 

@@ -66,9 +66,11 @@ final class MCPServer {
 	func handle(_ line: String) -> String? {
 		let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !trimmed.isEmpty else { return nil }
-		guard let data = trimmed.data(using: .utf8),
-			  let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+		guard let data = trimmed.data(using: .utf8), let parsed = try? JSONSerialization.jsonObject(with: data) else {
 			return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "Parse error"]])
+		}
+		guard let message = parsed as? [String: Any] else {
+			return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32600, "message": "Invalid request (batches aren't supported)"]])
 		}
 		let id = message["id"]
 		guard let method = message["method"] as? String else {
@@ -99,6 +101,13 @@ final class MCPServer {
 				return error(id, -32602, "Unknown tool: \(params["name"] as? String ?? "?")")
 			}
 			let args = params["arguments"] as? [String: Any] ?? [:]
+			let missing = tool.required.filter { key in
+				guard let v = args[key] else { return true }
+				return (v as? String)?.trimmingCharacters(in: .whitespaces).isEmpty == true
+			}
+			guard missing.isEmpty else {
+				return error(id, -32602, "Missing required argument(s): \(missing.joined(separator: ", "))")
+			}
 			let outcome = tool.run(args)
 			var body: [String: Any] = ["content": [["type": "text", "text": outcome.text]], "isError": outcome.isError]
 			if let structured = outcome.structured { body["structuredContent"] = structured }
@@ -190,9 +199,10 @@ final class MCPServer {
 				 properties: ["include_processes": ["type": "boolean", "description": "Also include command-line tools and background processes (default false)."],
 							  "limit": ["type": "integer", "minimum": 1, "maximum": 500, "description": "Return at most this many (default 40)."]],
 				 required: [], readOnly: true, destructive: false) { [unowned self] args in
+				let limit = min(max(args["limit"] as? Int ?? 40, 1), 500)
 				let rows = Reports.apps(store: self.store(), apps: self.runningApps(),
 										includeProcesses: args["include_processes"] as? Bool ?? false,
-										limit: args["limit"] as? Int ?? 40, seconds: self.sampleSeconds)
+										limit: limit, seconds: self.sampleSeconds)
 				return Outcome(text: Reports.json(rows), structured: ["apps": rows])
 			},
 			Tool(name: "explain_app", title: "Explain an app",
@@ -231,7 +241,7 @@ final class MCPServer {
 							  "background_only": ["type": "boolean", "description": "Only limit while the app isn't frontmost."]],
 				 required: ["app", "percent"], readOnly: false, destructive: false) { [unowned self] args in
 				var cli = ["limit", args["app"] as? String ?? "", self.number(args["percent"])]
-				if args["background_only"] as? Bool == true { cli.append("--background-only") }
+				if let b = args["background_only"] as? Bool { cli.append(b ? "--background-only" : "--always") }
 				return self.cli(cli)
 			},
 			Tool(name: "set_efficiency_cores", title: "Efficiency cores only",

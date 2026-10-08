@@ -67,7 +67,7 @@ enum CLI {
 
 	static func postToApp(_ command: String, _ target: String?) -> Bool {
 		guard AppState.read() != nil else { return false }
-		var info: [String: String] = ["command": command]
+		var info: [String: String] = ["command": command, "dataDir": IPC.dataDirKey]
 		if let target { info["target"] = target }
 		DistributedNotificationCenter.default().postNotificationName(IPC.command, object: nil, userInfo: info, deliverImmediately: true)
 		return true
@@ -77,6 +77,10 @@ enum CLI {
 	static func run(_ args: [String], store: RuleStore, apps: [RunningApp],
 					print: (String) -> Void, postToApp: (String, String?) -> Bool) -> Int32 {
 		guard let command = args.first else { print(usage); return 1 }
+		if let target = args.dropFirst().first, target.trimmingCharacters(in: .whitespaces).isEmpty {
+			print("error: the app name can't be empty")
+			return 1
+		}
 		let rest = Array(args.dropFirst())
 
 		func fail(_ message: String) -> Int32 { print("error: " + message); return 1 }
@@ -206,14 +210,16 @@ enum CLI {
 			return 0
 
 		case "limit":
-			guard rest.count >= 2, let percent = Double(rest[1].replacingOccurrences(of: "%", with: "")), percent >= 1 else {
-				return fail("usage: limit <app> <percent> [--background-only]")
+			guard rest.count >= 2, let percent = Double(rest[1].replacingOccurrences(of: "%", with: "")), percent.isFinite, percent >= 1 else {
+				return fail("usage: limit <app> <percent> [--background-only | --always]")
 			}
 			guard var rule = ruleFor(rest[0], create: true) else { return 1 }
 			rule.enabled = true
 			rule.cpuLimitEnabled = true
 			rule.cpuLimit = min(percent, Double(max(SystemInfo.ncpu, 1) * 100))
-			rule.onlyWhenInactive = rest.contains("--background-only")
+			// Keep the rule's existing setting unless asked; new rules are background-only.
+			if rest.contains("--background-only") { rule.onlyWhenInactive = true }
+			if rest.contains("--always") { rule.onlyWhenInactive = false }
 			return save(rule, "\(rule.displayName): CPU limited to \(Int(rule.cpuLimit))%")
 
 		case "ecores":
@@ -229,7 +235,9 @@ enum CLI {
 				rule.memoryLimitEnabled = false
 				return save(rule, "\(rule.displayName): memory limit off")
 			}
-			guard let mb = Double(rest[1]), mb >= 16 else { return fail("memory limit must be a number of MB (≥ 16)") }
+			guard let mb = Double(rest[1]), mb.isFinite, AppRule.memoryLimitRange.contains(mb) else {
+				return fail("memory limit must be a number of MB between 16 and 16777216")
+			}
 			let actions: [String: MemoryAction] = ["notify": .notify, "freeze": .freeze, "quit": .quit, "forcequit": .forceQuit]
 			let action = rest.count > 2 ? actions[rest[2].lowercased()] : .notify
 			guard let action else { return fail("action must be notify, freeze, quit or forcequit") }
@@ -306,8 +314,8 @@ enum CLI {
 	  status                         running? paused? what's frozen or hogging the CPU
 	  stats [today|week|month] [--json]  how much CPU/energy was saved, and what it cost
 	  auto [on|off]                  Auto mode: full speed for the app you use, efficiency for the rest
-	  limit <app> <percent>          cap CPU (100 = one core). --background-only to
-	                                 limit only while the app isn't frontmost
+	  limit <app> <percent>          cap CPU (100 = one core). New rules apply only while
+	                                 the app isn't frontmost; --always to apply even then
 	  ecores <app> on|off            run the app on efficiency cores only
 	  memlimit <app> <MB>|off [notify|freeze|quit|forcequit]
 	  lowmem <app> none|freeze|quit  what to do when the Mac runs low on memory

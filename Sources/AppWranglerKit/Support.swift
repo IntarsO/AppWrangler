@@ -173,8 +173,17 @@ enum Links {
 // MARK: - Inter-process (CLI ⇄ app)
 
 enum IPC {
-	/// Posted by the CLI; userInfo: ["command": String, "target": String?].
+	/// Posted by the CLI; userInfo: ["command": String, "target": String?, "dataDir": String].
 	static let command = Notification.Name("io.github.intarso.AppWrangler.command")
+
+	static var dataDirKey: String { DataDirectory.url.standardizedFileURL.path }
+
+	/// Distributed notifications reach every running copy; only obey commands
+	/// sent for our own data folder (e.g. a test copy's commands must not
+	/// pause or freeze things in the user's real AppWrangler).
+	static func isForThisInstance(_ info: [String: String], dataDir: String = dataDirKey) -> Bool {
+		info["dataDir"] == dataDir
+	}
 }
 
 /// Small JSON file the running app keeps up to date so the CLI can report status.

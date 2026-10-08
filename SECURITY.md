@@ -18,11 +18,11 @@ Please include what you found, how to reproduce it, and the impact you expect. Y
 
 - Ways to make AppWrangler stop, freeze or kill processes it shouldn't (for example, getting around the protected-process list or the per-user boundary).
 - Ways for another local user or app to control AppWrangler: the data folder, `rules.json`, or the distributed-notification commands.
-- Apps left suspended after AppWrangler exits (other than `kill -9`, which can't be caught).
+- Apps left suspended or on the efficiency cores after AppWrangler exits, for any reason. A watchdog process restores them even after `kill -9`.
 
 ## Design notes
 
 - AppWrangler runs as **your user**, with no privileged helper and no admin rights. It can only affect processes you could already `kill` from Terminal.
 - It isn't sandboxed (the sandbox forbids signalling other apps) and asks for no special permissions.
 - It makes **no network connections**.
-- CLI commands arrive as distributed notifications, which any process in your login session can post. They can only do what you could already do with `kill`: freeze, unfreeze, pause, resume. Rules are changed only through the `rules.json` file in your own Library folder.
+- CLI commands arrive as distributed notifications, which any process in your login session can post. A running AppWrangler only obeys commands addressed to its own data folder, and they can only do what you could already do with `kill`: freeze, unfreeze, pause, resume. Rules are changed only through the `rules.json` file in your own Library folder.

@@ -44,14 +44,20 @@ macOS passes the efficiency-core (background) policy on to processes an app star
 ### The memory limit didn't stop the app from using more memory
 macOS doesn't allow hard memory caps on other apps. AppWrangler *reacts* when the app stays over the limit for two measurements (about 4 seconds with the panel closed) by notifying you, freezing, quitting or force-quitting it. Choose **Freeze** or **Quit** if you want it enforced.
 
-### An app is stuck "not responding" after AppWrangler was force-killed
-AppWrangler releases every app it paused when it quits, crashes or receives a normal `kill`. The one thing it can't intercept is `kill -9` (SIGKILL) of AppWrangler itself, e.g. from Activity Monitor's **Force Quit** at an unlucky moment. If an app is left suspended:
+### An app is stuck "not responding" after AppWrangler stopped
+That shouldn't happen any more. AppWrangler releases paused and efficiency-core apps when it quits, crashes or is killed. A small watchdog process (a second "AppWrangler" in Activity Monitor) restores everything even after `kill -9`, then exits. If an app is ever left suspended anyway:
 
 ```bash
 kill -CONT <pid-of-the-app>          # or: killall -CONT "App Name"
 ```
 
 Or simply quit and reopen the app.
+
+### Why are there two AppWrangler processes?
+The second, tiny one is the watchdog described above. It uses no CPU and exits together with AppWrangler.
+
+### I limited a command in Terminal and nothing happens
+A program running in a terminal's foreground can't be paused for CPU limiting: the shell would treat it as suspended (like Ctrl-Z) and detach it. AppWrangler skips CPU limits and freezing for such jobs and logs it in the Activity log. Efficiency cores still apply. Run the command in the background (`command &`) if you need a CPU limit.
 
 ### Launch at login doesn't work
 Install AppWrangler in `/Applications` first, then toggle the setting. If macOS shows an error, check **System Settings → General → Login Items** and allow AppWrangler there.
@@ -63,7 +69,7 @@ Allow them in **System Settings → Notifications → AppWrangler**, and check *
 Raise the threshold or duration, or turn them off (**Settings → General → Runaway apps**). For a single app, choose **Ignore this app** on the alert.
 
 ### Does AppWrangler slow my Mac down?
-It uses about 0.1–0.3% of one core while limiting apps or scanning for runaways, and about 50 MB of memory. With the panel closed it only measures apps that have rules, and if there's nothing to do it doesn't measure at all.
+It uses well under 1% of one core: about 0.2–0.5% with Auto mode and runaway alerts on (the defaults), and about 50 MB of memory. With the panel closed, it measures your apps (not every process) every 2 s for Auto mode, plus a light full scan every 5 s for runaway alerts. With Auto and runaway alerts off and no rules, it doesn't sample at all. Settings → Impact shows its actual cost on your Mac.
 
 ### Does it collect any data?
 No. AppWrangler makes no network connections and has no analytics. Rules and preferences stay on your Mac.

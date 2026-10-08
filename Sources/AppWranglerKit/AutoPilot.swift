@@ -60,6 +60,7 @@ final class AutoPilot {
 	private(set) var busy = false
 	private var busyStreak = 0
 	private var calmStreak = 0
+	private var lastLoadSample: Date?
 	private var backgroundSince: [String: Date] = [:]
 	private(set) var decisions: [String: AutoDecision] = [:]
 	private var owners: [String: pid_t] = [:]
@@ -76,19 +77,22 @@ final class AutoPilot {
 	func decide(groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date], audioPids: Set<pid_t>,
 				systemCPU: Double, onBattery: Bool, ncpu: Int, demand: [String: Double] = [:], now: Date = Date()) -> [String: AutoDecision] {
 		guard settings.enabled else {
-			decisions = [:]
-			summary = AutoSummary()
-			backgroundSince = [:]
-			busy = false
+			reset()
 			return [:]
 		}
 
 		// Busy with hysteresis: two samples over the threshold to start, two
 		// clearly under it (threshold − 15 points) to stop.
+		// Only samples at least ~1 s apart count, so extra quick samples (after a
+		// launch or a setting change) can't flip the state on a tiny window.
 		let threshold = onBattery ? settings.busyThresholdOnBattery : settings.busyThreshold
-		if systemCPU >= threshold { busyStreak += 1; calmStreak = 0 } else if systemCPU < threshold - 0.15 { calmStreak += 1; busyStreak = 0 }
-		if !busy && busyStreak >= 2 { busy = true }
-		if busy && calmStreak >= 2 { busy = false }
+		if lastLoadSample.map({ now.timeIntervalSince($0) >= 0.9 }) ?? true {
+			lastLoadSample = now
+			busyStreak = systemCPU >= threshold ? busyStreak + 1 : 0
+			calmStreak = systemCPU < threshold - 0.15 ? calmStreak + 1 : 0
+			if !busy && busyStreak >= 2 { busy = true }
+			if busy && calmStreak >= 2 { busy = false }
+		}
 
 		var result: [String: AutoDecision] = [:]
 		var background: [AppGroup] = []
@@ -98,11 +102,11 @@ final class AutoPilot {
 			present.insert(g.id)
 			owners[g.id] = g.ownerPid
 			let reason: AutoDecision.Reason
-			if g.ownerPid == frontmostPid {
+			if g.pids.contains(frontmostPid) {
 				reason = .foreground
 			} else if g.pids.contains(where: audioPids.contains) {
 				reason = .audio
-			} else if let t = lastActive[g.ownerPid], now.timeIntervalSince(t) < settings.focusGrace {
+			} else if let t = g.pids.compactMap({ lastActive[$0] }).max(), now.timeIntervalSince(t) < settings.focusGrace {
 				reason = .recent
 			} else {
 				reason = .background
@@ -112,7 +116,9 @@ final class AutoPilot {
 				result[g.id] = AutoDecision(reason: reason)
 				continue
 			}
-			let since = backgroundSince[g.id] ?? now
+			// The background clock starts when you left the app (not when the grace
+			// period ended), so E-cores kick in `efficiencyAfter` after leaving it.
+			let since = backgroundSince[g.id] ?? g.pids.compactMap({ lastActive[$0] }).max() ?? now
 			backgroundSince[g.id] = since
 			var d = AutoDecision(reason: .background)
 			d.efficiency = settings.useEfficiencyCores && now.timeIntervalSince(since) >= settings.efficiencyAfter
@@ -140,6 +146,18 @@ final class AutoPilot {
 							  capped: result.values.filter { $0.cap != nil }.count,
 							  busy: busy)
 		return result
+	}
+
+	/// Forget everything (Auto turned off), so re-enabling starts fresh.
+	func reset() {
+		decisions = [:]
+		owners = [:]
+		backgroundSince = [:]
+		summary = AutoSummary()
+		busy = false
+		busyStreak = 0
+		calmStreak = 0
+		lastLoadSample = nil
 	}
 
 	/// Re-evaluate who's in use after a focus change, keeping the last load

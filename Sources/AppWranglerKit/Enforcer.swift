@@ -21,6 +21,9 @@ protocol ProcessController: AnyObject {
 	func setBackground(_ pid: pid_t, on: Bool) -> Int32
 	/// All descendants (children, grandchildren…) of a process.
 	func descendants(of pid: pid_t) -> [pid_t]
+	func isAlive(_ pid: pid_t) -> Bool
+	/// A shell's foreground job: SIGSTOP would make the shell suspend it.
+	func isTerminalForeground(_ pid: pid_t) -> Bool
 	func terminate(_ group: AppGroup)
 	func forceKill(_ pids: [pid_t])
 	func limiterStatus() -> [pk_lim_status]
@@ -37,6 +40,9 @@ final class LiveProcessController: ProcessController {
 	func removeAllGroups() { pk_lim_remove_all() }
 	func setPaused(_ paused: Bool) { pk_lim_set_paused(paused ? 1 : 0) }
 	func setBackground(_ pid: pid_t, on: Bool) -> Int32 { pk_set_background(pid, on ? 1 : 0) }
+
+	func isAlive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
+	func isTerminalForeground(_ pid: pid_t) -> Bool { pk_is_terminal_foreground(pid) != 0 }
 
 	func descendants(of pid: pid_t) -> [pid_t] {
 		var result: [pid_t] = []
@@ -107,6 +113,10 @@ final class Enforcer {
 	private(set) var frozen: [String: FreezeReason] = [:]
 	/// CPU (cores) each frozen group was using when it was frozen — what freezing saves.
 	private(set) var frozenDemand: [String: Double] = [:]
+	/// When each group was frozen, and its main process (a relaunch is a new process).
+	private(set) var frozenSince: [String: Date] = [:]
+	private var frozenOwner: [String: pid_t] = [:]
+	private var terminalJobsLogged: Set<String> = []
 	private var groupNames: [String: String] = [:]
 	private var lastGroups: [String: AppGroup] = [:]
 
@@ -144,7 +154,7 @@ final class Enforcer {
 	private(set) var effectiveLimit: [String: Double] = [:]
 
 	func apply(_ snapshot: Snapshot, rules: RuleStore, state: SystemState, frontmostPid: pid_t,
-			   auto: [String: AutoDecision] = [:]) {
+			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = []) {
 		autoDecisions = auto
 		var limits: [String: Double] = [:]
 		defer { effectiveLimit = limits }
@@ -161,13 +171,26 @@ final class Enforcer {
 			groupNames[group.id] = group.name
 			lastGroups[group.id] = group
 			let rule = rules.rule(for: group).flatMap { $0.isInEffect(state) ? $0 : nil }
-			let pids = (rule?.includeHelpers ?? true) ? group.pids.sorted() : [group.ownerPid]
+			// Never SIGSTOP a shell's foreground job — the shell would treat it as
+			// suspended and detach it. Efficiency cores still apply to it.
+			let allPids = (rule?.includeHelpers ?? true) ? group.pids.sorted() : [group.ownerPid]
+			let pids = allPids.filter { !controller.isTerminalForeground($0) }
+			if pids.count < allPids.count, (rule?.cpuLimitEnabled == true || frozen[group.id] != nil),
+			   terminalJobsLogged.insert(group.id).inserted {
+				onEvent?(group.name, L("Running in a terminal's foreground — CPU limit and freeze skipped (they would suspend the job). Efficiency cores still apply."), false)
+			}
 			let gid = gid(for: group.id)
+
+			// A frozen app that quit and was relaunched (new main process) starts unfrozen.
+			if let owner = frozenOwner[group.id], owner != group.ownerPid, !controller.isAlive(owner) {
+				clearFrozen(group.id)
+			}
 
 			if let rule, freshSample {
 				// Never freeze/quit the app you're using (or one playing/recording audio)
 				// just because the Mac is short of memory; pick a background app instead.
-				let inUse = group.ownerPid == frontmostPid || (auto[group.id].map { $0.reason != .background } ?? false)
+				let inUse = group.pids.contains(frontmostPid) || group.pids.contains(where: audioPids.contains)
+					|| (auto[group.id].map { $0.reason != .background } ?? false)
 				if rule.pressureAction != .none && lowMemory && !inUse && !pressureActed.contains(group.id) {
 					pressureActed.insert(group.id)
 					handlePressure(group, rule: rule)
@@ -181,32 +204,47 @@ final class Enforcer {
 			}
 
 			if frozen[group.id] != nil {
-				desired[gid] = Applied(pids: frozenPids(group, rule: rule), limit: 0, frozen: true)
+				let fp = frozenPids(group, rule: rule).filter { !controller.isTerminalForeground($0) }
+				if !fp.isEmpty { desired[gid] = Applied(pids: fp, limit: 0, frozen: true) }
 				continue
 			}
 
 			// Auto mode manages apps whose rule doesn't set CPU / E-cores itself.
 			if let d = auto[group.id], !(rule?.cpuLimitEnabled ?? false), !(rule?.backgroundMode ?? false) {
 				if d.reason != .background { inUsePids.formUnion(group.pids) }
-				if let cap = d.cap {
+				if let cap = d.cap, !pids.isEmpty {
 					desired[gid] = Applied(pids: pids, limit: cap, frozen: false)
 					limits[group.id] = cap
 				}
 				if d.efficiency {
-					for pid in pids { wantBackground[pid] = group.id }
+					for pid in allPids { wantBackground[pid] = group.id }
 				}
 			}
 			guard let rule else { continue }
 
 			// "Only while in the background" keeps the app at full speed while you use it.
-			let inUse = rule.onlyWhenInactive && group.ownerPid == frontmostPid
-			if rule.cpuLimitEnabled && !inUse {
+			let inUse = rule.onlyWhenInactive && group.pids.contains(frontmostPid)
+			if rule.cpuLimitEnabled && !inUse && !pids.isEmpty {
 				let limit = max(rule.cpuLimit, 1) / 100
 				desired[gid] = Applied(pids: pids, limit: limit, frozen: false)
 				limits[group.id] = limit
 			}
 			if rule.backgroundMode && !inUse {
-				for pid in pids { wantBackground[pid] = group.id }
+				for pid in allPids { wantBackground[pid] = group.id }
+			}
+		}
+
+		// A frozen app or process that has gone away is no longer frozen —
+		// otherwise a relaunched app would come back frozen.
+		if freshSample {
+			let present = Set(snapshot.groups.map(\.id))
+			// Absent from this sample isn't enough (it may have been taken before
+			// the freeze): its processes must actually have exited.
+			for id in frozen.keys where !present.contains(id)
+				&& !(gids[id].flatMap { applied[$0]?.pids } ?? []).contains(where: { controller.isAlive($0) }) {
+				clearFrozen(id)
+				if let gid = gids[id] { desired[gid] = nil }
+				onEvent?(groupNames[id] ?? id, L("Quit while frozen — no longer frozen"), false)
 			}
 		}
 
@@ -214,8 +252,7 @@ final class Enforcer {
 		if !lowMemory && freshSample {
 			pressureActed.removeAll()
 			for (id, reason) in frozen where reason == .memoryPressure {
-				frozen[id] = nil
-				frozenDemand[id] = nil
+				clearFrozen(id)
 				if let gid = gids[id] { desired[gid] = nil }
 				onEvent?(groupNames[id] ?? id, L("Memory pressure eased — resumed"), false)
 			}
@@ -230,6 +267,21 @@ final class Enforcer {
 			controller.removeGroup(gid)
 		}
 		applied = desired
+
+		// Forget groups that are gone, so bookkeeping doesn't grow with every
+		// short-lived process (builds, scripts) seen by full scans.
+		if freshSample {
+			let keep = Set(snapshot.groups.map(\.id)).union(frozen.keys)
+			let liveGids = Set(applied.keys)
+			gids = gids.filter { keep.contains($0.key) || liveGids.contains($0.value) }
+			lastGroups = lastGroups.filter { keep.contains($0.key) }
+			groupNames = groupNames.filter { gids[$0.key] != nil || keep.contains($0.key) }
+			memoryStrikes = memoryStrikes.filter { keep.contains($0.key) }
+			memoryTriggered.formIntersection(keep)
+			deniedLogged.formIntersection(keep)
+			backgroundFailed.formIntersection(keep)
+			terminalJobsLogged.formIntersection(keep)
+		}
 
 		applyBackground(wantBackground)
 
@@ -273,7 +325,7 @@ final class Enforcer {
 	}
 
 	private func checkMemory(_ group: AppGroup, rule: AppRule) {
-		let limit = UInt64(rule.memoryLimitMB * 1_048_576)
+		let limit = UInt64(min(max(rule.memoryLimitMB, 0), AppRule.memoryLimitRange.upperBound) * 1_048_576)
 		let footprint = rule.includeHelpers ? group.footprint : group.ownerFootprint
 		if footprint > limit {
 			let strikes = (memoryStrikes[group.id] ?? 0) + 1
@@ -323,6 +375,8 @@ final class Enforcer {
 	func freeze(_ group: AppGroup, reason: FreezeReason = .manual) {
 		guard !Protected.contains(group), group.ownerPid != getpid() else { return }
 		frozen[group.id] = reason
+		frozenSince[group.id] = Date()
+		frozenOwner[group.id] = group.ownerPid
 		// A group looked up for a CLI freeze has no rate yet; use the last measurement.
 		frozenDemand[group.id] = max(group.cpu, lastGroups[group.id]?.cpu ?? 0)
 		groupNames[group.id] = group.name
@@ -332,9 +386,15 @@ final class Enforcer {
 		applied[gid] = Applied(pids: pids, limit: 0, frozen: true)
 	}
 
+	private func clearFrozen(_ id: String) {
+		frozen[id] = nil
+		frozenDemand[id] = nil
+		frozenSince[id] = nil
+		frozenOwner[id] = nil
+	}
+
 	func unfreeze(_ groupID: String) {
-		frozen[groupID] = nil
-		frozenDemand[groupID] = nil
+		clearFrozen(groupID)
 		guard let gid = gids[groupID] else { return }
 		controller.removeGroup(gid)
 		applied[gid] = nil
@@ -352,8 +412,7 @@ final class Enforcer {
 
 	/// Resume a group fully so it can handle a quit request.
 	private func release(_ groupID: String) {
-		frozen[groupID] = nil
-		frozenDemand[groupID] = nil
+		clearFrozen(groupID)
 		guard let gid = gids[groupID] else { return }
 		controller.removeGroup(gid)
 		applied[gid] = nil
@@ -370,8 +429,7 @@ final class Enforcer {
 	func releaseAll() {
 		controller.removeAllGroups()
 		applied.removeAll()
-		frozen.removeAll()
-		frozenDemand.removeAll()
+		for id in frozen.keys { clearFrozen(id) }
 		for pid in backgroundPids.keys {
 			_ = controller.setBackground(pid, on: false)
 			for child in controller.descendants(of: pid) { _ = controller.setBackground(child, on: false) }

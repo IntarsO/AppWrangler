@@ -224,6 +224,21 @@ struct AppRule: Codable, Identifiable, Equatable {
 		self.displayName = displayName
 	}
 
+	static let cpuLimitRange: ClosedRange<Double> = 1...10_000			// up to 100 cores
+	static let memoryLimitRange: ClosedRange<Double> = 16...16_777_216	// 16 MB … 16 TB
+
+	/// Clamp numbers from any source (UI, CLI, MCP, imported or hand-edited
+	/// files) so a typo like 1e19 can't crash later conversions.
+	func sanitized() -> AppRule {
+		var r = self
+		r.cpuLimit = cpuLimit.isFinite ? min(max(cpuLimit, Self.cpuLimitRange.lowerBound), Self.cpuLimitRange.upperBound) : 50
+		r.memoryLimitMB = memoryLimitMB.isFinite ? min(max(memoryLimitMB, Self.memoryLimitRange.lowerBound), Self.memoryLimitRange.upperBound) : 2048
+		r.conditions.schedule.start = min(max(conditions.schedule.start, 0), 24 * 60 - 1)
+		r.conditions.schedule.end = min(max(conditions.schedule.end, 0), 24 * 60 - 1)
+		r.conditions.schedule.weekdays = conditions.schedule.weekdays.filter { (1...7).contains($0) }
+		return r
+	}
+
 	// Decode leniently so older/newer rule files still load.
 	init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -243,6 +258,7 @@ struct AppRule: Codable, Identifiable, Equatable {
 		pressureAction = try c.decodeIfPresent(PressureAction.self, forKey: .pressureAction) ?? .none
 		conditions = try c.decodeIfPresent(RuleConditions.self, forKey: .conditions) ?? RuleConditions()
 		ignored = try c.decodeIfPresent(Bool.self, forKey: .ignored) ?? false
+		self = sanitized()
 	}
 }
 
@@ -299,6 +315,7 @@ final class RuleStore: ObservableObject {
 	private var saveWork: DispatchWorkItem?
 	private var loading = false
 	private var lastWritten: Data?
+	private var lastSeenModification: Date?
 	private var watcher: DispatchSourceFileSystemObject?
 	private let ioQueue = DispatchQueue(label: "AppWrangler.rules.io", qos: .utility)
 
@@ -320,6 +337,7 @@ final class RuleStore: ObservableObject {
 	}
 
 	func upsert(_ rule: AppRule) {
+		let rule = rule.sanitized()
 		if let i = rules.firstIndex(where: { $0.id == rule.id }) {
 			rules[i] = rule
 		} else {
@@ -457,6 +475,10 @@ final class RuleStore: ObservableObject {
 			guard let self else { return }
 			// Let the writer finish its rename before reading.
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+				// Other files in the folder (state, stats) change too; only re-read rules when they changed.
+				let stamp = (try? FileManager.default.attributesOfItem(atPath: self.fileURL.path))?[.modificationDate] as? Date
+				guard stamp != self.lastSeenModification else { return }
+				self.lastSeenModification = stamp
 				if self.reloadFromDisk() { self.onExternalChange?() }
 			}
 		}

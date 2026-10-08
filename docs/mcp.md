@@ -118,7 +118,7 @@ The server also offers two ready-made **prompts**:
 
 ## Privacy & safety
 
-- Everything stays on your Mac. The server only reads process information and AppWrangler's own files, and writes your rules file.
+- Everything stays on your Mac. The server only reads process information and AppWrangler's own files, and writes your rules file (and AppWrangler's Auto-mode preference, for `set_auto_mode`).
 - What the AI sees (app names, usage figures, rules) is sent to whichever AI service your client uses, as with anything you share in a chat.
 - The server has the same powers as the `appwrangler` command line, and processes critical to macOS stay protected.
 - `--read-only` removes every tool that can change anything.

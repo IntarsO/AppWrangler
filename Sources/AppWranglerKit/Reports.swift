@@ -21,7 +21,7 @@ enum Reports {
 		usleep(useconds_t(max(0.2, seconds) * 1_000_000))
 		var groups = sampler.sampleNow(request).groups.filter { includeProcesses || $0.kind != .process }
 		groups.sort { $0.cpu > $1.cpu }
-		if let limit { groups = Array(groups.prefix(limit)) }
+		if let limit { groups = Array(groups.prefix(max(0, limit))) }
 		return groups.map { group(store: store, $0) }
 	}
 

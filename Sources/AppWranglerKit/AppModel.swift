@@ -112,7 +112,9 @@ final class AppModel: ObservableObject {
 		rules.startWatching()
 
 		DistributedNotificationCenter.default().addObserver(forName: IPC.command, object: nil, queue: .main) { [weak self] note in
-			self?.handleCommand(note.userInfo as? [String: String] ?? [:])
+			let info = note.userInfo as? [String: String] ?? [:]
+			guard IPC.isForThisInstance(info) else { return }
+			self?.handleCommand(info)
 		}
 
 		system.onChange = { [weak self] state in
@@ -144,6 +146,19 @@ final class AppModel: ObservableObject {
 	private func recordImpact(_ snapshot: Snapshot, status: [String: pk_lim_status], state: SystemState) {
 		let now = Date()
 		defer { lastStatsTime = now }
+		// Our own CPU since the last call (always advance the baseline, even
+		// across a gap, so the next interval isn't averaged over the gap).
+		var usage = pk_proc_usage()
+		var selfCPU = 0.0
+		var footprint: UInt64 = 0
+		if pk_proc_usage_get(getpid(), 0, &usage) == 0 {
+			footprint = usage.footprint
+			let t = pk_now_ns()
+			if let prev = lastSelfCPU, t > prev.at {
+				selfCPU = Double(usage.cpu_ns &- prev.ns) / Double(t - prev.at)
+			}
+			lastSelfCPU = (usage.cpu_ns, t)
+		}
 		guard let last = lastStatsTime else { return }
 		let dt = now.timeIntervalSince(last)
 		// A long gap means the Mac slept or we stalled: don't credit it.
@@ -160,24 +175,18 @@ final class AppModel: ObservableObject {
 			guard throttle != nil || frozen || efficiency else { continue }
 			var tick = ImpactTick(key: ImpactKey.of(group), name: group.name)
 			tick.throttle = throttle
-			tick.frozenDemand = frozen ? (enforcer.frozenDemand[group.id] ?? 0) : nil
+			// Credit a freeze with the app's earlier usage only for its first hour —
+			// beyond that we can't assume it would still have been busy.
+			if frozen {
+				let age = enforcer.frozenSince[group.id].map { now.timeIntervalSince($0) } ?? 0
+				tick.frozenDemand = age < 3600 ? (enforcer.frozenDemand[group.id] ?? 0) : 0
+			}
 			tick.efficiency = efficiency
 			tick.cpu = group.cpu
 			tick.power = group.power
 			ticks.append(tick)
 		}
 
-		var usage = pk_proc_usage()
-		var selfCPU = 0.0
-		var footprint: UInt64 = 0
-		if pk_proc_usage_get(getpid(), 0, &usage) == 0 {
-			footprint = usage.footprint
-			let t = pk_now_ns()
-			if let prev = lastSelfCPU, t > prev.at {
-				selfCPU = Double(usage.cpu_ns &- prev.ns) / Double(t - prev.at)
-			}
-			lastSelfCPU = (usage.cpu_ns, t)
-		}
 		stats.record(ticks, selfCPU: selfCPU, selfFootprint: footprint, dt: dt, at: now)
 	}
 
@@ -263,8 +272,17 @@ final class AppModel: ObservableObject {
 		var state = system.current
 		state.now = Date()
 		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
-		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto)
+		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids)
 		writeState()
+	}
+
+	/// Processes playing or recording audio (macOS 14.2+). Only queried when
+	/// something uses it: Auto mode or a low-memory rule.
+	private var audioPids: Set<pid_t> = []
+
+	private func refreshAudio() {
+		let needed = autoPilot.settings.enabled || rules.rules.contains { $0.enabled && $0.pressureAction != .none }
+		audioPids = needed ? AudioActivity.activePids() : []
 	}
 
 	/// Apps Auto may manage: real apps without their own CPU / E-core rule,
@@ -285,6 +303,7 @@ final class AppModel: ObservableObject {
 
 	private func decideAuto(_ snapshot: Snapshot, state: SystemState, newSample: Bool) -> [String: AutoDecision] {
 		guard autoPilot.settings.enabled else {
+			autoPilot.reset()
 			if autoSummary != AutoSummary() { autoSummary = AutoSummary() }
 			return [:]
 		}
@@ -294,7 +313,7 @@ final class AppModel: ObservableObject {
 		}
 		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
 		let decisions = autoPilot.decide(groups: autoEligible(snapshot), frontmostPid: frontmostPid, lastActive: lastActive,
-										 audioPids: AudioActivity.activePids(), systemCPU: snapshot.systemCPU,
+										 audioPids: audioPids, systemCPU: snapshot.systemCPU,
 										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu, demand: demand)
 		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
 		// Forget focus times of apps that have quit.
@@ -337,8 +356,9 @@ final class AppModel: ObservableObject {
 
 	private func didSample(_ snapshot: Snapshot, state: SystemState) {
 		lastSnapshot = snapshot
+		refreshAudio()
 		let auto = decideAuto(snapshot, state: state, newSample: true)
-		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto)
+		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		if snapshot.full && runawayEnabled { detectRunaways(snapshot) }

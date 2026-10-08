@@ -113,6 +113,25 @@ import Testing
 		#expect(controller.removed.isEmpty)
 	}
 
+	@Test func frozenEntryIsDroppedWhenTheAppQuits() {
+		let e = enforcer
+		let g = makeGroup()
+		e.freeze(g)
+		controller.alive = [50_000]
+		e.apply(makeSnapshot([], seq: 1), rules: store, state: SystemState(), frontmostPid: 0)
+		#expect(e.isFrozen(g.id), "missing from one sample but still running → stays frozen")
+		controller.alive = []
+		e.apply(makeSnapshot([], seq: 2), rules: store, state: SystemState(), frontmostPid: 0)
+		#expect(!e.isFrozen(g.id), "exited → not frozen, so a relaunch isn't frozen")
+		#expect(controller.groups.isEmpty)
+	}
+
+	@Test func commandsOnlyReachTheirOwnInstance() {
+		#expect(IPC.isForThisInstance(["command": "pause", "dataDir": "/a"], dataDir: "/a"))
+		#expect(!IPC.isForThisInstance(["command": "pause", "dataDir": "/tmp/test"], dataDir: "/a"))
+		#expect(!IPC.isForThisInstance(["command": "pause"], dataDir: "/a"), "unscoped commands are ignored")
+	}
+
 	@Test func unfreezeReleases() {
 		let e = enforcer
 		let g = makeGroup()

@@ -41,7 +41,7 @@
 |---|---|
 | The app you're using | Full speed, on the performance cores. Switching to an app restores it instantly. |
 | An app you left a moment ago | Stays at full speed for 15 s, so quick switching back and forth never stutters. |
-| Apps playing or recording audio | Treated as in use, even in the background: music, video calls, dictation tools like Whispr. |
+| Apps playing or recording audio | Treated as in use, even in the background: music, video calls, dictation tools like Whispr. (Needs macOS 14.2 or later; on older systems only focus counts.) |
 | Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
 | The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
 
@@ -97,7 +97,7 @@ Click the menu bar icon.
   - a safety note: *Safe to limit*, *Limit with care*, or *Critical to macOS*;
   - the bundle ID and path. You can select and copy them.
 - **Live stats:** CPU, memory, energy (watts), disk read/write per second, threads.
-- **Chart:** CPU and memory over the last 10 minutes, with peaks. History is collected while AppWrangler is measuring the app: always for apps with rules, otherwise while the panel is open.
+- **Chart:** CPU and memory over the last 10 minutes, with peaks. History is collected while AppWrangler is measuring the app: apps with rules, every app while Auto mode is on, and everything while the panel is open.
 - **Throttling status**, e.g. *"Throttling: using 25%, allowed to run 12% of the time"*.
 - **The rule editor** (described below) and buttons for **Freeze**, **Quit**, **Force Quit** and **Remove Rule**.
 - **Processes (N):** every process in the group, with its own CPU and memory.
@@ -239,7 +239,7 @@ A daily bar chart shows CPU time saved per day.
 - **limit accuracy:** how closely held-back apps stayed at their limit, e.g. ±1.5%;
 - an **efficiency ratio:** "saved N× more CPU time than it used".
 
-These are measured only while AppWrangler is actively watching or limiting apps. When there's nothing to do, it doesn't run at all.
+These are measured while AppWrangler is watching or limiting apps, which with Auto mode on is all the time. With Auto and runaway alerts off and no rules, it doesn't sample at all.
 
 **Per app:**
 - CPU and energy saved;
@@ -285,7 +285,8 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 ## Safety
 
-- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or a normal `kill` releases every app AppWrangler had paused. Only `kill -9` of AppWrangler itself can't be caught; see the [FAQ](faq.md#an-app-is-stuck-not-responding-after-appwrangler-was-force-killed) for how to recover.
+- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or any kind of kill (even `kill -9`) releases every app AppWrangler had paused or moved to the efficiency cores. A tiny watchdog process takes care of the cases AppWrangler can't handle itself.
+- **Terminal jobs are left running.** A command in a terminal's foreground is never paused, because the shell would suspend it. Efficiency cores still apply.
 - **Critical processes are protected.** WindowServer, loginwindow, the Dock, Control Center, launchd and other session-critical processes can't be limited or frozen.
 - **Your processes only.** Like any normal app, AppWrangler can only control processes running as your user.
 - **One instance at a time**, so two copies never fight over the same apps.

@@ -339,3 +339,6 @@
 "Then background apps share what the foreground isn't using, each keeping a minimum, so nothing starves. On battery, the threshold is at most 50%." = "Тогда фоновые приложения делят то, что не использует активное, и каждое сохраняет минимум, так что ничего не замирает. От батареи порог не выше 50%.";
 "To exclude an app, give it a rule and turn on “Ignore this app”." = "Чтобы исключить приложение, создайте для него правило и включите «Игнорировать это приложение».";
 "background only" = "только в фоне";
+
+"Quit while frozen — no longer frozen" = "Завершилось, пока было заморожено — больше не заморожено";
+"Running in a terminal's foreground — CPU limit and freeze skipped (they would suspend the job). Efficiency cores still apply." = "Работает на переднем плане терминала — лимит ЦП и заморозка пропущены (они приостановили бы задачу). Энергоэффективные ядра применяются.";
