@@ -26,6 +26,28 @@ enum AppTraits {
 	static let messagingHints = ["slack", "whatsapp", "teams", "zoom", "discord", "telegram", "signal", "messages", "mail",
 								 "outlook", "skype", "facetime", "webex", "mattermost", "element", "wechat", "viber"]
 
+	/// Apps that do work for you while you're elsewhere: freezing them would stop
+	/// builds, dev servers, terminals' jobs or virtual machines.
+	static let keepRunningHints = ["terminal", "iterm", "warp", "ghostty", "kitty", "alacritty", "wezterm", "hyper",
+								   "xcode", "vscode", "visual studio code", "cursor", "zed", "jetbrains", "intellij", "pycharm",
+								   "webstorm", "goland", "android studio", "docker", "orbstack", "utm", "parallels", "vmware",
+								   "virtualbox", "multipass", "podman", "rancher"]
+
+	/// Compilers and build tools: busy because you're waiting for them, so
+	/// slowing them down (efficiency cores, a CPU cap) only makes you wait longer.
+	static let buildTools: Set<String> = ["swift-frontend", "swiftc", "swift-build", "swift-driver", "clang", "clang++", "cc1", "cc1plus",
+										  "ld", "ld64", "lld", "rustc", "cargo", "go", "javac", "kotlinc", "gradle", "java", "make",
+										  "ninja", "cmake", "xcodebuild", "ibtool", "actool", "node-gyp", "esbuild", "tsc", "webpack"]
+
+	static func isBuildTool(_ name: String) -> Bool { buildTools.contains(name.lowercased()) }
+
+	/// Never frozen just for being idle.
+	static func neverIdleFreeze(name: String, bundleID: String?) -> Bool {
+		if isMessaging(name: name, bundleID: bundleID) { return true }
+		let n = (name + " " + (bundleID ?? "")).lowercased()
+		return keepRunningHints.contains { n.range(of: "\\b" + $0, options: .regularExpression) != nil }
+	}
+
 	static func isMessaging(name: String, bundleID: String?) -> Bool {
 		let n = (name + " " + (bundleID ?? "")).lowercased()
 		return messagingHints.contains { hint in
@@ -93,6 +115,8 @@ final class AutoPilot {
 	private var backgroundSince: [String: Date] = [:]
 	private(set) var decisions: [String: AutoDecision] = [:]
 	private var owners: [String: pid_t] = [:]
+	/// Every pid of each managed app, so switching to any of its windows counts.
+	private var groupPids: [String: Set<pid_t>] = [:]
 	private(set) var summary = AutoSummary()
 
 	/// - Parameters:
@@ -127,9 +151,11 @@ final class AutoPilot {
 		var background: [AppGroup] = []
 		var present = Set<String>()
 		owners = [:]
+		groupPids = [:]
 		for g in groups {
 			present.insert(g.id)
 			owners[g.id] = g.ownerPid
+			groupPids[g.id] = Set(g.pids)
 			let reason: AutoDecision.Reason
 			if g.pids.contains(frontmostPid) {
 				reason = .foreground
@@ -181,6 +207,7 @@ final class AutoPilot {
 	func reset() {
 		decisions = [:]
 		owners = [:]
+		groupPids = [:]
 		backgroundSince = [:]
 		summary = AutoSummary()
 		busy = false
@@ -195,7 +222,7 @@ final class AutoPilot {
 		guard settings.enabled else { return [:] }
 		for (id, var d) in decisions {
 			guard let pid = owners[id] else { continue }
-			if pid == frontmostPid {
+			if pid == frontmostPid || groupPids[id]?.contains(frontmostPid) == true {
 				d = AutoDecision(reason: .foreground)
 				backgroundSince[id] = nil
 			} else if d.reason == .foreground {
@@ -213,13 +240,14 @@ final class AutoPilot {
 	/// Apps Auto may freeze when the Mac is low on memory: regular apps (not
 	/// menu bar apps) you haven't used for `idleAfter`, using at least
 	/// `minimumBytes`, biggest first. Never the app in use, anything playing or
-	/// recording audio, or messaging and calls apps (you'd miss messages).
+	/// recording audio, messaging and calls apps (you'd miss messages), apps
+	/// still doing work (above `busyCPU`), terminals, IDEs or virtual machines.
 	static func idleFreezeCandidates(_ groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date],
 									 audioPids: Set<pid_t>, idleAfter: TimeInterval, since: Date, now: Date = Date(),
-									 minimumBytes: UInt64 = 100 * 1_048_576) -> [String] {
+									 minimumBytes: UInt64 = 100 * 1_048_576, busyCPU: Double = 0.05) -> [String] {
 		groups.filter { g in
-			guard g.kind == .app, g.footprint >= minimumBytes, !g.pids.contains(frontmostPid),
-				  !g.pids.contains(where: audioPids.contains), !AppTraits.isMessaging(name: g.name, bundleID: g.bundleID) else { return false }
+			guard g.kind == .app, g.footprint >= minimumBytes, g.cpu < busyCPU, !g.pids.contains(frontmostPid),
+				  !g.pids.contains(where: audioPids.contains), !AppTraits.neverIdleFreeze(name: g.name, bundleID: g.bundleID) else { return false }
 			let lastUsed = g.pids.compactMap { lastActive[$0] }.max() ?? since
 			return now.timeIntervalSince(lastUsed) >= idleAfter
 		}

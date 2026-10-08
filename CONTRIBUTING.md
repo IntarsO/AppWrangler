@@ -33,6 +33,10 @@ See [docs/how-it-works.md](docs/how-it-works.md). In short:
 - `Sources/AppWrangler` is the entry point.
 - Tests are in `Tests/`.
 
+**The widget** (`Widget/`) is built by `build.sh` with plain `swiftc` into `Contents/PlugIns/AppWranglerWidget.appex`. It shares only `Sources/AppWranglerKit/WidgetSnapshot.swift` with the app, and its buttons are `appwrangler://` links handled in `AppURL.swift`. To check its layout without adding it to the desktop, run `scripts/render-widget.sh`. When testing it from a build:
+- `build.sh --install` keeps only the installed copy registered, and stops an old widget process.
+- Re-registering (`lsregister -f -R -trusted /Applications/AppWrangler.app`) makes macOS reload it.
+
 ## Guidelines
 
 - **Style:** follow the surrounding code. Tabs for Swift, C and shell; comments explain *why*, not what.
@@ -62,13 +66,14 @@ The icons are drawn in code by `scripts/make-icons.swift`. Edit it and run `swif
 
 ## Screenshots
 
-`scripts/screenshots.sh` renders the panel and Settings window into `docs/images/` using the debug build. It briefly opens AppWrangler's windows on your screen.
+`scripts/screenshots.sh` writes the screenshots used by the README and the User Manual into `docs/images/`. It renders the panel (`panel.png`) and the Help window (`help.png`) with the debug build's capture hook, using a throwaway data folder with sample rules. It renders the widget (`widget-small.png`, `widget-medium.png`) straight from its views. It briefly opens AppWrangler's windows on your screen (they don't take keyboard focus). The panel shows the apps running on your Mac, so check the images before committing them.
 
 ## Releasing (maintainers)
 
 1. Run `./test.sh` and `./Tests/e2e/run.sh`.
-2. Update `CHANGELOG.md`, and build with `VERSION=1.1.0 ./build.sh --zip`.
-3. Tag the release (`git tag v1.1.0 && git push origin v1.1.0`), create a GitHub release for the tag, and attach `build/AppWrangler-1.1.0.zip`.
+2. Update `CHANGELOG.md`, bump `VERSION` in `build.sh` (or pass `VERSION=x.y.z`), and build with `./build.sh --zip`.
+3. Put the zip's SHA-256 (`shasum -a 256 build/AppWrangler-x.y.z.zip`) and the version into [`Casks/appwrangler.rb`](Casks/appwrangler.rb), commit, and push; wait for CI.
+4. Tag the release (`git tag -a vx.y.z -m … && git push origin vx.y.z`), then `gh release create vx.y.z build/AppWrangler-x.y.z.zip --verify-tag`.
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on every push and pull request, on Apple Silicon. Two kinds of test don't run there, because shared CI machines are too noisy for measurements of real CPU time:
 - the limiter's timing tests (they skip themselves when `CI` is set);
@@ -76,9 +81,7 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds t
 
 Run `./test.sh` and `./Tests/e2e/run.sh` locally before sending a change that touches the limiter, the enforcer or Auto mode.
 
-The widget (`Widget/`) is built by `build.sh` with plain `swiftc` into `Contents/PlugIns/AppWranglerWidget.appex`. It shares only `Sources/AppWranglerKit/WidgetSnapshot.swift` with the app. To check its layout without adding it to the desktop, run `scripts/render-widget.sh`.
 
-Releases are built locally with `./build.sh --zip`. Uploading one with `gh release create` also needs an update to [`Casks/appwrangler.rb`](Casks/appwrangler.rb) (version and `sha256`).
 
 For a signed, notarized build, which requires an Apple Developer ID, see the comments at the top of `build.sh`.
 

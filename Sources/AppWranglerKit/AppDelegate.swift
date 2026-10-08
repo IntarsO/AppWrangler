@@ -18,6 +18,11 @@ public enum AppWranglerMain {
 			if args.count > 2, ["install", "uninstall", "status"].contains(args[2]) {
 				exit(MCPInstaller.run(Array(args.dropFirst(2)), print: { Swift.print($0) }))
 			}
+			// `mcp instal`, `mcp --readonly`…: say so rather than wait silently for JSON-RPC.
+			if let bad = args.dropFirst(2).first(where: { $0 != "--read-only" }) {
+				FileHandle.standardError.write("unknown mcp option \"\(bad)\" — use: mcp [--read-only] | mcp install|uninstall|status\n".data(using: .utf8)!)
+				exit(2)
+			}
 			MCPServer.serve(readOnly: args.contains("--read-only"))
 		}
 		if !DataDirectory.isOverridden { Migration.importAppPoliceRules() }
@@ -113,14 +118,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
 	/// `appwrangler://window` (the widget), `appwrangler://settings`, `appwrangler://help[/topic#section]`.
 	func application(_ application: NSApplication, open urls: [URL]) {
-		for url in urls where url.scheme == "appwrangler" {
-			switch url.host {
-			case "settings": showSettings()
-			case "help":
-				let topic = HelpTopic(rawValue: url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) ?? .manual
-				HelpCenter.open(topic, anchor: url.fragment)
-			default: showMainWindow()
+		for url in urls {
+			switch AppURL(url) {
+			case .window?, nil: showMainWindow()
+			case .settings?: showSettings()
+			case .help(let page, let anchor)?: HelpCenter.open(page.flatMap(HelpTopic.init(rawValue:)) ?? .manual, anchor: anchor)
+			case .pause?: model.paused = true
+			case .resume?: model.paused = false
+			case .togglePause?: model.paused.toggle()
+			case .auto(let on)?:
+				UserDefaults.standard.set(on ?? !UserDefaults.standard.bool(forKey: Prefs.autoEnabled), forKey: Prefs.autoEnabled)
+			case .freeMemory?: model.freeMemoryNow()
 			}
+			updateStatusTitle(nil)
+			model.updateWidget()
 		}
 	}
 

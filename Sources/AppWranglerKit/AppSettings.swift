@@ -44,7 +44,7 @@ struct RuleChanges {
 		("power", "any, battery or charger — only apply the rule on that power source."),
 		("low_power_mode_only", "true = only apply while Low Power Mode is on."),
 		("hot_only", "true = only apply while the Mac is hot (thermal pressure)."),
-		("schedule", "HH:MM-HH:MM (e.g. 09:00-18:00) or off — only apply during those hours. MCP: {enabled, start, end, weekdays}."),
+		("schedule", "HH:MM-HH:MM (e.g. 09:00-18:00) or off — only apply during those hours. A window may cross midnight (22:00-06:00)."),
 		("weekdays", "With schedule: days it applies, 1 = Sunday … 7 = Saturday, e.g. 2,3,4,5,6 for Mon–Fri."),
 	]
 
@@ -214,11 +214,16 @@ enum AppSettings {
 	/// A rule left with no limits that isn't ignored is removed, so Auto mode manages the app.
 	static func configure(_ target: String, changes: RuleChanges, store: RuleStore, apps: [RunningApp], source: String = "cli") -> Outcome {
 		guard !changes.isEmpty else { return .failed("nothing to change — give at least one setting: " + RuleChanges.keys.map(\.key).joined(separator: ", ")) }
-		if Protected.contains(name: target, bundleID: target, pid: 2) {
-			return .failed("\(target) is critical to macOS; AppWrangler won't limit it")
-		}
+		if let problem = RuleTargets.check(target.trimmingCharacters(in: .whitespaces)) { return .failed(problem.description) }
 		let existing = RuleTargets.resolve(target, store: store, apps: apps, create: false)
-		guard var rule = existing ?? (changes.addsSomething ? RuleTargets.resolve(target, store: store, apps: apps, create: true) : nil) else {
+		var created: AppRule?
+		if existing == nil && changes.addsSomething {
+			switch RuleTargets.resolveForWrite(target, store: store, apps: apps) {
+			case .success(let r): created = r
+			case .failure(let problem): return .failed(problem.description)
+			}
+		}
+		guard var rule = existing ?? created else {
 			return .failed("\(target) has no rule, so there's nothing to turn off" + (changes.useAuto == true ? " — Auto mode already manages it" : ""))
 		}
 		if Protected.contains(name: rule.displayName, bundleID: rule.matchKind == .bundleID ? rule.matchValue : nil, pid: 2) {
@@ -280,7 +285,7 @@ enum AppSettings {
 		"protected": "Critical to macOS — never limited.",
 		"ignored": "You told AppWrangler to leave it alone.",
 		"rule": "Its own rule sets its CPU cap / efficiency cores; Auto mode leaves it alone.",
-		"auto": "Auto mode: full speed while in use, efficiency cores after 30 s in the background, fair CPU share when the Mac is busy.",
+		"auto": "Auto mode: full speed while in use, efficiency cores after a short time in the background (30 s by default), fair CPU share when the Mac is busy.",
 		"rule (memory only)": "Only memory settings apply; CPU is unmanaged (Auto mode is off or it's a plain process).",
 		"nothing": "Runs unmanaged.",
 	]
@@ -302,45 +307,90 @@ enum ChangeJournal {
 
 	static func url(_ directory: URL) -> URL { directory.appendingPathComponent("changes.json") }
 
+	/// The app, CLI and MCP servers all write the journal; take turns.
+	private static func locked<T>(_ directory: URL, _ body: () -> T) -> T {
+		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		let fd = open(directory.appendingPathComponent(".changes.lock").path, O_CREAT | O_RDWR, 0o600)
+		if fd >= 0 { flock(fd, LOCK_EX) }
+		defer { if fd >= 0 { flock(fd, LOCK_UN); close(fd) } }
+		return body()
+	}
+
 	static func entries(directory: URL) -> [Entry] {
 		guard let data = try? Data(contentsOf: url(directory)) else { return [] }
 		let decoder = JSONDecoder()
 		decoder.dateDecodingStrategy = .iso8601
-		return (try? decoder.decode([Entry].self, from: data)) ?? []
+		if let entries = try? decoder.decode([Entry].self, from: data) { return entries }
+		// Unreadable (hand-edited, or from a future version): keep it aside rather than overwrite it.
+		let aside = directory.appendingPathComponent("changes.unreadable-\(Int(Date().timeIntervalSince1970)).json")
+		try? FileManager.default.moveItem(at: url(directory), to: aside)
+		return []
 	}
 
 	private static func save(_ entries: [Entry], directory: URL) {
 		let encoder = JSONEncoder()
 		encoder.dateEncodingStrategy = .iso8601
 		encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		if let data = try? encoder.encode(Array(entries.suffix(capacity))) { try? data.write(to: url(directory), options: .atomic) }
 	}
 
 	static func record(before: AppRule?, after: AppRule?, source: String, store: RuleStore) {
 		guard before != after, let app = (after ?? before)?.displayName else { return }
 		let dir = store.fileURL.deletingLastPathComponent()
-		save(entries(directory: dir) + [Entry(date: Date(), app: app, source: source, before: before, after: after)], directory: dir)
+		locked(dir) {
+			save(entries(directory: dir) + [Entry(date: Date(), app: app, source: source, before: before, after: after)], directory: dir)
+		}
 	}
 
-	/// Reverts the most recent change. Returns what happened, or nil if there's nothing to undo.
+	enum UndoResult {
+		case undone(Entry, String)
+		/// The rule was changed somewhere else since (e.g. in the panel); undoing would lose that.
+		case conflict(Entry, String)
+		case nothing
+	}
+
+	/// The rule the entry is about, as it is now: same id, or the same app if it was re-created.
+	private static func current(_ entry: Entry, in store: RuleStore) -> AppRule? {
+		guard let ref = entry.after ?? entry.before else { return nil }
+		return store.rules.first { $0.id == ref.id }
+			?? store.rules.first { $0.matchKind == ref.matchKind && $0.matchValue.caseInsensitiveCompare(ref.matchValue) == .orderedSame }
+	}
+
+	/// Reverts the most recent change, unless the rule has been changed elsewhere
+	/// since (then nothing happens unless `force`).
+	static func undoLast(store: RuleStore, force: Bool = false) -> UndoResult {
+		let dir = store.fileURL.deletingLastPathComponent()
+		return locked(dir) {
+			var all = entries(directory: dir)
+			guard let last = all.last else { return .nothing }
+			let now = current(last, in: store)
+			if !force && now != last.after {
+				return .conflict(last, "\(last.app) was changed elsewhere since (e.g. in AppWrangler's window) — undoing would lose that. Run `appwrangler undo --force` to undo anyway.")
+			}
+			all.removeLast()
+			save(all, directory: dir)
+			let message: String
+			if var before = last.before {
+				// Replace whatever rule is there now for that app, so there's never a duplicate.
+				if let now, now.id != before.id { store.remove(id: now.id) }
+				before.id = now?.id ?? before.id
+				store.upsert(before)
+				message = "\(before.displayName): restored — \(before.summary)"
+			} else if let now {
+				store.remove(id: now.id)
+				message = "\(now.displayName): rule removed (it didn't exist before)"
+			} else {
+				message = "\(last.app): already as it was"
+			}
+			store.saveNow()
+			return .undone(last, message)
+		}
+	}
+
+	/// Older call style used by tests: undo without forcing.
 	@discardableResult
 	static func undo(store: RuleStore) -> (entry: Entry, message: String)? {
-		let dir = store.fileURL.deletingLastPathComponent()
-		var all = entries(directory: dir)
-		guard let last = all.popLast() else { return nil }
-		save(all, directory: dir)
-		let message: String
-		if let before = last.before {
-			store.upsert(before)
-			message = "\(before.displayName): restored — \(before.summary)"
-		} else if let after = last.after {
-			store.remove(id: after.id)
-			message = "\(after.displayName): rule removed (it didn't exist before)"
-		} else {
-			message = "\(last.app): nothing to restore"
-		}
-		store.saveNow()
-		return (last, message)
+		if case .undone(let e, let m) = undoLast(store: store) { return (e, m) }
+		return nil
 	}
 }

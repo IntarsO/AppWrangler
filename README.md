@@ -31,13 +31,13 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | 🧠 **Memory limit** | When an app's memory stays above your limit, get notified, or freeze, quit or force-quit it. |
 | 🚨 **Low-memory protection** | When your Mac runs short of memory, automatically freeze or quit apps you've marked as expendable, and resume them afterwards. |
 | ⏱ **Conditions** | Make any rule apply only on battery or on the charger, in Low Power Mode, when the Mac is hot, or during set hours and days. |
-| 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — with *Limit*, *E-cores* and *Ignore* buttons. |
+| 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — an alert in the panel and a notification with *Limit*, *E-cores* and *Ignore* buttons. |
 | ❄️ **Freeze, quit, force quit** | Suspend any app instantly and resume it later. |
 | 📊 **Impact & efficiency** | See how much CPU time and battery it saved — per app, per day — and what AppWrangler itself cost to run. |
-| 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, right in the panel, each with the reason, the benefit and a one-click fix. `appwrangler undo` takes any change back. |
+| 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, right in the panel, each with the reason, the benefit and a one-click fix. `appwrangler undo` takes back changes made from a suggestion, the command line or an AI assistant. |
 | 🤖 **AI assistants (MCP)** | Talk to Claude, OpenAI Codex or your own agents about your Mac: they audit it, explain any app, suggest settings and, with your OK, configure each app for you. Set up with one command: `appwrangler mcp install`. |
 | ⌨️ **Command line** | `appwrangler suggest`, `appwrangler show Slack`, `appwrangler set Slack efficiency_cores=on`, `appwrangler stats`, … |
-| 🖥 **Desktop widget** | CPU, memory, Auto mode, the busiest apps and the top suggestion on your desktop or in Notification Center (macOS 14+). |
+| 🖥 **Desktop widget** | CPU, memory, Auto mode, the busiest apps and suggestions on your desktop or in Notification Center (macOS 14+), with **Pause**, **Auto** and **Free memory** buttons. |
 | 📖 **Built-in help** | The full manual inside the app, searchable and offline, with a **?** next to every setting. |
 
 It uses well under 1% of one core. It never connects to the network.

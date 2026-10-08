@@ -4,7 +4,7 @@
 //  SPDX-License-Identifier: GPL-2.0-only
 //
 //  Which processes are playing or recording audio right now. Auto mode treats
-//  them as "in use" even in the background: music, calls, dictation (Whispr)…
+//  them as "in use" even in the background: music, calls, dictation (Wispr Flow)…
 //  Uses CoreAudio's per-process objects (macOS 14.2+); no permission needed.
 //
 

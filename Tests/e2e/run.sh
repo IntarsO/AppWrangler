@@ -21,15 +21,19 @@ fi
 
 WORK="$(mktemp -d -t appwrangler-e2e)"
 export APPWRANGLER_DATA_DIR="$WORK/data"
-clang -O2 -w Tests/e2e/burner.c -o "$WORK/e2e-burner"
-cp "$WORK/e2e-burner" "$WORK/e2e-memhog"
+# Unique per run, so no rule on this Mac (the real AppWrangler applies rules to
+# every process, a test's too) can match the test's processes.
+BURNER="e2eburn$$"
+MEMHOG="e2emem$$"
+clang -O2 -w Tests/e2e/burner.c -o "$WORK/$BURNER"
+cp "$WORK/$BURNER" "$WORK/$MEMHOG"
 clang -O2 -w -I Sources/ProcKit/include Sources/ProcKit/ProcKit.c Tests/e2e/cpu.c -o "$WORK/cpu"
 
 # A real .app (LSUIElement, like a menu bar app) with a helper inside its bundle.
 HOG="$WORK/E2EHog.app"
 mkdir -p "$HOG/Contents/MacOS" "$HOG/Contents/Helpers"
 swiftc -O Tests/e2e/TestApp.swift -o "$HOG/Contents/MacOS/E2EHog" 2>&1 | grep -v "search path" || true
-cp "$WORK/e2e-burner" "$HOG/Contents/Helpers/Helper"
+cp "$WORK/$BURNER" "$HOG/Contents/Helpers/Helper"
 cat > "$HOG/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,14 +101,14 @@ start_app && ok "app starts headless and writes its status file" || { bad "app d
 [ $? -eq 0 ] && kill -0 "$APP" 2>/dev/null && ok "a second instance refuses to run alongside" || bad "single-instance lock"
 
 # Two busy threads: fits GitHub runners (3 cores) and leaves room for limits of 50% and 150%.
-spawn e2e-burner 2
+spawn $BURNER 2
 B=$LAST
 sleep 0.5
 base=$(cpu 1 "$B")
 between "$base" 1.2 2.3 && ok "burner runs free: $base cores" || bad "burner baseline $base"
 
 # --- Rules added on the fly ---------------------------------------------------
-cli limit e2e-burner 50
+cli limit $BURNER 50
 t=$(time_until_below "$B" 0.9)
 [ "$t" != "timeout" ] && ok "new rule enforced ${t}s after 'appwrangler limit' (no restart)" || bad "limit not applied"
 sleep 1.5
@@ -112,16 +116,16 @@ v=$(cpu 2 "$B")
 between "$v" 0.38 0.62 && ok "holds 50% limit: $v cores" || bad "50% limit measured $v"
 
 sleep 2
-saved=$("$APP_BIN" stats today --json | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["apps"] if x["name"]=="e2e-burner"]; print(round(a[0]["savedCPUSeconds"],1) if a else 0, round(a[0]["heldBackSeconds"]) if a else 0, d["self"]["uptimeSeconds"] > 0)')
+saved=$("$APP_BIN" stats today --json | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["apps"] if x["name"]==sys.argv[1]]; print(round(a[0]["savedCPUSeconds"],1) if a else 0, round(a[0]["heldBackSeconds"]) if a else 0, d["self"]["uptimeSeconds"] > 0)' "$BURNER")
 read sv hb up <<<"$saved"
 awk -v s="$sv" 'BEGIN{exit !(s>3)}' && [ "$up" = True ] && ok "impact stats: ${sv} core-s saved while held back ${hb}s (appwrangler stats)" || bad "impact stats not recorded: $saved"
 
-cli limit e2e-burner 150
+cli limit $BURNER 150
 sleep 2.5
 v=$(cpu 2 "$B")
 between "$v" 1.3 1.7 && ok "limit changed on the fly to 150%: $v cores" || bad "150% limit measured $v"
 
-spawn e2e-burner 2
+spawn $BURNER 2
 B2=$LAST
 sleep 3
 v=$(cpu 2 "$B2")
@@ -134,7 +138,7 @@ between "$ov" 0 0.03 && ok "AppWrangler overhead while limiting: $(awk -v v="$ov
 # --- Pause / freeze -----------------------------------------------------------
 # Drop to a low limit first so "limit lifted" is a big, unambiguous jump even
 # when the Mac is busy (e.g. the crash reporter from a previous run).
-cli limit e2e-burner 30
+cli limit $BURNER 30
 sleep 2
 cli pause
 sleep 1
@@ -142,7 +146,7 @@ v=$(cpu 1 "$B")
 between "$v" 1.0 2.3 && ok "pause lifts CPU limits: $v cores" || bad "pause measured $v"
 "$APP_BIN" status | grep -q PAUSED && ok "status reports paused" || bad "status after pause"
 
-cli freeze e2e-burner
+cli freeze $BURNER
 sleep 1
 v=$(cpu 1 "$B")
 between "$v" 0 0.03 && ok "freeze works while paused: $v cores" || bad "freeze while paused measured $v"
@@ -150,15 +154,15 @@ cli resume
 sleep 1
 v=$(cpu 1 "$B")
 between "$v" 0 0.03 && ok "resuming limits keeps the app frozen" || bad "frozen app thawed by resume: $v"
-cli unfreeze e2e-burner
+cli unfreeze $BURNER
 sleep 2.5
 v=$(cpu 2 "$B")
 between "$v" 0.2 0.4 && ok "unfreeze restores the 30% rule: $v cores" || bad "after unfreeze measured $v"
 
 # --- Memory -------------------------------------------------------------------
-spawn e2e-memhog 0 400
+spawn $MEMHOG 0 400
 M=$LAST
-cli memlimit e2e-memhog 200 freeze
+cli memlimit $MEMHOG 200 freeze
 frozen=no
 for _ in $(seq 40); do [ "$(state "$M")" = "T" ] && { frozen=yes; break; }; sleep 0.25; done
 [ "$frozen" = yes ] && ok "memory limit (400 MB > 200 MB) froze the process" || bad "memory limit didn't freeze"
@@ -198,7 +202,7 @@ mcp() {
 	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}' \
 		'{"jsonrpc":"2.0","method":"notifications/initialized"}' "$@" | "$APP_BIN" mcp 2>/dev/null
 }
-reply=$(mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_cpu_limit","arguments":{"app":"e2e-burner","percent":70}}}')
+reply=$(mcp "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"set_cpu_limit\",\"arguments\":{\"app\":\"$BURNER\",\"percent\":70}}}")
 echo "$reply" | grep -q '"id":2' && ok "MCP server answers over stdio" || bad "no MCP reply: $reply"
 sleep 2.5
 v=$(cpu 2 "$B")
@@ -212,12 +216,12 @@ echo "$ro" | python3 -c 'import json,sys; n={t["name"] for t in json.loads(sys.s
 	&& ok "read-only MCP still offers suggestions, not configure_app" || bad "read-only MCP tool list wrong"
 
 # configure_app: change an app's settings while talking about it
-reply=$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"configure_app","arguments":{"app":"e2e-burner","cpu_limit":40,"background_only":false}}}')
+reply=$(mcp "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"configure_app\",\"arguments\":{\"app\":\"$BURNER\",\"cpu_limit\":40,\"background_only\":false}}}")
 echo "$reply" | grep '"id":4' | grep -q '"isError":false' && ok "MCP configure_app accepted" || bad "configure_app failed: $reply"
 sleep 2.5
 v=$(cpu 2 "$B")
 between "$v" 0.28 0.55 && ok "configure_app limit is enforced: $v cores" || bad "configure_app limit measured $v"
-"$APP_BIN" show e2e-burner --json | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r["managedBy"]=="rule" and r["settings"]["cpu_limit"]==40 and r["running"] else 1)' \
+"$APP_BIN" show $BURNER --json | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r["managedBy"]=="rule" and r["settings"]["cpu_limit"]==40 and r["running"] else 1)' \
 	&& ok "show reports the app, its settings and who manages it" || bad "show output wrong"
 "$APP_BIN" suggest --json | python3 -c 'import json,sys; l=json.load(sys.stdin); sys.exit(0 if isinstance(l,list) and all("actions" in x and "reason" in x for x in l) else 1)' \
 	&& ok "suggest returns structured suggestions" || bad "suggest output wrong"
@@ -228,12 +232,12 @@ v=$(cpu 2 "$B")
 between "$v" 0.55 0.85 && ok "the previous 70% limit is back in force: $v cores" || bad "after undo measured $v"
 
 # --- Removal, persistence, crash safety -----------------------------------------
-cli unlimit e2e-burner
+cli unlimit $BURNER
 sleep 1.5
 v=$(cpu 1 "$B")
 between "$v" 1.0 2.3 && ok "removing the rule lifts the limit: $v cores" || bad "after unlimit measured $v"
 
-cli limit e2e-burner 40
+cli limit $BURNER 40
 sleep 2
 kill -TERM "$APP"; wait "$APP" 2>/dev/null; APP=""
 sleep 0.5
@@ -244,7 +248,7 @@ sleep 3
 v=$(cpu 2 "$B")
 between "$v" 0.3 0.5 && ok "rules persist across restart and apply on launch: $v cores" || bad "after restart measured $v"
 
-cli freeze e2e-burner
+cli freeze $BURNER
 sleep 1
 kill -ABRT "$APP"; wait "$APP" 2>/dev/null; APP=""
 sleep 0.5
@@ -252,7 +256,7 @@ sleep 0.5
 
 # kill -9 can't be caught in-process; the watchdog must restore everything.
 start_app
-cli freeze e2e-burner
+cli freeze $BURNER
 for _ in $(seq 20); do [ "$(state "$B")" = "T" ] && break; sleep 0.25; done
 kill -9 "$APP"; wait "$APP" 2>/dev/null; APP=""
 thawed=no

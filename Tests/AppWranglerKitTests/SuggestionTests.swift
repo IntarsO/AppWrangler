@@ -33,7 +33,7 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 		let tools = hog?.actions.map { $0.arguments.keys.sorted() } ?? []
 		#expect(tools.contains(["app", "memory_action", "memory_limit_mb"]))
 		#expect(tools.contains(["app", "low_memory_action"]))
-		#expect(hog?.actions.first?.cli.hasPrefix("appwrangler set \"Brave Browser\" ") == true)
+		#expect(hog?.actions.first?.cli.hasPrefix("appwrangler set 'Brave Browser' ") == true)
 		#expect(list.contains { $0.id == "memory-short" })
 		// Over half the RAM is serious.
 		let huge = makeGroup(name: "Brave Browser", bundleID: "com.brave.Browser", pid: 10, footprintMB: 9000)
@@ -132,6 +132,14 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 		#expect(Set(Suggestions.make(i).map(\.id)) == ["auto-off", "stale-rule:" + gone.id.uuidString])
 		#expect(Suggestions.make(i, app: "gone").map(\.app) == ["Gone"])
 		#expect(Suggestions.make(i).first?.id == "auto-off", "sorted by severity")
+	}
+
+	@Test func suggestedCommandsAreShellSafe() {
+		#expect(Suggestions.quoted("Slack") == "Slack")
+		#expect(Suggestions.quoted("com.google.Chrome") == "com.google.Chrome")
+		#expect(Suggestions.quoted("Brave Browser") == "'Brave Browser'")
+		#expect(Suggestions.quoted("*Helper*") == "'*Helper*'")
+		#expect(Suggestions.quoted("Tom's $App") == "'Tom'\\''s $App'")
 	}
 
 	@Test func ignoredAppsGetNoAdvice() {
@@ -290,5 +298,14 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 
 	@Test func tuneAppPromptExists() {
 		#expect(MCPServer.prompts.contains { $0.name == "tune_app" })
+	}
+}
+
+@Suite struct BuildToolSuggestionTests {
+	@Test func compilersAreNotSuggestedForLimits() {
+		let compiler = makeGroup(name: "swift-frontend", bundleID: nil, pid: 10, cpu: 3.5, kind: .process)
+		let input = SuggestionInput(groups: [compiler], rules: [], autoEnabled: true, frontmostPid: 1, memoryBytes: 16 << 30,
+									fileExists: { _ in true })
+		#expect(Suggestions.make(input).isEmpty, "you're waiting for the build; don't slow it down")
 	}
 }

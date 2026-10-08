@@ -159,32 +159,50 @@ struct SmallView: View {
 	}
 }
 
-struct MediumView: View {
+/// Buttons are links to `appwrangler://…`: interactive widget buttons need
+/// Xcode's App Intents metadata step, links don't — the running app acts on them.
+struct Controls: View {
 	let s: WidgetSnapshot
+	var compact = false
 
 	var body: some View {
-		HStack(alignment: .top, spacing: 14) {
-			SmallView(s: s).frame(width: 128)
-			VStack(alignment: .leading, spacing: 5) {
-				Text(W("Busiest apps")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-				ForEach(Array(s.topApps.prefix(3).enumerated()), id: \.offset) { _, app in
-					HStack(spacing: 4) {
-						Image(systemName: icon(app.state)).font(.system(size: 9)).foregroundStyle(color(app.state)).modifier(Accent()).frame(width: 12)
-						Text(app.name).font(.system(size: 11)).lineLimit(1)
-						Spacer(minLength: 2)
-						Text(percent(app.cpu)).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-						Text(bytes(app.memoryBytes)).font(.system(size: 9.5)).foregroundStyle(.secondary).monospacedDigit()
-							.frame(width: 50, alignment: .trailing)
-					}
-				}
-				Spacer(minLength: 0)
-				if let tip = s.topSuggestion {
-					HStack(alignment: .top, spacing: 4) {
-						Image(systemName: "lightbulb.fill").font(.system(size: 9)).foregroundStyle(.yellow)
-						Text(s.suggestionCount > 1 ? tip + " " + W("(+%d more)", s.suggestionCount - 1) : tip)
-							.font(.system(size: 9.5)).lineLimit(2)
-					}
-				}
+		HStack(spacing: 5) {
+			chip(s.paused ? W("Resume") : W("Pause"), s.paused ? "play.fill" : "pause.fill",
+				 s.paused ? "appwrangler://resume" : "appwrangler://pause", active: s.paused)
+			chip(W("Auto"), "wand.and.stars", s.autoOn ? "appwrangler://auto/off" : "appwrangler://auto/on", active: s.autoOn)
+			chip(compact ? W("Free RAM") : W("Free memory"), "snowflake", "appwrangler://free-memory", active: false)
+		}
+	}
+
+	@ViewBuilder private func chip(_ title: String, _ symbol: String, _ url: String, active: Bool) -> some View {
+		let face = HStack(spacing: 3) {
+			Image(systemName: symbol).font(.system(size: 8.5, weight: .semibold)).modifier(Accent())
+			Text(title).font(.system(size: 9.5, weight: .medium)).lineLimit(1)
+		}
+		.padding(.horizontal, compact ? 5 : 7)
+		.padding(.vertical, 4)
+		.background(Capsule().fill(active ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.09)))
+		.foregroundStyle(.primary)
+		#if WIDGET_PREVIEW
+		face	// ImageRenderer can't draw links
+		#else
+		Link(destination: URL(string: url)!) { face }
+		#endif
+	}
+}
+
+struct AppRows: View {
+	let apps: [WidgetSnapshot.App]
+
+	var body: some View {
+		ForEach(Array(apps.enumerated()), id: \.offset) { _, app in
+			HStack(spacing: 4) {
+				Image(systemName: icon(app.state)).font(.system(size: 9)).foregroundStyle(color(app.state)).modifier(Accent()).frame(width: 12)
+				Text(app.name).font(.system(size: 11)).lineLimit(1)
+				Spacer(minLength: 2)
+				Text(percent(app.cpu)).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+				Text(bytes(app.memoryBytes)).font(.system(size: 9.5)).foregroundStyle(.secondary).monospacedDigit()
+					.frame(width: 50, alignment: .trailing)
 			}
 		}
 	}
@@ -208,6 +226,65 @@ struct MediumView: View {
 	}
 }
 
+struct LargeView: View {
+	let s: WidgetSnapshot
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 10) {
+			Header()
+			HStack(alignment: .center, spacing: 14) {
+				Gauges(s: s)
+				VStack(alignment: .leading, spacing: 5) {
+					StatusLine(s: s).font(.system(size: 11, weight: .medium)).lineLimit(1)
+					Text(W("Memory %@ of %@", bytes(s.memoryUsedBytes), bytes(s.memoryTotalBytes)))
+						.font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+					if s.savedCPUSecondsToday >= 60 {
+						Text(W("Saved %@ today", coreTime(s.savedCPUSecondsToday))).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+					}
+				}
+				Spacer(minLength: 0)
+			}
+			Divider()
+			Text(W("Busiest apps")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+			AppRows(apps: Array(s.topApps.prefix(5)))
+			if let titles = s.suggestionTitles ?? s.topSuggestion.map({ [$0] }), !titles.isEmpty {
+				Divider()
+				ForEach(Array(titles.prefix(3).enumerated()), id: \.offset) { _, title in
+					HStack(alignment: .top, spacing: 4) {
+						Image(systemName: "lightbulb.fill").font(.system(size: 9)).foregroundStyle(.yellow).modifier(Accent())
+						Text(title).font(.system(size: 10)).lineLimit(2)
+					}
+				}
+			}
+			Spacer(minLength: 0)
+			Controls(s: s)
+		}
+	}
+}
+
+struct MediumView: View {
+	let s: WidgetSnapshot
+
+	var body: some View {
+		HStack(alignment: .top, spacing: 14) {
+			SmallView(s: s).frame(width: 128)
+			VStack(alignment: .leading, spacing: 5) {
+				Text(W("Busiest apps")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+				AppRows(apps: Array(s.topApps.prefix(3)))
+				Spacer(minLength: 0)
+				if let tip = s.topSuggestion {
+					HStack(alignment: .top, spacing: 4) {
+						Image(systemName: "lightbulb.fill").font(.system(size: 9)).foregroundStyle(.yellow).modifier(Accent())
+						Text(s.suggestionCount > 1 ? tip + " " + W("(+%d more)", s.suggestionCount - 1) : tip)
+							.font(.system(size: 9.5)).lineLimit(1)
+					}
+				}
+				Controls(s: s, compact: true)
+			}
+		}
+	}
+}
+
 struct WidgetView: View {
 	@Environment(\.widgetFamily) private var family
 	let entry: Entry
@@ -215,7 +292,11 @@ struct WidgetView: View {
 	var body: some View {
 		Group {
 			if let s = entry.snapshot, !s.isStale(now: entry.date) {
-				if family == .systemMedium { MediumView(s: s) } else { SmallView(s: s) }
+				switch family {
+				case .systemMedium: MediumView(s: s)
+				case .systemLarge: LargeView(s: s)
+				default: SmallView(s: s)
+				}
 			} else {
 				NotRunning()
 			}
@@ -241,8 +322,8 @@ struct AppWranglerStatusWidget: Widget {
 			WidgetView(entry: entry)
 		}
 		.configurationDisplayName("AppWrangler")
-		.description(W("CPU, memory, Auto mode and the busiest apps at a glance."))
-		.supportedFamilies([.systemSmall, .systemMedium])
+		.description(W("CPU, memory, Auto mode and the busiest apps at a glance, with buttons to pause limits, switch Auto mode and free memory."))
+		.supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
 	}
 }
 

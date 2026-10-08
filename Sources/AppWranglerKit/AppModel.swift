@@ -4,8 +4,8 @@
 //  SPDX-License-Identifier: GPL-2.0-only
 //
 //  Owns the sampling cadence. Monitoring is adaptive:
-//    • UI open                → every process, every `APUIInterval` (1 s)
-//    • UI closed, rules exist → only ruled/frozen apps, every `APEnforceInterval` (2 s)
+//    • UI open                → every process, every `AWUIInterval` (1 s)
+//    • UI closed, rules exist → only ruled/frozen apps, every `AWEnforceInterval` (2 s)
 //    • runaway detection on   → plus a full scan every ~5 s
 //    • nothing to do          → no timer at all
 //  Rule edits (UI, CLI, file), app launches, focus changes and power/thermal/
@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
 	private var lastWidgetWrite = Date.distantPast
 	private var lastWidgetReload = Date.distantPast
 	private var lastWidgetKey = ""
+	private var lastWidgetPressure = ""
 	private var runningAppsObservation: NSKeyValueObservation?
 
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
@@ -283,9 +284,11 @@ final class AppModel: ObservableObject {
 		state.now = Date()
 		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
 		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
-					   autoFreeze: autoFreezeCandidates(lastSnapshot, state: state))
+					   autoFreeze: autoFreezeCandidates(lastSnapshot, state: state), autoFreezeActive: autoFreezeActive)
 		writeState()
 	}
+
+	private var autoFreezeActive: Bool { autoPilot.settings.enabled && autoPilot.settings.freezeIdleWhenLowMemory }
 
 	/// Opt-in Auto memory: while the Mac is low on memory, apps you haven't used
 	/// for a while may be frozen (they resume when you switch to them).
@@ -382,7 +385,7 @@ final class AppModel: ObservableObject {
 		refreshAudio()
 		let auto = decideAuto(snapshot, state: state, newSample: true)
 		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
-					   autoFreeze: autoFreezeCandidates(snapshot, state: state))
+					   autoFreeze: autoFreezeCandidates(snapshot, state: state), autoFreezeActive: autoFreezeActive)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		if Date().timeIntervalSince(lastWidgetWrite) >= 60 { updateWidget() }
@@ -443,7 +446,9 @@ final class AppModel: ObservableObject {
 		case .ignore:
 			rule.ignored = true
 		}
+		let before = rules.rules.first { $0.id == rule.id }
 		rules.upsert(rule)
+		ChangeJournal.record(before: before, after: rules.rules.first { $0.id == rule.id }, source: "alert", store: rules)
 		runaway.snooze(groupID)
 		suggestions.removeAll { $0.groupID == groupID }
 		log.add(name, rule.summary)
@@ -489,7 +494,7 @@ final class AppModel: ObservableObject {
 		let today = stats.summary(days: 1)
 		let s = autoSummary
 		let suggestions = computeAdvice()
-		let top = lastSnapshot.groups.filter { $0.kind == .app || $0.kind == .background }.sorted { $0.cpu > $1.cpu }.prefix(3)
+		let top = lastSnapshot.groups.filter { $0.kind == .app || $0.kind == .background }.sorted { $0.cpu > $1.cpu }.prefix(5)
 		let snapshot = WidgetSnapshot(
 			updated: Date(), chip: SystemInfo.chip, cores: SystemInfo.ncpu, cpu: lastSnapshot.systemCPU,
 			memoryUsedBytes: mem.used, memoryTotalBytes: SystemInfo.info.memsize, memoryPressure: Int(mem.pressure_level),
@@ -506,11 +511,20 @@ final class AppModel: ObservableObject {
 				else { state = "" }
 				return WidgetSnapshot.App(name: g.name, cpu: g.cpu, memoryBytes: g.footprint, state: state)
 			},
-			suggestionCount: suggestions.count, topSuggestion: suggestions.first?.title)
+			suggestionCount: suggestions.count, topSuggestion: suggestions.first?.title,
+			suggestionTitles: suggestions.prefix(3).map(\.title))
 		snapshot.write(directory: rules.fileURL.deletingLastPathComponent())
-		let key = "\(paused)|\(snapshot.frozen)|\(snapshot.autoOn)|\(snapshot.memoryPressure)"
-		if key != lastWidgetKey || Date().timeIntervalSince(lastWidgetReload) >= 300 {
-			lastWidgetKey = key
+		// The widget reads the real data folder; a copy on another folder (tests,
+		// APPWRANGLER_DATA_DIR) must not make it redraw.
+		guard !DataDirectory.isOverridden else { return }
+		// Things you did (pause, freeze, Auto) show at once; memory pressure at most
+		// once a minute; otherwise every 5 minutes — well within WidgetKit's budget.
+		let userKey = "\(paused)|\(snapshot.frozen)|\(snapshot.autoOn)"
+		let pressureKey = "\(snapshot.memoryPressure)"
+		let since = Date().timeIntervalSince(lastWidgetReload)
+		if userKey != lastWidgetKey || (pressureKey != lastWidgetPressure && since >= 60) || since >= 300 {
+			lastWidgetKey = userKey
+			lastWidgetPressure = pressureKey
 			lastWidgetReload = Date()
 			WidgetCenter.shared.reloadAllTimelines()
 		}
@@ -544,7 +558,9 @@ final class AppModel: ObservableObject {
 			reapply()
 		case "remove_rule":
 			let name = (action.arguments["app"] as? String ?? "").lowercased()
-			if let rule = rules.rules.first(where: { $0.displayName.lowercased() == name }) {
+			// By what the rule matches (a stale path), never by display name: a live rule may share it.
+			if let rule = rules.rules.first(where: { $0.matchValue.lowercased() == name })
+				?? rules.rules.first(where: { $0.displayName.lowercased() == name }) {
 				rules.remove(id: rule.id)
 				rules.saveNow()
 				ChangeJournal.record(before: rule, after: nil, source: "suggestion", store: rules)
@@ -566,9 +582,45 @@ final class AppModel: ObservableObject {
 
 	// MARK: CLI commands
 
+	/// "Free memory now" (widget, CLI, MCP): freeze regular apps you haven't used
+	/// for the idle time set for Auto mode (10 min by default), whatever the
+	/// memory pressure. Same exclusions as Auto's idle freezing; each app
+	/// resumes the moment you switch to it. Returns the apps frozen.
+	@discardableResult
+	func freeMemoryNow() -> [String] {
+		// Measure apps now: with Auto off and the UI closed they may not be sampled.
+		let snap = sampler.sampleNow(SampleRequest(apps: RunningApps.collect(), includeAll: false, includeApps: true,
+												   includeOtherUsers: false, withThreads: false, matcher: GroupMatcher()))
+		// A single fresh sample has no CPU rates; use what we measured recently.
+		let groups = autoEligible(snap).filter { (rules.rule(for: $0)?.pressureAction ?? PressureAction.none) == PressureAction.none }
+			.map { g -> AppGroup in
+				var g = g
+				let points = history.points(for: g.id).suffix(30)
+				g.cpu = points.isEmpty ? (lastSnapshot.groups.first { $0.id == g.id }?.cpu ?? 0)
+					: points.map(\.cpu).reduce(0, +) / Double(points.count)
+				return g
+			}
+		// Check audio now: it's only tracked continuously while Auto mode is on.
+		let audio = AudioActivity.activePids()
+		let ids = Set(AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive, audioPids: audio,
+													 idleAfter: autoPilot.settings.freezeIdleAfter, since: launchedAt))
+		let chosen = snap.groups.filter { ids.contains($0.id) }
+		for g in chosen {
+			enforcer.freeze(g, reason: .idle)
+			stats.record(.lowMemoryAction, key: ImpactKey.of(g), name: g.name)
+		}
+		log.add("AppWrangler", chosen.isEmpty ? L("Free memory: no idle apps to freeze")
+				: L("Free memory: froze %@ — each resumes when you switch to it", chosen.map(\.name).joined(separator: ", ")))
+		writeState()
+		reschedule()
+		tickSoon(0.1)
+		return chosen.map(\.name)
+	}
+
 	private func handleCommand(_ info: [String: String]) {
 		let target = info["target"] ?? ""
 		switch info["command"] {
+		case "free-memory": freeMemoryNow()
 		case "prefs":
 			preferencesChanged()
 			reapply()
@@ -652,7 +704,9 @@ final class AppModel: ObservableObject {
 
 	/// Quick limit from a context menu.
 	func quickLimit(_ group: AppGroup, cpu: Double?) {
-		var rule = rules.rule(for: group) ?? AppRule.forGroup(group)
+		let before = rules.rule(for: group)
+		defer { ChangeJournal.record(before: before, after: rules.rule(for: group), source: "panel", store: rules) }
+		var rule = before ?? AppRule.forGroup(group)
 		rule.enabled = true
 		if let cpu {
 			rule.cpuLimitEnabled = true
@@ -664,7 +718,9 @@ final class AppModel: ObservableObject {
 	}
 
 	func toggleEfficiency(_ group: AppGroup) {
-		var rule = rules.rule(for: group) ?? AppRule.forGroup(group)
+		let before = rules.rule(for: group)
+		defer { ChangeJournal.record(before: before, after: rules.rule(for: group), source: "panel", store: rules) }
+		var rule = before ?? AppRule.forGroup(group)
 		rule.enabled = true
 		rule.backgroundMode.toggle()
 		rules.upsert(rule)

@@ -9,7 +9,7 @@
 //  The file is watched: edits from the CLI or another instance apply at once.
 //
 
-import Foundation
+import AppKit
 
 enum MatchKind: String, Codable, CaseIterable, Identifiable {
 	case bundleID, path, name, pattern
@@ -189,7 +189,7 @@ struct AppRule: Codable, Identifiable, Equatable {
 		switch matchKind {
 		case .bundleID: return bundleID == matchValue
 		case .path: return path == matchValue
-		case .name: return name == matchValue
+		case .name: return name.caseInsensitiveCompare(matchValue) == .orderedSame
 		case .pattern: return Glob.matches(matchValue, name) || (bundleID.map { Glob.matches(matchValue, $0) } ?? false)
 		}
 	}
@@ -263,9 +263,24 @@ struct AppRule: Codable, Identifiable, Equatable {
 }
 
 /// Turns a user-supplied name ("Google Chrome", com.google.Chrome, node,
-/// /path, "*Helper*") into the matching rule, or a new one. Shared by the CLI
-/// and the MCP server so both resolve names the same way.
+/// /path, "*Helper*") into the matching rule, or a new one. Shared by the CLI,
+/// the MCP server and suggestions so they all resolve names the same way.
 enum RuleTargets {
+	enum Problem: Error, CustomStringConvertible {
+		case protected(String)
+		case tooBroad(String)
+		case ambiguous(String, [String])
+
+		var description: String {
+			switch self {
+			case .protected(let t): return "\(t) is critical to macOS; AppWrangler won't limit it"
+			case .tooBroad(let t): return "the pattern \"\(t)\" would match almost everything; use a more specific one (e.g. \"*Helper*\")"
+			case .ambiguous(let t, let names): return "\"\(t)\" matches several apps: \(names.joined(separator: ", ")). Use the full name."
+			}
+		}
+	}
+
+	/// Looks up an existing rule (by display name or match value). Never creates one.
 	static func resolve(_ target: String, store: RuleStore, apps: [RunningApp], groups: [AppGroup] = [], create: Bool) -> AppRule? {
 		let t = target.trimmingCharacters(in: .whitespaces).lowercased()
 		guard !t.isEmpty else { return nil }
@@ -278,13 +293,81 @@ enum RuleTargets {
 			return create ? AppRule.forGroup(group) : nil
 		}
 		guard create else { return nil }
-		if let app = apps.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
-			if let bundleID = app.bundleID { return AppRule(matchKind: .bundleID, matchValue: bundleID, displayName: app.name) }
-			if let path = app.bundlePath { return AppRule(matchKind: .path, matchValue: path, displayName: app.name) }
+		return try? resolveForWrite(target, store: store, apps: apps).get()
+	}
+
+	/// The rule to change for `target`, creating one if needed — or why not.
+	static func resolveForWrite(_ target: String, store: RuleStore, apps: [RunningApp],
+								installed: (String) -> (name: String, bundleID: String)? = installedApp(named:),
+								installedByID: (String) -> String? = installedAppName(bundleID:)) -> Result<AppRule, Problem> {
+		let trimmed = target.trimmingCharacters(in: .whitespaces)
+		let t = trimmed.lowercased()
+		if let problem = check(trimmed) { return .failure(problem) }
+		if let existing = store.rules.first(where: { $0.displayName.lowercased() == t || $0.matchValue.lowercased() == t }) {
+			return .success(existing)
 		}
-		if target.contains("*") || target.contains("?") { return AppRule(matchKind: .pattern, matchValue: target, displayName: target) }
-		if target.hasPrefix("/") { return AppRule(matchKind: .path, matchValue: target, displayName: (target as NSString).lastPathComponent) }
-		return AppRule(matchKind: .name, matchValue: target, displayName: target)
+		if let app = apps.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
+			return .success(rule(for: app))
+		}
+		if trimmed.contains("*") || trimmed.contains("?") {
+			return .success(AppRule(matchKind: .pattern, matchValue: trimmed, displayName: trimmed))
+		}
+		if trimmed.hasPrefix("/") {
+			return .success(AppRule(matchKind: .path, matchValue: trimmed, displayName: (trimmed as NSString).lastPathComponent))
+		}
+		if looksLikeBundleID(trimmed) {
+			return .success(AppRule(matchKind: .bundleID, matchValue: trimmed, displayName: installedByID(trimmed) ?? trimmed))
+		}
+		if let app = installed(trimmed) {
+			return .success(AppRule(matchKind: .bundleID, matchValue: app.bundleID, displayName: app.name))
+		}
+		// Part of a running app's name ("chrome" → Google Chrome), if it's unambiguous.
+		var seen = Set<String>()
+		let partial = apps.filter { $0.name.lowercased().contains(t) && seen.insert($0.bundleID ?? $0.name).inserted }
+		if partial.count == 1 { return .success(rule(for: partial[0])) }
+		if partial.count > 1 { return .failure(.ambiguous(trimmed, partial.map(\.name).sorted())) }
+		// Otherwise a process name (node, python3, …), matched without regard to case.
+		return .success(AppRule(matchKind: .name, matchValue: trimmed, displayName: trimmed))
+	}
+
+	private static func rule(for app: RunningApp) -> AppRule {
+		if let bundleID = app.bundleID { return AppRule(matchKind: .bundleID, matchValue: bundleID, displayName: app.name) }
+		if let path = app.bundlePath { return AppRule(matchKind: .path, matchValue: path, displayName: app.name) }
+		return AppRule(matchKind: .name, matchValue: app.name, displayName: app.name)
+	}
+
+	/// Targets AppWrangler refuses outright.
+	static func check(_ target: String) -> Problem? {
+		if Protected.contains(name: target, bundleID: target, pid: 2) { return .protected(target) }
+		if target.contains("*") || target.contains("?") {
+			let literal = target.filter { !"*?[]".contains($0) }
+			if literal.count < 3 { return .tooBroad(target) }
+		}
+		return nil
+	}
+
+	/// com.google.Chrome, org.mozilla.firefox — at least three dot-separated parts.
+	static func looksLikeBundleID(_ s: String) -> Bool {
+		s.range(of: #"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+){2,}$"#, options: .regularExpression) != nil
+	}
+
+	/// An installed (not necessarily running) app with this name, from the usual folders.
+	static func installedApp(named name: String) -> (name: String, bundleID: String)? {
+		let fm = FileManager.default
+		let dirs = ["/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities",
+					fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path]
+		let wanted = name.lowercased().hasSuffix(".app") ? name.lowercased() : name.lowercased() + ".app"
+		for dir in dirs {
+			guard let entry = (try? fm.contentsOfDirectory(atPath: dir))?.first(where: { $0.lowercased() == wanted }),
+				  let bundle = Bundle(path: dir + "/" + entry), let id = bundle.bundleIdentifier else { continue }
+			return ((entry as NSString).deletingPathExtension, id)
+		}
+		return nil
+	}
+
+	static func installedAppName(bundleID: String) -> String? {
+		guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+		return url.deletingPathExtension().lastPathComponent
 	}
 }
 

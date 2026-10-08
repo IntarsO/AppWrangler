@@ -317,7 +317,7 @@ struct GeneralSettings: View {
 					Text("5 s").tag(5.0)
 					Text("10 s").tag(10.0)
 				}
-				Text(L("With the window closed AppWrangler only measures apps that have rules (plus a light scan every 5 s for runaway apps), and stops sampling entirely when there's nothing to do."))
+				Text(L("With the window closed AppWrangler measures apps that have rules and, while Auto mode is on, every app (not plain processes), plus a light scan every 5 s for runaway apps. With nothing to do it stops sampling."))
 					.font(.caption).foregroundStyle(.secondary)
 				Toggle(L("Include other users' processes (view only)"), isOn: $showOtherUsers)
 				Toggle(L("Show CPU usage in the menu bar"), isOn: $menuBarCPU)
@@ -357,11 +357,11 @@ struct GeneralSettings: View {
 			}
 
 			Section(header: helpHeader(L("Command line"), nil, topic: .cli)) {
-				Text(L("Control AppWrangler from Terminal. Add it to your PATH once:"))
+				Text(L("Control AppWrangler from Terminal. Installed with Homebrew? `appwrangler` is already on your PATH. Otherwise add it once:"))
 					.font(.caption)
 				Text("ln -sf \"\(cliPath)\" /opt/homebrew/bin/appwrangler")
 					.font(.caption.monospaced()).textSelection(.enabled)
-				Text("appwrangler list · appwrangler limit Safari 50 · appwrangler help")
+				Text("appwrangler status · appwrangler suggest · appwrangler set Slack efficiency_cores=on · appwrangler help")
 					.font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
 			}
 		}

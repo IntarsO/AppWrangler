@@ -81,6 +81,11 @@ final class LiveProcessController: ProcessController {
 
 enum FreezeReason: String {
 	case manual, memoryLimit, memoryPressure
+	/// "Free memory now": idle apps frozen on request; they resume when you switch to them.
+	case idle
+
+	/// Freezes that end by themselves as soon as you switch to the app (or it plays audio).
+	var resumesOnFocus: Bool { self == .memoryPressure || self == .idle }
 }
 
 final class Enforcer {
@@ -97,6 +102,10 @@ final class Enforcer {
 	var onImpact: ((AppGroup, StatsStore.Event) -> Void)?
 	/// Which pressure level counts as "low memory": 2 = warning, 4 = critical.
 	var pressureThreshold = 4
+	/// Memory must stay fine this long before low-memory freezes are lifted,
+	/// so pressure hovering at the threshold doesn't freeze and thaw repeatedly.
+	var pressureThawDelay: TimeInterval = 60
+	private var memoryFineSince: Date?
 
 	private var gids: [String: UInt32] = [:]
 	private var nextGid: UInt32 = 1
@@ -153,15 +162,19 @@ final class Enforcer {
 	/// The CPU limit actually in force per group (manual or Auto), in cores.
 	private(set) var effectiveLimit: [String: Double] = [:]
 
-	/// - Parameter autoFreeze: apps Auto mode may freeze while the Mac is low on memory.
+	/// - Parameters:
+	///   - autoFreeze: apps Auto mode may freeze while the Mac is low on memory.
+	///   - autoFreezeActive: Auto's idle-app freezing is switched on (else its freezes are lifted).
 	func apply(_ snapshot: Snapshot, rules: RuleStore, state: SystemState, frontmostPid: pid_t,
-			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = [], autoFreeze: Set<String> = []) {
+			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = [], autoFreeze: Set<String> = [],
+			   autoFreezeActive: Bool = false, now: Date = Date()) {
 		autoDecisions = auto
 		var limits: [String: Double] = [:]
 		defer { effectiveLimit = limits }
 		let freshSample = snapshot.seq != 0 && snapshot.seq != lastEvaluatedSeq
 		if freshSample { lastEvaluatedSeq = snapshot.seq }
 		let lowMemory = state.memoryPressure >= pressureThreshold
+		if lowMemory { memoryFineSince = nil } else if memoryFineSince == nil { memoryFineSince = now }
 
 		var desired: [UInt32: Applied] = [:]
 		var wantBackground: [pid_t: String] = [:]
@@ -189,14 +202,29 @@ final class Enforcer {
 
 			// Frozen because memory ran short, and now you've switched to it (or it
 			// plays audio): resume it right away rather than waiting for memory.
-			if frozen[group.id] == .memoryPressure,
+			if frozen[group.id]?.resumesOnFocus == true,
 			   group.pids.contains(frontmostPid) || group.pids.contains(where: audioPids.contains) {
 				clearFrozen(group.id)
 				onEvent?(group.name, L("Resumed — you switched to it"), false)
 			}
 
+			// A freeze ends when its reason goes away: the memory-limit rule was removed,
+			// disabled or no longer freezes; low-memory freezing was switched off.
+			if let reason = frozen[group.id] {
+				let stillWanted: Bool
+				switch reason {
+				case .manual, .idle: stillWanted = true
+				case .memoryLimit: stillWanted = rule.map { $0.memoryLimitEnabled && $0.memoryAction == .freeze } ?? false
+				case .memoryPressure: stillWanted = rule?.pressureAction == .freeze || autoFreezeActive
+				}
+				if !stillWanted {
+					clearFrozen(group.id)
+					onEvent?(group.name, L("Resumed — the setting that froze it was turned off"), false)
+				}
+			}
+
 			// Auto mode: freeze an app you haven't used for a while when memory runs short.
-			if freshSample, lowMemory, autoFreeze.contains(group.id), frozen[group.id] == nil, !pressureActed.contains(group.id),
+			if freshSample, !paused, lowMemory, autoFreeze.contains(group.id), frozen[group.id] == nil, !pressureActed.contains(group.id),
 			   !group.pids.contains(frontmostPid), !group.pids.contains(where: audioPids.contains),
 			   (auto[group.id].map { $0.reason == .background } ?? true) {
 				pressureActed.insert(group.id)
@@ -205,7 +233,7 @@ final class Enforcer {
 				freeze(group, reason: .memoryPressure)
 			}
 
-			if let rule, freshSample {
+			if let rule, freshSample, !paused {
 				// Never freeze/quit the app you're using (or one playing/recording audio)
 				// just because the Mac is short of memory; pick a background app instead.
 				let inUse = group.pids.contains(frontmostPid) || group.pids.contains(where: audioPids.contains)
@@ -271,8 +299,14 @@ final class Enforcer {
 			}
 		}
 
-		// Memory came back: thaw what we froze because of it.
-		if !lowMemory && freshSample {
+		// A frozen app missing from this (partial) sample stays frozen.
+		let present = Set(snapshot.groups.map(\.id))
+		for id in frozen.keys where !present.contains(id) {
+			if let gid = gids[id], let a = applied[gid], desired[gid] == nil { desired[gid] = a }
+		}
+
+		// Memory came back (and stayed back for a while): thaw what we froze because of it.
+		if !lowMemory && freshSample, let since = memoryFineSince, now.timeIntervalSince(since) >= pressureThawDelay {
 			pressureActed.removeAll()
 			for (id, reason) in frozen where reason == .memoryPressure {
 				clearFrozen(id)
@@ -400,6 +434,12 @@ final class Enforcer {
 
 	func freeze(_ group: AppGroup, reason: FreezeReason = .manual) {
 		guard !Protected.contains(group), group.ownerPid != getpid() else { return }
+		// Never stop a shell's foreground job: the shell would treat it as suspended.
+		let pids = group.pids.sorted().filter { !controller.isTerminalForeground($0) }
+		guard !pids.isEmpty else {
+			onEvent?(group.name, L("Running in a terminal's foreground — not frozen (it would suspend the job)."), false)
+			return
+		}
 		frozen[group.id] = reason
 		frozenSince[group.id] = Date()
 		frozenOwner[group.id] = group.ownerPid
@@ -407,7 +447,6 @@ final class Enforcer {
 		frozenDemand[group.id] = max(group.cpu, lastGroups[group.id]?.cpu ?? 0)
 		groupNames[group.id] = group.name
 		let gid = gid(for: group.id)
-		let pids = group.pids.sorted()
 		controller.setGroup(gid, pids: pids, limit: 0, frozen: true)
 		applied[gid] = Applied(pids: pids, limit: 0, frozen: true)
 	}
@@ -506,8 +545,8 @@ enum Protected {
 	}
 
 	static func contains(name: String, bundleID: String?, pid: pid_t) -> Bool {
-		if let b = bundleID, bundleIDs.contains(b) { return true }
-		if let b = bundleID, b == Bundle.main.bundleIdentifier { return true }
-		return names.contains(name) || pid <= 1
+		if let b = bundleID?.lowercased(), bundleIDs.contains(where: { $0.lowercased() == b }) { return true }
+		if let b = bundleID, b.caseInsensitiveCompare(Bundle.main.bundleIdentifier ?? "") == .orderedSame { return true }
+		return names.contains { $0.caseInsensitiveCompare(name) == .orderedSame } || pid <= 1
 	}
 }

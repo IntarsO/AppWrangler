@@ -215,7 +215,8 @@ enum Suggestions {
 
 		// CPU: busy things in the background that nothing manages. Prefer the
 		// running app's averages over a one-second sample, so a spike isn't flagged.
-		for g in input.groups where !g.pids.contains(input.frontmostPid) && limitable(g) && !autoManages(g) {
+		for g in input.groups where !g.pids.contains(input.frontmostPid) && limitable(g) && !autoManages(g)
+			&& !AppTraits.isBuildTool(g.name) {
 			let average = input.averages[ImpactKey.of(g)]
 			let cpu = average?.cpu ?? g.cpu
 			guard cpu >= 0.5 else { continue }
@@ -323,8 +324,8 @@ enum Suggestions {
 				title: L("Rule for %@ points to an app that's gone", r.displayName),
 				reason: L("%@ doesn't exist any more.", r.matchValue),
 				benefit: L("A tidier rule list."),
-				actions: [.init(label: L("Remove the rule"), tool: "remove_rule", arguments: ["app": r.displayName],
-								cli: "appwrangler unlimit \(Suggestions.quoted(r.displayName))")]))
+				actions: [.init(label: L("Remove the rule"), tool: "remove_rule", arguments: ["app": r.matchValue],
+								cli: "appwrangler unlimit \(Suggestions.quoted(r.matchValue))")]))
 		}
 
 		if let app {
@@ -337,7 +338,11 @@ enum Suggestions {
 		return out.sorted { $0.severity < $1.severity }
 	}
 
-	static func quoted(_ s: String) -> String { s.contains(" ") || s.contains("'") ? "\"\(s)\"" : s }
+	/// Shell-safe: plain names as they are, anything else in single quotes.
+	static func quoted(_ s: String) -> String {
+		if !s.isEmpty, s.allSatisfy({ $0.isLetter || $0.isNumber || "._-/+@:,".contains($0) }) { return s }
+		return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+	}
 
 	/// Whether a rule covers the app a stats row (`bundle:…`, `path:…`, `name:…`) is about.
 	static func ruleMatches(_ r: AppRule, key: String, name: String) -> Bool {

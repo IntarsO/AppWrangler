@@ -2,6 +2,58 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-10-08
+
+### Added
+- **Widget buttons and a large size.** The medium and large widget have **Pause/Resume**, **Auto** and **Free memory** buttons. The large size shows five apps and up to three suggestions.
+- **Free memory now:** freeze the apps you haven't used for a while, right away. Each resumes when you switch to it. From the widget, `appwrangler free-memory`, `appwrangler://free-memory` or MCP `free_memory`.
+- **More `appwrangler://` links:** `pause`, `resume`, `toggle-pause`, `auto/on|off|toggle`, `free-memory`, for Shortcuts and scripts.
+- **App-wide settings from the CLI and AI assistants:** `appwrangler prefs [key=value …]` and MCP `get_preferences` / `set_preferences`. This covers Auto timings, idle freezing, the low-memory level, runaway alerts, notifications, menu bar CPU and the pause shortcut.
+- `appwrangler undo --force`, and MCP `undo_last_change` with `force`.
+- Right-click **Copy Bundle ID**.
+
+### Changed
+- **Safer freezing:**
+  - A freeze ends as soon as the setting that caused it is turned off (a memory-limit rule removed, disabled or no longer set to *Freeze*; low-memory freezing switched off).
+  - Low-memory freezes are lifted only after memory has been fine for a minute.
+  - Nothing new is frozen while limits are paused.
+  - Commands in a terminal's foreground are never frozen.
+- **Idle freezing skips** apps still doing work (above 5% CPU), terminals, code editors and IDEs, and virtual machines and containers.
+- **App names resolve the same way everywhere** (CLI, MCP, suggestions):
+  - bundle IDs and installed apps that aren't running get bundle-ID rules;
+  - a unique part of a running app's name works;
+  - ambiguous names list the candidates instead of guessing;
+  - processes critical to macOS (any letter case) and patterns like `*` are refused;
+  - process-name rules ignore case.
+- **Older CLI commands share one path with `set`:** `limit`, `ecores`, `memlimit`, `lowmem`, `enable`/`disable` and `ignore` get the same checks and undo history, and remove rules that end up empty.
+- **Undo:**
+  - It stops rather than overwrite a rule edited in the app since.
+  - It never creates a duplicate rule.
+  - It now also covers runaway-alert buttons, right-click quick limits and imports.
+  - The history file is locked between processes, and set aside rather than wiped if it's unreadable.
+- **`freeze`/`unfreeze` fail clearly** for a name that isn't running.
+- **`mcp install`:**
+  - merges into an existing entry (keeping `env` and other fields) and follows symlinked configs;
+  - keeps the original backup;
+  - retries if `~/.claude.json` changes underneath it;
+  - handles Codex configs with Windows line endings, comments, quoted keys, sub-tables and multi-line arrays, and refuses inline entries instead of duplicating them.
+- Suggested shell commands are quoted safely.
+- Suggestions no longer propose slowing down compilers and build tools.
+- Test copies of AppWrangler (on another data folder) no longer refresh the desktop widget. Memory-pressure changes refresh it at most once a minute.
+- **Right-click Force Quit** now asks for confirmation.
+- **Copy Name** copies the name.
+- **Docs:**
+  - Getting Started introduces Auto mode first.
+  - The User Manual covers the new features, the data files, every General setting, links, and the watchdog's `killall -9` caveat.
+
+### Fixed
+- An app frozen by a memory limit stayed frozen after the rule was removed or changed.
+- Re-checking a partial sample could briefly let a frozen app run.
+- After switching to an app with several windows or processes, Auto could keep it slowed for a moment.
+- `mcp` with a mistyped option waited silently instead of reporting the error.
+- The end-to-end tests' dummy processes now get a unique name per run, so no rule on the Mac can match them and skew the timings.
+- The MCP `undo_last_change` tool was marked non-destructive and idempotent.
+
 ## [1.2.0] — 2026-10-08
 
 ### Added
@@ -38,10 +90,6 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   - `brew install --cask appwrangler`
 - **CI:** GitHub Actions builds the app and runs the unit tests on every push.
 - An app frozen because memory was low (by Auto or by its rule) now resumes as soon as you switch to it.
-
-### Fixed
-- The panel could extend past the right edge of the screen when the menu bar icon was near it. It now stays inside the screen.
-- `test.sh` failed under full Xcode (bash 3.2 and an empty argument list).
 - **Suggestions.**
   - `appwrangler suggest` and the MCP tool `suggest_settings` recommend settings for what's running:
     - memory hogs when the Mac is short of memory, with browser tab-sleeping tips;
@@ -63,6 +111,10 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   - Open them from the **?** in the panel, the menu bar menu, Settings → About, or ⌘?.
   - **?** buttons next to settings open the manual at the right section.
 - Standard keyboard shortcuts (⌘C/⌘V/⌘X/⌘A/⌘Z in text fields, ⌘W, ⌘,) now work in AppWrangler's windows.
+
+### Fixed
+- The panel could extend past the right edge of the screen when the menu bar icon was near it. It now stays inside the screen.
+- `test.sh` failed under full Xcode (bash 3.2 and an empty argument list).
 
 ### Changed
 - The User Guide is now the **User Manual** (`docs/user-manual.md`), with new chapters on suggestions, per-app settings, AI assistants and in-app Help.

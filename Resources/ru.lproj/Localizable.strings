@@ -455,3 +455,22 @@
 "Busiest apps" = "Самые загруженные";
 "(+%d more)" = "(и ещё %d)";
 "CPU, memory, Auto mode and the busiest apps at a glance." = "ЦП, память, авторежим и самые загруженные приложения — с первого взгляда.";
+
+/* Widget buttons, free memory */
+"Pause" = "Пауза";
+"Resume" = "Продолжить";
+"Free memory" = "Освободить память";
+"Free RAM" = "Освободить";
+"Memory %@ of %@" = "Память: %@ из %@";
+"CPU, memory, Auto mode and the busiest apps at a glance, with buttons to pause limits, switch Auto mode and free memory." = "ЦП, память, авторежим и самые загруженные приложения — с кнопками паузы, переключения авторежима и освобождения памяти.";
+"Free memory: no idle apps to freeze" = "Освобождение памяти: нет неиспользуемых приложений для заморозки";
+"Free memory: froze %@ — each resumes when you switch to it" = "Освобождение памяти: заморожены %@ — каждое возобновится, когда вы на него переключитесь";
+"Resumed — the setting that froze it was turned off" = "Возобновлено — настройка, которая его заморозила, выключена";
+"Running in a terminal's foreground — not frozen (it would suspend the job)." = "Выполняется на переднем плане терминала — не заморожено (иначе задание было бы приостановлено).";
+
+/* Audit fixes */
+"Force Quit…" = "Завершить принудительно…";
+"Cancel" = "Отменить";
+"Copy Bundle ID" = "Скопировать Bundle ID";
+"With the window closed AppWrangler measures apps that have rules and, while Auto mode is on, every app (not plain processes), plus a light scan every 5 s for runaway apps. With nothing to do it stops sampling." = "Когда окно закрыто, AppWrangler измеряет приложения с правилами, а при включённом авторежиме — все приложения (кроме обычных процессов), плюс лёгкая проверка каждые 5 с на «прожорливые» приложения. Когда делать нечего, измерения прекращаются.";
+"Control AppWrangler from Terminal. Installed with Homebrew? `appwrangler` is already on your PATH. Otherwise add it once:" = "Управляйте AppWrangler из Терминала. Установили через Homebrew? Команда `appwrangler` уже доступна. Иначе добавьте её один раз:";

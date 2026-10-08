@@ -453,7 +453,16 @@ struct RowMenu: View {
 				Button(L("Freeze")) { model.freeze(group) }
 			}
 			Button(L("Quit")) { model.quit(group) }
-			Button(L("Force Quit")) { model.forceQuit(group) }
+			Button(L("Force Quit…")) {
+				// A context menu can't host a SwiftUI dialog; ask with an alert.
+				let alert = NSAlert()
+				alert.messageText = L("Force quit %@?", group.name)
+				alert.informativeText = L("Unsaved changes will be lost.")
+				alert.addButton(withTitle: L("Force Quit"))
+				alert.addButton(withTitle: L("Cancel"))
+				alert.alertStyle = .warning
+				if alert.runModal() == .alertFirstButtonReturn { model.forceQuit(group) }
+			}
 			if let rule = rules.rule(for: group) {
 				Divider()
 				Button(L("Remove Rule")) { rules.remove(id: rule.id) }
@@ -465,7 +474,13 @@ struct RowMenu: View {
 		}
 		Button(L("Copy Name")) {
 			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(group.bundleID ?? group.name, forType: .string)
+			NSPasteboard.general.setString(group.name, forType: .string)
+		}
+		if let bundleID = group.bundleID {
+			Button(L("Copy Bundle ID")) {
+				NSPasteboard.general.clearContents()
+				NSPasteboard.general.setString(bundleID, forType: .string)
+			}
 		}
 	}
 }

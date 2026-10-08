@@ -125,9 +125,26 @@ enum Reports {
 	static func findGroup(_ target: String, in groups: [AppGroup]) -> AppGroup? {
 		let t = target.trimmingCharacters(in: .whitespaces).lowercased()
 		guard !t.isEmpty else { return nil }
-		let ranked = groups.sorted { ($0.kind == .process ? 1 : 0, $1.footprint) < ($1.kind == .process ? 1 : 0, $0.footprint) }
-		return ranked.first { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t || $0.path.lowercased() == t }
-			?? ranked.first { $0.name.lowercased().contains(t) }
+		if let exact = groups.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t || $0.path.lowercased() == t }) {
+			return exact
+		}
+		let partial = partialMatches(t, in: groups)
+		return partial.count == 1 ? partial[0] : nil
+	}
+
+	/// Running apps (not plain processes, unless nothing else matches) whose name contains `t`.
+	static func partialMatches(_ target: String, in groups: [AppGroup]) -> [AppGroup] {
+		let t = target.trimmingCharacters(in: .whitespaces).lowercased()
+		let all = groups.filter { $0.name.lowercased().contains(t) }
+		let apps = all.filter { $0.kind != .process }
+		return apps.isEmpty ? all : apps
+	}
+
+	/// "No such app", or the candidates when the name is ambiguous.
+	static func notFound(_ target: String, in groups: [AppGroup]) -> String {
+		let names = partialMatches(target, in: groups).map(\.name)
+		return names.count > 1 ? "\"\(target)\" matches several: \(names.prefix(8).joined(separator: ", ")). Use the full name."
+			: "\(target) isn't running and has no rule"
 	}
 
 	/// Everything about one app: what it is, live usage, every setting (with the

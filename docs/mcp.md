@@ -19,8 +19,8 @@ It runs locally, speaks MCP over stdin/stdout, and never opens a network port. F
 
 | Mode | Command | Tools |
 |---|---|---|
-| **Read-only** (audit, analyse, advise) | `AppWrangler mcp --read-only` | `get_status`, `list_apps`, `explain_app`, `get_app_settings`, `suggest_settings`, `get_impact_stats`, `list_rules` |
-| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `undo_last_change`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `pause_limits` |
+| **Read-only** (audit, analyse, advise) | `AppWrangler mcp --read-only` | `get_status`, `list_apps`, `explain_app`, `get_app_settings`, `suggest_settings`, `get_impact_stats`, `list_rules`, `get_preferences` |
+| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `set_preferences`, `free_memory`, `undo_last_change`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `pause_limits` |
 
 In full mode, every tool that changes something is marked as such, so MCP clients ask you before running it. Tools that can freeze, quit or remove things are marked *destructive*. Start with `--read-only` if you only want insight.
 
@@ -115,7 +115,10 @@ ChatGPT connects to MCP servers through *Developer Mode* or workspace connectors
 | `get_app_settings` | `app`: what it is, whether it's safe to limit, live usage, **every setting** (with the keys `configure_app` takes and what each means), who manages it (own rule / Auto / nothing), what Auto is doing to it, and suggestions for it |
 | `configure_app` | `app` plus any combination of `cpu_limit`, `efficiency_cores`, `background_only`, `memory_limit_mb`, `memory_action`, `low_memory_action`, `include_helpers`, `enabled`, `ignored`, `use_auto`, `power`, `low_power_mode_only`, `hot_only`, `schedule` (`"09:00-18:00"` / `"off"`), `weekdays`. Only what you pass changes ([all settings](user-manual.md#every-setting-of-an-app)) |
 | `set_auto_mode` | Any of `enabled` (Auto mode on or off), `freeze_idle_apps` (freeze unused apps when memory runs out) and `idle_minutes` ([how it works](user-manual.md#auto-mode)) |
-| `undo_last_change` | Reverts the most recent rule change made by this server, the CLI or a suggestion (one per call, up to 50). `configure_app` results also include the `previous` settings |
+| `undo_last_change` | Reverts the most recent rule change made by this server, the CLI, a suggestion or a quick action (one per call, up to 50). It refuses if the rule was edited in the app since, unless `force` is true. `configure_app` results also include the `previous` settings |
+| `get_preferences` | The app-wide settings (Settings → General) and what each means: Auto mode timings, idle freezing, the low-memory level, runaway alerts, notifications, menu bar CPU, pause shortcut |
+| `set_preferences` | Change any of those; only the keys you pass change, and nothing changes if a value is invalid ([keys](cli.md#prefs-keyvalue-)) |
+| `free_memory` | [Free memory now](user-manual.md#free-memory-now): freeze apps the user hasn't used for a while; each resumes when they switch to it |
 | `set_cpu_limit` | `app`, `percent` (100 = one core), optional `background_only` |
 | `set_efficiency_cores` | `app`, `enabled` |
 | `set_memory_limit` | `app`, `megabytes`, `action` (`notify`/`freeze`/`quit`/`forcequit`); omit `megabytes` to remove the limit |
@@ -171,11 +174,13 @@ When you talk about a particular app, the assistant calls `get_app_settings` for
 - *"Warn me when Brave goes over 6 GB, and freeze it in the background if memory runs out."*
 - *"Hand WhatsApp back to Auto mode."*
 - *"Undo that."*
+- *"Free up some memory, I'm about to start a video call."*
+- *"Freeze idle apps at warning pressure instead of critical."* (`set_preferences`)
 - *"My Mac only has 8 GB. Freeze the apps I'm not using when memory runs out."*
 
 ## Privacy & safety
 
 - Everything stays on your Mac. The server only reads process information and AppWrangler's own files, and writes your rules file (and AppWrangler's Auto-mode preference, for `set_auto_mode`).
 - What the AI sees (app names, usage figures, rules) is sent to whichever AI service your client uses, as with anything you share in a chat.
-- The server has the same powers as the `appwrangler` command line, and processes critical to macOS stay protected.
+- The server has the same powers as the `appwrangler` command line. Processes critical to macOS are refused, as are patterns that would match nearly everything, and names that could mean several apps.
 - `--read-only` removes every tool that can change anything.

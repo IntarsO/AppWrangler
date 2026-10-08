@@ -8,6 +8,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 - [Auto mode](#auto-mode)
 - [The main panel](#the-main-panel)
 - [Rules](#rules)
+  - [Only while the app is in the background](#only-while-the-app-is-in-the-background)
   - [Limit CPU](#limit-cpu)
   - [Efficiency cores only](#efficiency-cores-only)
   - [Memory limit](#memory-limit)
@@ -15,7 +16,9 @@ This manual is also built into the app (no internet needed). Open it from the **
   - [When to apply (conditions)](#when-to-apply-conditions)
   - [Helper processes](#helper-processes)
   - [Ignoring an app](#ignoring-an-app)
+  - [How rules are matched](#how-rules-are-matched)
 - [Freeze, quit and force quit](#freeze-quit-and-force-quit)
+- [Free memory now](#free-memory-now)
 - [Pausing all limits](#pausing-all-limits)
 - [Runaway alerts](#runaway-alerts)
 - [Impact: how much it helped](#impact)
@@ -24,6 +27,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 - [Every setting of an app](#every-setting-of-an-app)
 - [Asking an AI assistant](#asking-an-ai-assistant)
 - [Help inside the app](#help-inside-the-app)
+- [Links: appwrangler://](#links-appwrangler)
 - [Settings window](#settings-window)
 - [Safety](#safety)
 - [Where your data lives](#where-your-data-lives)
@@ -50,7 +54,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 |---|---|
 | The app you're using | Full speed, on the performance cores. Switching to an app restores it instantly. |
 | An app you left a moment ago | Stays at full speed for 15 s, so quick switching back and forth never stutters. |
-| Apps playing or recording audio | Treated as in use, even in the background: music, video calls, dictation tools like Whispr. (Needs macOS 14.2 or later; on older systems only focus counts.) |
+| Apps playing or recording audio | Treated as in use, even in the background: music, video calls, dictation tools like Wispr Flow. (Needs macOS 14.2 or later; on older systems only focus counts.) |
 | Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
 | The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
 
@@ -60,11 +64,18 @@ This manual is also built into the app (no internet needed). Open it from the **
 - **What it never freezes:**
   - the app you're using;
   - anything playing or recording audio;
+  - apps still doing work (using more than 5% CPU), and small ones (under 100 MB);
   - messaging and calls apps (Slack, WhatsApp, Teams, Zoom, Mail…);
+  - terminals, code editors and IDEs, and virtual machines and containers (Docker, UTM, Parallels…), whose jobs, builds and servers would stop;
   - menu bar apps;
-  - apps whose own rule already has a low-memory action.
+  - apps you've told AppWrangler to ignore, or whose own rule already has a low-memory action;
+  - anything while limits are [paused](#pausing-all-limits).
 - **Why it helps.** Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive.
-- **Getting them back.** An app **resumes the moment you switch to it**, and all of them resume when memory frees up. On a Mac with little RAM this does more than any CPU setting.
+- **Getting them back:**
+  - An app **resumes the moment you switch to it**.
+  - All of them resume once memory has been fine for a minute. The delay stops them from freezing and thawing over and over when memory hovers at the limit.
+  - They also resume as soon as you turn this setting (or Auto mode) off.
+- **Effect.** On a Mac with little RAM this does more than any CPU setting. To free memory right away, whatever the pressure, use [Free memory now](#free-memory-now).
 
 So AppWrangler adapts to **how many apps you're running and how hard they work**. With little running, nothing is held back. With a lot going on, the apps in the background share fairly, and the one in front stays fast.
 
@@ -79,7 +90,10 @@ The panel header shows what Auto is doing, e.g. *"Auto · 12 apps · 1 in use ·
 Settings → General → **Auto mode** lets you change:
 - the 30 s delay;
 - whether background apps use efficiency cores;
-- whether the CPU is shared when the Mac is busy, and above which load.
+- whether the CPU is shared when the Mac is busy, and above which load;
+- whether idle apps are frozen when memory runs low, and after how long.
+
+The same settings are available from the command line (`appwrangler prefs`) and to AI assistants.
 
 The **Auto** switch in the panel header turns it off; `appwrangler auto on|off` works too.
 
@@ -203,13 +217,13 @@ All the conditions you turn on must hold. Rules switch the moment a condition ch
 
 ### Ignoring an app
 
-**Ignore this app in suggestions and automatic actions** keeps an app out of [runaway alerts](#runaway-alerts) and switches off all of its limits, without deleting the rule. *Ignore this app* on a runaway notification does the same thing.
+**Ignore this app in suggestions and automatic actions** keeps an app out of [runaway alerts](#runaway-alerts), [suggestions](#suggestions-what-to-change) and **Auto mode** (including idle freezing), and switches off all of its limits, without deleting the rule. *Ignore this app* on a runaway notification does the same thing.
 
 ### How rules are matched
 
 When more than one rule could apply, the most specific wins: **bundle ID → path → process name → name pattern**.
 
-- Rules created from the panel use the bundle ID for apps, and the path or name for plain processes.
+- Rules created from the panel use the bundle ID for apps, and the path or name for plain processes. Process names are matched without regard to case.
 - In Settings you can add a **name pattern** such as `*Helper*` or `com.google.*`:
   - `*` matches anything and `?` matches one character;
   - case is ignored;
@@ -221,27 +235,48 @@ When more than one rule could apply, the most specific wins: **bundle ID → pat
 
 - **Freeze** suspends the app and all its helpers immediately. It uses no CPU while frozen; its memory stays allocated, and macOS can compress it. **Unfreeze** resumes it exactly where it was. A frozen app shows a spinning cursor if you click its windows; that's expected.
 - **Quit** asks the app to quit normally, so it can save. AppWrangler first lifts any limit, so the app can respond.
-- **Force Quit** ends it immediately, after asking you to confirm.
+- **Force Quit** ends it immediately, after asking you to confirm (from the right-click menu or the details view).
 
-Freezes are deliberately *not* undone by [pausing](#pausing-all-limits). They are undone when you unfreeze, when memory pressure eases (for low-memory freezes), or when AppWrangler quits.
+**When a freeze ends:**
+- [Pausing](#pausing-all-limits) deliberately does *not* undo freezes.
+- **Any freeze** ends when you unfreeze the app, when it quits, or when AppWrangler quits.
+- **Low-memory and [Free memory](#free-memory-now) freezes** also end the moment you switch to the app, or when it plays audio.
+- **Low-memory freezes** also end once memory has been fine for a minute.
+- **A freeze AppWrangler made because of a setting** ends as soon as that setting no longer asks for it. Examples: you remove or disable a memory-limit rule, change its action from *Freeze*, or turn off low-memory freezing.
+
+AppWrangler never freezes a command running in a terminal's foreground, because the shell would treat it as suspended.
+
+---
+
+## Free memory now
+
+**Free memory** freezes the apps you haven't used for a while, right now, whatever the memory pressure. It applies the same rules as [Auto's idle freezing](#auto-mode): the idle time (10 min by default), and never the app in use, audio, busy apps, messaging and calls apps, terminals and IDEs, virtual machines or menu bar apps. Each app **resumes the moment you switch to it**.
+
+Use it when the Mac starts swapping and you want the app in front to have the memory:
+- the **Free memory** button on the [widget](#desktop-widget);
+- `appwrangler free-memory`;
+- the [link](#links-appwrangler) `appwrangler://free-memory`;
+- or ask your AI assistant (`free_memory`).
+
+What was frozen is listed in Settings → Activity and in `appwrangler status`.
 
 ---
 
 ## Pausing all limits
 
-Use the **Active/Paused** switch in the header, *Pause All Limits* in the right-click menu, `appwrangler pause`, or **⌃⌥⌘P** from anywhere. This lets every CPU-limited app run freely until you resume. Frozen apps stay frozen. The menu bar icon dims while paused.
+Use the **Active/Paused** switch in the header, *Pause All Limits* in the right-click menu, the widget's **Pause** button, `appwrangler pause`, or **⌃⌥⌘P** from anywhere. This lets every CPU-limited app run freely until you resume. Apps that are already frozen stay frozen, and nothing new is frozen while paused. The menu bar icon dims while paused.
 
 ---
 
 ## Runaway alerts
 
-When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a suggestion in the panel and sends a notification with three buttons:
+When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows an orange alert at the top of the panel, with **Limit 50%**, **E-cores** and **×** (dismiss for an hour). It also sends a notification with three buttons:
 
 - **Limit to 50%** creates a CPU-limit rule.
 - **Use efficiency cores** creates an efficiency-cores rule.
-- **Ignore this app** never suggests it again.
+- **Ignore this app** creates a rule that [ignores](#ignoring-an-app) it: no more alerts, and Auto mode leaves it alone too.
 
-Each app is suggested at most once an hour. Turn alerts off, or change the thresholds, in Settings → General → Runaway apps. While alerts are on, AppWrangler does a light scan every 5 seconds in the background, costing about 0.2% of one core.
+Each app is flagged at most once an hour. `appwrangler undo` reverts what these buttons did. Turn alerts off, or change the thresholds, in Settings → General → Runaway apps. While alerts are on, AppWrangler does a light scan every 5 seconds in the background, costing about 0.2% of one core.
 
 ---
 
@@ -285,23 +320,29 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 AppWrangler has a widget for the desktop and Notification Center (macOS 14 Sonoma or later).
 
-**Add it:** right-click the desktop → **Edit Widgets…**, search for **AppWrangler**, and drag the small or medium size onto your desktop. You can also add it in Notification Center by clicking *Edit Widgets* at the bottom.
+**Add it:** right-click the desktop → **Edit Widgets…**, search for **AppWrangler**, and drag the small, medium or large size onto your desktop. You can also add it in Notification Center by clicking *Edit Widgets* at the bottom.
 
 ![The medium AppWrangler widget: CPU and memory rings, Auto status, the busiest apps and the top suggestion](images/widget-medium.png)
 
 | Size | Shows |
 |---|---|
 | Small | CPU and memory rings (the memory ring turns orange or red under memory pressure, with how much is swapped), what Auto mode is doing, whether limits are paused or apps are frozen, and the CPU time saved today |
-| Medium | All of that, plus the three busiest apps (🍃 on efficiency cores, ⚡ full speed, ❄️ frozen, gauge = own rule) and the top [suggestion](#suggestions-what-to-change) |
+| Medium | All of that, plus the three busiest apps (🍃 on efficiency cores, ⚡ full speed, ❄️ frozen, gauge = own rule), the top [suggestion](#suggestions-what-to-change), and buttons |
+| Large | All of that with the five busiest apps, up to three suggestions, how much memory is in use, and buttons |
 
-Click the widget to open AppWrangler's [window](#the-main-panel).
+**Buttons** (medium and large):
+- **Pause / Resume** all CPU limits;
+- **Auto** turns Auto mode on or off (highlighted when on);
+- **Free memory** runs [Free memory now](#free-memory-now).
+
+The widget updates within a few seconds of a button press. Click anywhere else on the widget to open AppWrangler's [window](#the-main-panel).
 
 **Colour or grey?** With the default widget style, macOS shows desktop widgets in full colour only when the desktop itself is active. While you're working in an app, it shows them in a muted, monochrome style; AppWrangler's rings and status then take your accent colour. To keep them in colour all the time, choose **System Settings → Desktop & Dock → Widgets → Widget style → Full-color**.
 
 **Good to know:**
 - **Refresh rate.** macOS decides how often widgets refresh. AppWrangler updates the widget's data every minute and asks for a refresh when something you'd notice changes (paused, an app frozen, memory pressure). Expect it to be a few minutes behind at worst; it isn't a live meter.
 - **When AppWrangler isn't running,** the widget says so; click it to start AppWrangler.
-- **Privacy.** The widget is sandboxed and can only read the small status file the app writes (`widget.json` in the data folder). It can't measure or change anything.
+- **Privacy.** The widget is sandboxed and can only read the small status file the app writes (`widget.json` in the data folder). It can't measure anything. Its buttons are [links](#links-appwrangler) that the running AppWrangler acts on.
 
 ---
 
@@ -330,7 +371,7 @@ They look at:
 | Auto mode is off | Turn it on |
 | The Mac is short of memory and Auto doesn't freeze idle apps yet | [Freezing idle apps](#auto-mode) when memory runs out |
 | The Mac is short of memory (memory pressure, swap or almost-full RAM) | The biggest users, a memory warning for them, and freezing them in the background if memory runs out. Messaging and call apps are never suggested for freezing. For browsers, where to turn on tab sleeping (e.g. Brave: `brave://settings/system` → Memory Saver) |
-| A process or unmanaged app using a lot of CPU in the background | Efficiency cores, or a background-only CPU cap; with Auto off, turning Auto on |
+| A process or unmanaged app using a lot of CPU in the background | Efficiency cores, or a background-only CPU cap; with Auto off, turning Auto on. Compilers and build tools (`swift-frontend`, `clang`, `cargo`, `xcodebuild`…) are left out: they're busy because you're waiting for them |
 | A rule whose CPU limit or efficiency cores also apply while you use the app | Make it background-only, or hand the app to Auto mode |
 | A CPU limit that held an app back most of the time last week | A higher limit, or Auto mode |
 | An app that's always over its memory limit | A realistic limit, or, if it already uses most of the RAM, reducing what the app uses |
@@ -348,7 +389,7 @@ Each suggestion says **why**, the **expected benefit**, and gives ready commands
 
 Nothing changes until you click a button, run one of the commands, or tell your AI assistant to apply it. If AppWrangler isn't running, CPU readings come from a one-second sample, and the suggestion says so.
 
-**Changed your mind?** `appwrangler undo` reverts the last change made from a suggestion, the command line or an AI assistant. Run it again to go further back (up to 50 changes). AI assistants can do the same with `undo_last_change`.
+**Changed your mind?** `appwrangler undo` reverts the last change made from a suggestion, the command line, an AI assistant, a runaway alert's buttons or the right-click quick actions. Run it again to go further back (up to 50 changes). AI assistants can do the same with `undo_last_change`. Edits in the rule editor aren't recorded. If you edited a rule there after the change, undo stops rather than lose your edit; `appwrangler undo --force` undoes anyway.
 
 ---
 
@@ -388,7 +429,7 @@ appwrangler set Slack use_auto=true          # drop Slack's own CPU settings; Au
 | `schedule` | `09:00-18:00` or `off` | Only during these hours |
 | `weekdays` | e.g. `2,3,4,5,6` (1 = Sunday … 7 = Saturday) | The day buttons under the hours |
 
-Every change can be reverted with `appwrangler undo`.
+Every change made this way can be reverted with `appwrangler undo`.
 
 A rule is created when you turn something on. When nothing is left (no limits, not ignored), the rule is removed and Auto mode manages the app again. Critical macOS processes are refused.
 
@@ -423,7 +464,7 @@ Quit Claude Desktop first; it rewrites its settings while open. The [MCP page](m
 - *"Freeze apps I'm not using when memory runs out."*
 - *"How much has AppWrangler saved this week?"*
 
-Changes go through `configure_app`, which takes the same settings as [`appwrangler set`](#every-setting-of-an-app). Assistants ask before changing anything (and your MCP client asks you to approve each change). Run the server with `--read-only` if you only want advice. The built-in prompts **Audit my Mac** (`audit_mac`) and **Tune an app** (`tune_app`) guide the conversation.
+Changes go through `configure_app`, which takes the same settings as [`appwrangler set`](#every-setting-of-an-app). Assistants ask before changing anything (and your MCP client asks you to approve each change). Run the server with `--read-only` if you only want advice. The built-in prompts **Audit my Mac** (`audit_mac`), **Tune an app** (`tune_app`) and **Explain the impact** (`explain_impact`) guide the conversation. Assistants can also read and change the app-wide settings below (`get_preferences`, `set_preferences`) and run [Free memory now](#free-memory-now).
 
 ---
 
@@ -434,7 +475,7 @@ Changes go through `configure_app`, which takes the same settings as [`appwrangl
 The Help window shows this manual, [Getting Started](getting-started.md), the [command line](cli.md), [AI assistants](mcp.md), the [FAQ](faq.md) and [How it works](how-it-works.md). They're bundled with the app, so they work offline and always match the version you have.
 
 - **Open it:**
-  - the **?** in the panel footer;
+  - the **?** in the panel footer (opens Help at Getting Started);
   - **Help & Documentation** in the menu bar icon's right-click menu;
   - **Settings → About → Open Help**;
   - **⌘?** while an AppWrangler window is active.
@@ -443,6 +484,23 @@ The Help window shows this manual, [Getting Started](getting-started.md), the [c
 - Links to other pages open in the Help window; web links open in your browser. **Read online on GitHub** opens the same page on the web.
 
 Standard shortcuts work in AppWrangler's windows: ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields, ⌘W to close, ⌘, for Settings, and ⌘Q to quit.
+
+---
+
+## Links: appwrangler://
+
+AppWrangler responds to `appwrangler://` links. The widget's buttons use them, and you can use them from Shortcuts, scripts, Raycast/Alfred, or `open` in Terminal:
+
+| Link | Does |
+|---|---|
+| `appwrangler://window` | Opens AppWrangler's [window](#the-main-panel) |
+| `appwrangler://settings` | Opens Settings |
+| `appwrangler://help/user-manual#auto-mode` | Opens Help at a page and section (`getting-started`, `user-manual`, `mcp`, `cli`, `faq`, `how-it-works`) |
+| `appwrangler://pause`, `…/resume`, `…/toggle-pause` | [Pauses or resumes](#pausing-all-limits) all CPU limits |
+| `appwrangler://auto/on`, `…/auto/off`, `…/auto/toggle` | Turns [Auto mode](#auto-mode) on or off |
+| `appwrangler://free-memory` | [Free memory now](#free-memory-now) |
+
+For example: `open -g appwrangler://pause` (the `-g` keeps your current app in front). A link in a web page or email can't do anything without asking: macOS shows a prompt first.
 
 ---
 
@@ -460,6 +518,10 @@ Standard shortcuts work in AppWrangler's windows: ⌘C, ⌘V, ⌘X, ⌘A and ⌘
 | Setting | Default | Notes |
 |---|---|---|
 | Launch AppWrangler at login | off | Install in /Applications first |
+| Auto mode: Manage apps automatically | on | See [Auto mode](#auto-mode) |
+| Move background apps to efficiency cores | on, after 30 s | 10 s, 30 s, 1 min or 5 min |
+| Share the CPU fairly when the Mac is busy | on, above 75% | 30–95%; at most 50% on battery |
+| Freeze apps I haven't used for a while when memory is low | off, after 10 min | 5 min, 10 min, 30 min or 1 h |
 | Refresh while window is open | 1 s | How often the panel updates |
 | Check rules in background every | 2 s | How quickly rules react when the panel is closed |
 | Include other users' processes | off | View only; they can't be limited |
@@ -470,6 +532,9 @@ Standard shortcuts work in AppWrangler's windows: ⌘C, ⌘V, ⌘X, ⌘A and ⌘
 | Pause all CPU limits | — | Same as the header switch |
 | Pause/resume shortcut ⌃⌥⌘P | on | Global shortcut |
 | Notifications | on | Memory, low-memory and runaway alerts |
+| Command line | — | How to add the `appwrangler` command (Homebrew does it for you) |
+
+Every setting above, except the window refresh, background check, other users' processes and throttle cycle, can also be changed with `appwrangler prefs key=value …`. Run `appwrangler prefs` to list them.
 
 **Activity:** a log of what AppWrangler did: limits paused, apps frozen, memory limits hit, rules reloaded, permission problems.
 
@@ -481,7 +546,7 @@ The **?** next to a section in Settings → General opens the matching part of t
 
 ## Safety
 
-- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or any kind of kill (even `kill -9`) releases every app AppWrangler had paused or moved to the efficiency cores. A tiny watchdog process takes care of the cases AppWrangler can't handle itself.
+- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or any kind of kill (even `kill -9 <pid>`) releases every app AppWrangler had paused or moved to the efficiency cores. A tiny watchdog process takes care of the cases AppWrangler can't handle itself. The watchdog is also called "AppWrangler", so `killall -9 AppWrangler` stops both at once and nothing is left to release the apps. Use Quit, or `kill` the main process by pid.
 - **Terminal jobs are left running.** A command in a terminal's foreground is never paused, because the shell would suspend it. Efficiency cores still apply.
 - **Critical processes are protected.** WindowServer, loginwindow, the Dock, Control Center, launchd and other session-critical processes can't be limited or frozen.
 - **Your processes only.** Like any normal app, AppWrangler can only control processes running as your user.
@@ -497,6 +562,10 @@ The **?** next to a section in Settings → General opens the matching part of t
 | Rules | `~/Library/Application Support/AppWrangler/rules.json` (plain JSON; edits apply immediately) |
 | Impact statistics | `~/Library/Application Support/AppWrangler/stats.json` (35 days) |
 | Status for the CLI | `~/Library/Application Support/AppWrangler/state.json` |
+| Recent per-app averages (for suggestions) | `~/Library/Application Support/AppWrangler/usage.json` (rewritten every minute) |
+| What the widget shows | `~/Library/Application Support/AppWrangler/widget.json` (rewritten every minute) |
+| Undo history | `~/Library/Application Support/AppWrangler/changes.json` (last 50 changes) |
+| Single-instance lock | `~/Library/Application Support/AppWrangler/.lock` |
 | Preferences | `defaults read io.github.intarso.AppWrangler` |
 
 On first launch AppWrangler imports rules from AppPolice 2.x (`~/Library/Application Support/AppPolice/`) and limits saved by AppPolice 1.x.

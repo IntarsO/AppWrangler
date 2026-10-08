@@ -154,6 +154,9 @@ final class MCPServer {
 		var isError = false
 	}
 
+	/// Each call does something new (undo walks back further; free memory freezes again).
+	static let notIdempotent: Set<String> = ["undo_last_change", "free_memory"]
+
 	struct Tool {
 		let name: String
 		let title: String
@@ -169,7 +172,7 @@ final class MCPServer {
 				"name": name, "title": title, "description": description,
 				"inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false],
 				"annotations": ["title": title, "readOnlyHint": readOnly, "destructiveHint": destructive,
-								"idempotentHint": readOnly || !destructive, "openWorldHint": false],
+								"idempotentHint": readOnly || (!destructive && !MCPServer.notIdempotent.contains(name)), "openWorldHint": false],
 			]
 		}
 	}
@@ -255,9 +258,17 @@ final class MCPServer {
 				let store = self.store()
 				let apps = self.runningApps()
 				guard let report = Reports.appSettings(target, store: store, apps: apps, input: self.suggestionInput(store, apps, self.sampleSeconds)) else {
-					return Outcome(text: "\(target) isn't running and has no rule. Check the name with list_apps.", isError: true)
+					let groups = Reports.sampleGroups(apps: apps, seconds: 0.2)
+					return Outcome(text: Reports.notFound(target, in: groups) + ". Check the name with list_apps.", isError: true)
 				}
 				return Outcome(text: Reports.json(report), structured: report)
+			},
+			Tool(name: "get_preferences", title: "App-wide settings",
+				 description: "AppWrangler's app-wide settings (Settings → General): Auto mode and its timings, idle-app freezing, the low-memory level, runaway alerts, notifications, menu bar CPU and the pause shortcut — with what each means.",
+				 properties: [:], required: [], readOnly: true, destructive: false) { _ in
+				let prefs: [String: Any] = ["settings": PreferenceSettings.current(),
+											"help": Dictionary(uniqueKeysWithValues: PreferenceSettings.specs.map { ($0.key, $0.help) })]
+				return Outcome(text: Reports.json(prefs), structured: prefs)
 			},
 			Tool(name: "list_rules", title: "List rules",
 				 description: "All saved per-app rules (limits, conditions, actions), including for apps that aren't running.",
@@ -337,7 +348,7 @@ final class MCPServer {
 				self.cli([(args["frozen"] as? Bool ?? true) ? "freeze" : "unfreeze", args["app"] as? String ?? ""])
 			},
 			Tool(name: "set_auto_mode", title: "Auto mode",
-				 description: "Auto mode keeps the focused app (and anything playing/recording audio) at full speed, moves other apps to efficiency cores after 30 s in the background, and shares the CPU fairly between background apps only when the Mac is busy. Apps with their own CPU/E-core rule are not affected. Optionally (freeze_idle_apps) it also freezes regular apps you haven't used for idle_minutes while the Mac is low on memory; they resume the moment you switch to them or memory frees up. Messaging, calls and audio apps are never frozen.",
+				 description: "Auto mode keeps the focused app (and anything playing/recording audio) at full speed, moves other apps to efficiency cores after a short time in the background (30 s by default), and shares the CPU fairly between background apps only when the Mac is busy. Apps with their own CPU/E-core rule are not affected. Optionally (freeze_idle_apps) it also freezes regular apps you haven't used for idle_minutes while the Mac is low on memory; they resume the moment you switch to them or memory frees up. Messaging, calls and audio apps are never frozen.",
 				 properties: ["enabled": ["type": "boolean", "description": "Auto mode on or off."],
 							  "freeze_idle_apps": ["type": "boolean", "description": "Freeze idle apps when the Mac is low on memory (opt-in)."],
 							  "idle_minutes": ["type": "integer", "minimum": 1, "maximum": 1440, "description": "How long an app must be unused before it may be frozen (default 10)."]],
@@ -354,16 +365,37 @@ final class MCPServer {
 				guard !outcomes.isEmpty else { return Outcome(text: "Give enabled, freeze_idle_apps and/or idle_minutes.", isError: true) }
 				return Outcome(text: outcomes.map(\.text).joined(separator: "\n"), isError: outcomes.contains { $0.isError })
 			},
+			Tool(name: "set_preferences", title: "Change app-wide settings",
+				 description: "Change any of AppWrangler's app-wide settings (see get_preferences for the keys and ranges). Only the keys you pass change; nothing changes if a value is invalid. Applies immediately. Ask the user first.",
+				 properties: Self.preferenceProperties, required: [], readOnly: false, destructive: false) { [unowned self] args in
+				guard !args.isEmpty else { return Outcome(text: "Give at least one setting (see get_preferences).", isError: true) }
+				do {
+					let now = try PreferenceSettings.set(args)
+					_ = self.postToApp("prefs", nil)
+					return Outcome(text: "Saved. " + Reports.json(now), structured: ["settings": now])
+				} catch {
+					return Outcome(text: "\(error)", isError: true)
+				}
+			},
 			Tool(name: "undo_last_change", title: "Undo last change",
-				 description: "Revert the most recent rule change made through this server, the command line or a suggestion (up to the last 50, one per call). Returns what was restored. Auto-mode on/off isn't covered: use set_auto_mode.",
-				 properties: [:], required: [], readOnly: false, destructive: false) { [unowned self] _ in
+				 description: "Revert the most recent rule change made through this server, the command line, a suggestion or a quick action in the app (up to the last 50, one per call). Returns what was restored. If the rule was edited elsewhere since, it refuses unless force is true — ask the user first. Auto-mode on/off isn't covered: use set_auto_mode.",
+				 properties: ["force": ["type": "boolean", "description": "Undo even though the rule was changed elsewhere since (that change is lost)."]],
+				 required: [], readOnly: false, destructive: true) { [unowned self] args in
 				let s = self.store()
-				guard let (entry, message) = ChangeJournal.undo(store: s) else {
-					return Outcome(text: "Nothing to undo.", structured: ["undone": false])
+				let entry: ChangeJournal.Entry, message: String
+				switch ChangeJournal.undoLast(store: s, force: args["force"] as? Bool ?? false) {
+				case .nothing: return Outcome(text: "Nothing to undo.", structured: ["undone": false])
+				case .conflict(_, let m): return Outcome(text: m, structured: ["undone": false, "conflict": true], isError: true)
+				case .undone(let e, let m): entry = e; message = m
 				}
 				return Outcome(text: message, structured: ["undone": true, "app": entry.app, "message": message,
 														   "settings": entry.before.map { AppSettings.settings($0) } ?? [:],
 														   "rule": entry.before?.summary ?? "none"])
+			},
+			Tool(name: "free_memory", title: "Free memory now",
+				 description: "Freeze regular apps the user hasn't used for a while (Auto mode's idle time, 10 min by default), whatever the memory pressure, so macOS can compress or swap their memory. Each resumes the moment the user switches to it. Never the app in use, audio, messaging/calls or menu bar apps. Needs AppWrangler running. Ask the user first.",
+				 properties: [:], required: [], readOnly: false, destructive: true) { [unowned self] _ in
+				self.cli(["free-memory"])
 			},
 			Tool(name: "pause_limits", title: "Pause or resume all limits",
 				 description: "Pause all CPU limits (frozen apps stay frozen) or resume them. Needs AppWrangler running.",
@@ -380,6 +412,18 @@ final class MCPServer {
 		if let s = value as? String { return s }
 		return ""
 	}
+
+	static let preferenceProperties: [String: Any] = {
+		var p: [String: Any] = [:]
+		for spec in PreferenceSettings.specs {
+			switch spec.kind {
+			case .bool: p[spec.key] = ["type": "boolean", "description": spec.help]
+			case .number(let r): p[spec.key] = ["type": "number", "minimum": r.lowerBound, "maximum": r.upperBound, "description": spec.help]
+			case .choice(let names): p[spec.key] = ["type": "string", "enum": names.keys.sorted(), "description": spec.help]
+			}
+		}
+		return p
+	}()
 
 	static let configureProperties: [String: Any] = {
 		var p: [String: Any] = ["app": appProperty]
@@ -431,35 +475,20 @@ final class MCPServer {
 
 	private func setConditions(_ args: [String: Any]) -> Outcome {
 		let s = store()
-		let target = (args["app"] as? String ?? "").lowercased()
-		guard var rule = s.rules.first(where: { $0.displayName.lowercased() == target || $0.matchValue.lowercased() == target }) else {
-			return Outcome(text: "No rule for \"\(target)\". Create one first (e.g. set_cpu_limit).", isError: true)
+		let target = args["app"] as? String ?? ""
+		guard let existing = RuleTargets.resolve(target, store: s, apps: runningApps(), create: false) else {
+			return Outcome(text: "No rule for \"\(target)\". Create one first (e.g. configure_app).", isError: true)
 		}
-		if let p = args["power"] as? String {
-			guard let power = PowerCondition(rawValue: p) else { return Outcome(text: "power must be any, battery or charger", isError: true) }
-			rule.conditions.power = power
-		}
-		if let v = args["low_power_mode_only"] as? Bool { rule.conditions.lowPowerModeOnly = v }
-		if let v = args["hot_only"] as? Bool { rule.conditions.hotOnly = v }
+		var values = args.filter { ["power", "low_power_mode_only", "hot_only"].contains($0.key) }
 		if let sched = args["schedule"] as? [String: Any] {
-			func minutes(_ text: Any?) -> Int? {
-				guard let t = text as? String else { return nil }
-				let parts = t.split(separator: ":").compactMap { Int($0) }
-				guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
-				return parts[0] * 60 + parts[1]
-			}
-			rule.conditions.schedule.enabled = sched["enabled"] as? Bool ?? true
-			if sched["start"] != nil {
-				guard let m = minutes(sched["start"]) else { return Outcome(text: "start must be HH:MM", isError: true) }
-				rule.conditions.schedule.start = m
-			}
-			if sched["end"] != nil {
-				guard let m = minutes(sched["end"]) else { return Outcome(text: "end must be HH:MM", isError: true) }
-				rule.conditions.schedule.end = m
-			}
-			if let days = sched["weekdays"] as? [Int] { rule.conditions.schedule.weekdays = Set(days.filter { (1...7).contains($0) }) }
+			values["schedule"] = sched.filter { ["enabled", "start", "end"].contains($0.key) }
+			if let days = sched["weekdays"] { values["weekdays"] = days }
 		}
-		ChangeJournal.record(before: s.rules.first { $0.id == rule.id }, after: rule.sanitized(), source: "mcp", store: s)
+		let changes: RuleChanges
+		do { changes = try RuleChanges.parse(values, current: existing.conditions.schedule) } catch { return Outcome(text: "\(error)", isError: true) }
+		var rule = existing
+		changes.apply(to: &rule)
+		ChangeJournal.record(before: existing, after: rule, source: "mcp", store: s)
 		s.upsert(rule)
 		s.saveNow()
 		return Outcome(text: "\(rule.displayName): \(rule.summary)", structured: ["rule": rule.displayName, "summary": rule.summary])
@@ -485,7 +514,7 @@ final class MCPServer {
 			2. Identify what uses the most CPU, memory and energy — especially in the background — and explain in plain words what each of those apps is.
 			3. Judge whether my existing rules are working: compare wanted vs allowed CPU, time held back, savings, and AppWrangler's own cost and limit accuracy.
 			4. Recommend specific changes (start from suggest_settings; add your own: new limits, efficiency cores, memory or low-memory actions, conditions such as "only on battery"), each with the reason and expected benefit. Prefer leaving apps to Auto mode over fixed limits that also apply while I use them. Avoid apps marked protected, and be careful with ones marked caution.
-			Show them as a numbered list. Don't apply any change until I confirm; then apply exactly the ones I pick (configure_app) and confirm what changed.
+			Show them as a numbered list. Don't apply any change until I confirm; then apply exactly the ones I pick (configure_app) and confirm what changed. If configure_app isn't available (read-only server), give me the `appwrangler` commands to run instead.
 			"""
 		},
 		Prompt(name: "tune_app", description: "Look at one app, explain what it is and how it's managed, and suggest the best settings for it.",
@@ -496,7 +525,7 @@ final class MCPServer {
 			1. Call get_app_settings for \(app) (and suggest_settings with app: \(app)).
 			2. Tell me in plain words what it is, how much CPU, memory and energy it uses now, whether it's safe to limit, and who manages it (its own rule, Auto mode, or nothing).
 			3. Recommend settings for how I use it (e.g. full speed while focused, efficiency cores in the background, a memory warning, a low-memory freeze unless it's a messaging/calls app), with the reason and expected benefit for each.
-			Don't change anything until I confirm; then apply exactly what I agree to with configure_app and show the before → after.
+			Don't change anything until I confirm; then apply exactly what I agree to with configure_app and show the before → after. If configure_app isn't available (read-only server), give me the `appwrangler set` command instead.
 			"""
 		},
 		Prompt(name: "explain_impact", description: "Summarise in plain words what AppWrangler has saved and what it cost.",

@@ -41,6 +41,9 @@ struct WidgetSnapshot: Codable, Equatable {
 	var topApps: [App]
 	var suggestionCount: Int
 	var topSuggestion: String?
+	/// The first few suggestion titles (for the large widget). Optional so
+	/// files written by 1.2.0 still decode.
+	var suggestionTitles: [String]? = nil
 
 	/// Older than this and the app has probably stopped.
 	static let staleAfter: TimeInterval = 15 * 60
@@ -78,5 +81,6 @@ struct WidgetSnapshot: Codable, Equatable {
 		topApps: [App(name: "Brave Browser", cpu: 0.32, memoryBytes: 5_000_000_000, state: "auto-full"),
 				  App(name: "Claude", cpu: 0.2, memoryBytes: 2_200_000_000, state: "auto-ecores"),
 				  App(name: "Slack", cpu: 0.03, memoryBytes: 690_000_000, state: "auto-ecores")],
-		suggestionCount: 2, topSuggestion: "Brave Browser uses more than this Mac's RAM")
+		suggestionCount: 2, topSuggestion: "Brave Browser uses more than this Mac's RAM",
+		suggestionTitles: ["Brave Browser uses more than this Mac's RAM", "Let Auto mode freeze apps you aren't using when memory runs out"])
 }

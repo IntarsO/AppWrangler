@@ -27,6 +27,7 @@ struct RenderWidget {
 			let suffix = dark ? "-dark" : ""
 			render(SmallView(s: snapshot), CGSize(width: 170, height: 170), "widget-small\(suffix).png", dark: dark)
 			render(MediumView(s: snapshot), CGSize(width: 364, height: 170), "widget-medium\(suffix).png", dark: dark)
+			render(LargeView(s: snapshot), CGSize(width: 364, height: 382), "widget-large\(suffix).png", dark: dark)
 		}
 		render(NotRunning(), CGSize(width: 170, height: 170), "widget-not-running.png", dark: false)
 	}

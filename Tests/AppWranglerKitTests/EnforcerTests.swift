@@ -162,10 +162,22 @@ import Testing
 		let g = makeGroup()
 		var state = SystemState()
 		state.memoryPressure = 4
-		e.apply(makeSnapshot([g], seq: 1), rules: store, state: state, frontmostPid: 0)
+		let t0 = Date(timeIntervalSince1970: 5_000_000)
+		e.apply(makeSnapshot([g], seq: 1), rules: store, state: state, frontmostPid: 0, now: t0)
 		#expect(controller.frozenGroups.count == 1)
+		// Memory has to stay fine for a while before apps are thawed…
 		state.memoryPressure = 1
-		e.apply(makeSnapshot([g], seq: 2), rules: store, state: state, frontmostPid: 0)
+		e.apply(makeSnapshot([g], seq: 2), rules: store, state: state, frontmostPid: 0, now: t0 + 1)
+		#expect(e.isFrozen(g.id), "no thaw on the first good sample")
+		// …a brief dip back to low memory restarts the wait…
+		state.memoryPressure = 4
+		e.apply(makeSnapshot([g], seq: 3), rules: store, state: state, frontmostPid: 0, now: t0 + 30)
+		state.memoryPressure = 1
+		e.apply(makeSnapshot([g], seq: 4), rules: store, state: state, frontmostPid: 0, now: t0 + 40)
+		e.apply(makeSnapshot([g], seq: 5), rules: store, state: state, frontmostPid: 0, now: t0 + 80)
+		#expect(e.isFrozen(g.id), "only 40 s of good memory")
+		// …and then it thaws.
+		e.apply(makeSnapshot([g], seq: 6), rules: store, state: state, frontmostPid: 0, now: t0 + 101)
 		#expect(controller.groups.isEmpty)
 		#expect(!e.isFrozen(g.id))
 	}

@@ -49,7 +49,7 @@ enum CLI {
 	static let commands: Set<String> = [
 		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
-		"suggest", "show", "set", "undo",
+		"suggest", "show", "set", "undo", "free-memory", "prefs",
 	]
 
 	static func isInvocation(_ args: [String]) -> Bool {
@@ -90,6 +90,24 @@ enum CLI {
 		/// Find (or create) the rule for a user-supplied app name.
 		func ruleFor(_ target: String, create: Bool) -> AppRule? {
 			RuleTargets.resolve(target, store: store, apps: apps, create: create)
+		}
+
+		/// Change settings through the same path as `set` (checks, undo journal,
+		/// empty rules removed so Auto mode takes over again).
+		func change(_ target: String, _ values: [String: Any], _ describe: (AppRule) -> String) -> Int32 {
+			let current = ruleFor(target, create: false)?.conditions.schedule ?? Schedule()
+			let changes: RuleChanges
+			do { changes = try RuleChanges.parse(values, current: current) } catch { return fail("\(error)") }
+			switch AppSettings.configure(target, changes: changes, store: store, apps: apps, source: source) {
+			case .failed(let message):
+				return fail(message)
+			case .removed(let rule):
+				print("\(rule.displayName): rule removed — " + (UserDefaults.standard.bool(forKey: Prefs.autoEnabled) ? "Auto mode manages it" : "no limits"))
+				return 0
+			case .saved(let rule, _):
+				print(describe(rule) + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
+				return 0
+			}
 		}
 
 		func save(_ rule: AppRule, _ message: String) -> Int32 {
@@ -241,7 +259,7 @@ enum CLI {
 			let input = SuggestionInput.current(groups: Reports.sampleGroups(apps: apps), store: store,
 												frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
 			guard let report = Reports.appSettings(target, store: store, apps: apps, input: input) else {
-				return fail("\(target) isn't running and has no rule")
+				return fail(Reports.notFound(target, in: input.groups))
 			}
 			if rest.contains("--json") { print(Reports.json(report)); return 0 }
 			print(showText(report))
@@ -270,51 +288,38 @@ enum CLI {
 			guard rest.count >= 2, let percent = Double(rest[1].replacingOccurrences(of: "%", with: "")), percent.isFinite, percent >= 1 else {
 				return fail("usage: limit <app> <percent> [--background-only | --always]")
 			}
-			guard var rule = ruleFor(rest[0], create: true) else { return 1 }
-			rule.enabled = true
-			rule.cpuLimitEnabled = true
-			rule.cpuLimit = min(percent, Double(max(SystemInfo.ncpu, 1) * 100))
+			var values: [String: Any] = ["cpu_limit": percent]
 			// Keep the rule's existing setting unless asked; new rules are background-only.
-			if rest.contains("--background-only") { rule.onlyWhenInactive = true }
-			if rest.contains("--always") { rule.onlyWhenInactive = false }
-			return save(rule, "\(rule.displayName): CPU limited to \(Int(rule.cpuLimit))%")
+			if rest.contains("--background-only") { values["background_only"] = true }
+			if rest.contains("--always") { values["background_only"] = false }
+			return change(rest[0], values) { "\($0.displayName): CPU limited to \(Int($0.cpuLimit))%" }
 
 		case "ecores":
-			guard rest.count >= 2, ["on", "off"].contains(rest[1]) else { return fail("usage: ecores <app> on|off") }
-			guard var rule = ruleFor(rest[0], create: rest[1] == "on") else { return fail("no rule for \(rest[0])") }
-			rule.backgroundMode = rest[1] == "on"
-			return save(rule, "\(rule.displayName): efficiency cores \(rest[1])")
+			guard rest.count >= 2, ["on", "off"].contains(rest[1].lowercased()) else { return fail("usage: ecores <app> on|off") }
+			let on = rest[1].lowercased() == "on"
+			return change(rest[0], ["efficiency_cores": on]) { "\($0.displayName): efficiency cores \(on ? "on" : "off")" }
 
 		case "memlimit":
 			guard rest.count >= 2 else { return fail("usage: memlimit <app> <MB>|off [notify|freeze|quit|forcequit]") }
-			if rest[1] == "off" {
-				guard var rule = ruleFor(rest[0], create: false) else { return fail("no rule for \(rest[0])") }
-				rule.memoryLimitEnabled = false
-				return save(rule, "\(rule.displayName): memory limit off")
+			if rest[1].lowercased() == "off" {
+				return change(rest[0], ["memory_limit_mb": 0]) { "\($0.displayName): memory limit off" }
 			}
 			guard let mb = Double(rest[1]), mb.isFinite, AppRule.memoryLimitRange.contains(mb) else {
 				return fail("memory limit must be a number of MB between 16 and 16777216")
 			}
-			let actions: [String: MemoryAction] = ["notify": .notify, "freeze": .freeze, "quit": .quit, "forcequit": .forceQuit]
-			let action = rest.count > 2 ? actions[rest[2].lowercased()] : .notify
-			guard let action else { return fail("action must be notify, freeze, quit or forcequit") }
-			guard var rule = ruleFor(rest[0], create: true) else { return 1 }
-			rule.enabled = true
-			rule.memoryLimitEnabled = true
-			rule.memoryLimitMB = mb
-			rule.memoryAction = action
-			return save(rule, "\(rule.displayName): memory limit \(Fmt.megabytes(mb)), then \(action.rawValue)")
+			let action = rest.count > 2 ? rest[2].lowercased() : "notify"
+			guard ["notify", "freeze", "quit", "forcequit"].contains(action) else { return fail("action must be notify, freeze, quit or forcequit") }
+			return change(rest[0], ["memory_limit_mb": mb, "memory_action": action]) {
+				"\($0.displayName): memory limit \(Fmt.megabytes(mb)), then \(action)"
+			}
 
 		case "lowmem":
-			guard rest.count >= 2, let action = PressureAction(rawValue: rest[1]) else { return fail("usage: lowmem <app> none|freeze|quit") }
-			guard var rule = ruleFor(rest[0], create: action != .none) else { return fail("no rule for \(rest[0])") }
-			rule.pressureAction = action
-			return save(rule, "\(rule.displayName): when the Mac is low on memory → \(action.rawValue)")
+			guard rest.count >= 2, let action = PressureAction(rawValue: rest[1].lowercased()) else { return fail("usage: lowmem <app> none|freeze|quit") }
+			return change(rest[0], ["low_memory_action": action.rawValue]) { "\($0.displayName): when the Mac is low on memory → \(action.rawValue)" }
 
 		case "enable", "disable", "ignore":
-			guard rest.count >= 1, var rule = ruleFor(rest[0], create: command == "ignore") else { return fail("no rule for \(rest.first ?? "?")") }
-			if command == "ignore" { rule.ignored = true } else { rule.enabled = command == "enable" }
-			return save(rule, "\(rule.displayName): \(command)d")
+			guard let target = rest.first else { return fail("usage: \(command) <app>") }
+			return change(target, command == "ignore" ? ["ignored": true] : ["enabled": command == "enable"]) { "\($0.displayName): \(command)d" }
 
 		case "unlimit":
 			guard rest.count >= 1, let rule = ruleFor(rest[0], create: false) else { return fail("no rule for \(rest.first ?? "?")") }
@@ -325,17 +330,60 @@ enum CLI {
 			return 0
 
 		case "undo":
-			guard let (_, message) = ChangeJournal.undo(store: store) else {
+			switch ChangeJournal.undoLast(store: store, force: rest.contains("--force")) {
+			case .nothing:
 				print("Nothing to undo.")
 				return 0
+			case .conflict(_, let message):
+				return fail(message)
+			case .undone(_, let message):
+				print(message + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
+				return 0
 			}
-			print(message + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
-			return 0
 
 		case "freeze", "unfreeze":
 			guard rest.count >= 1 else { return fail("usage: \(command) <app>") }
+			if command == "freeze", let problem = RuleTargets.check(rest[0]) { return fail(problem.description) }
+			// Check the name here, so a typo fails instead of silently doing nothing in the app.
+			let t = rest[0].lowercased()
+			if !apps.contains(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
+				let groups = Reports.sampleGroups(apps: apps, seconds: 0.2)
+				if Reports.findGroup(rest[0], in: groups) == nil {
+					return fail(Reports.notFound(rest[0], in: groups).replacingOccurrences(of: " and has no rule", with: ""))
+				}
+			}
 			guard postToApp(command, rest[0]) else { return fail("AppWrangler isn't running") }
 			print("\(command) \(rest[0]): sent")
+			return 0
+
+		case "prefs":
+			if rest.isEmpty || rest == ["--json"] {
+				let now = PreferenceSettings.current()
+				if rest == ["--json"] { print(Reports.json(now)); return 0 }
+				for spec in PreferenceSettings.specs {
+					let v = now[spec.key].map { v -> String in
+						if let b = v as? Bool { return b ? "on" : "off" }
+						if let d = v as? Double { return d == d.rounded() ? String(Int(d)) : String(d) }
+						return "\(v)"
+					} ?? ""
+					print(spec.key.padding(toLength: 24, withPad: " ", startingAt: 0) + v.padding(toLength: 10, withPad: " ", startingAt: 0) + spec.help)
+				}
+				return 0
+			}
+			var values: [String: Any] = [:]
+			for arg in rest {
+				let parts = arg.split(separator: "=", maxSplits: 1).map(String.init)
+				guard parts.count == 2 else { return fail("expected key=value, got \"\(arg)\" (run `appwrangler prefs` to list them)") }
+				values[parts[0].replacingOccurrences(of: "-", with: "_")] = parts[1]
+			}
+			do { _ = try PreferenceSettings.set(values) } catch { return fail("\(error)") }
+			_ = postToApp("prefs", nil)
+			print("Saved: " + values.keys.sorted().map { "\($0)=\(values[$0]!)" }.joined(separator: " "))
+			return 0
+
+		case "free-memory":
+			guard postToApp(command, nil) else { return fail("AppWrangler isn't running") }
+			print("Asked AppWrangler to freeze apps you haven't used for a while; each resumes when you switch to it. See `appwrangler status`.")
 			return 0
 
 		case "pause", "resume":
@@ -356,7 +404,11 @@ enum CLI {
 		case "import":
 			guard let path = rest.first else { return fail("usage: import <file.json>") }
 			do {
+				let before = store.rules
 				let n = try store.importData(Data(contentsOf: URL(fileURLWithPath: path)))
+				for rule in store.rules where !before.contains(rule) {
+					ChangeJournal.record(before: before.first { $0.id == rule.id }, after: rule, source: source, store: store)
+				}
 				store.saveNow()
 				print("Imported \(n) rules")
 				return 0
@@ -419,7 +471,8 @@ enum CLI {
 	  rules                          show saved rules
 	  suggest [app] [--json]         recommended settings for what's running, with ready commands
 	  show <app> [--json]            what an app is, its usage, every setting, and suggestions
-	  undo                           revert the last rule change made here or by an AI assistant
+	  undo [--force]                 revert the last rule change (from here, a suggestion, an AI assistant
+	                                 or a quick action); --force if it was edited since
 	  set <app> key=value …          change any setting, e.g. set Slack efficiency_cores=on
 	                                 background_only=true   (run `set` alone to list the keys)
 	  status                         running? paused? what's frozen or hogging the CPU
@@ -436,6 +489,8 @@ enum CLI {
 	  unlimit <app>                  delete the rule
 	  freeze|unfreeze <app>          suspend / resume an app now (AppWrangler must be running)
 	  pause|resume                   pause or resume all CPU limits
+	  prefs [key=value …]            show or change app-wide settings (Auto, low memory, alerts…)
+	  free-memory                    freeze apps unused for a while now (they resume when you switch to them)
 	  export [file] / import <file>  share rules as JSON
 	  mcp [--read-only]              run as an MCP server for Claude / OpenAI tools (docs/mcp.md)
 	  mcp install|uninstall|status [--read-only] [claude-desktop|claude-code|codex]

@@ -43,10 +43,10 @@ Apps you build yourself open without any Gatekeeper prompt.
 
 ## 2. Find it in the menu bar
 
-AppWrangler has no Dock icon. Look for the **lasso** icon (a loop with a gauge needle inside) in the menu bar at the top right of the screen.
+AppWrangler has no Dock icon (except while its window is open). Look for the **lasso** icon (a loop with a gauge needle inside) in the menu bar at the top right of the screen.
 
 - **Left-click** opens the main panel.
-- **Right-click** gives quick access to *Pause All Limits*, *Settings…*, *Help* and *Quit*.
+- **Right-click** gives quick access to *Pause All Limits*, *Open in a Window*, *Settings…*, *Help & Documentation* and *Quit AppWrangler*.
 
 > Can't see it? On a crowded menu bar macOS may hide it behind the notch. Quit a few other menu bar apps, or hold ⌘ and drag icons to make room.
 
@@ -74,17 +74,32 @@ Click any row to open its details:
 - a 10-minute CPU and memory chart;
 - its settings.
 
+Want it on screen all the time? The window button at the top of the panel opens the same view in a normal window, like Activity Monitor. There's also a [desktop widget](user-manual.md#desktop-widget).
+
 ---
 
-## 4. Set your first limit
+## 4. Auto mode is already working
 
-Say Slack is using more CPU than you'd like:
+You don't have to set anything up. **Auto mode** is on from the start:
+- The app you're using (and anything playing or recording audio) runs at full speed.
+- Other apps move to the efficiency cores 30 s after you leave them.
+- When the Mac is busy, background apps share the CPU fairly.
 
-1. Click **Slack** in the list.
-2. Turn on **Limit CPU** and pick **25%** (or drag the slider).
+The *Auto* line at the top of the panel shows what it's doing.
+
+The yellow **Suggestions** section, when it appears, points out anything worth changing, such as an app using more memory than your Mac has. Each suggestion has a one-click button. If your Mac is short of memory, consider turning on *freeze apps I haven't used for a while* in Settings → General → Auto mode. See the [User Manual](user-manual.md#auto-mode).
+
+---
+
+## 5. Set your own limit (when you need one)
+
+For most everyday apps, Auto mode is the better choice: a fixed limit can make an app feel slow. Use your own rule for things Auto doesn't manage, such as a build tool or a background process, or to set a memory limit. Say a sync app keeps using too much CPU:
+
+1. Click it in the list.
+2. Turn on **Limit CPU** and pick **25%** (or drag the slider). New rules apply only while the app is in the background.
 3. Done. The limit is enforced within half a second. The row turns orange, and a gauge icon shows it's being throttled.
 
-From now on, the limit applies **every time Slack runs**, including after you restart your Mac.
+From now on, the limit applies **every time the app runs**, including after you restart your Mac.
 
 Some other things to try:
 - **Efficiency cores only** keeps the app on the low-power cores. It's great for apps you want running but not hogging the fast cores.
@@ -95,7 +110,7 @@ To remove a limit, turn the toggle off or click **Remove Rule**.
 
 ---
 
-## 5. Recommended settings
+## 6. Recommended settings
 
 Open **Settings…** (bottom of the panel, or right-click the menu bar icon):
 
@@ -106,16 +121,19 @@ Open **Settings…** (bottom of the panel, or right-click the menu bar icon):
 
 ---
 
-## 6. Optional: the command line
+## 7. Optional: the command line and AI assistants
 
-If you used `./build.sh --cli`, or linked it yourself (see Settings → General → Command line), you can do the same from Terminal:
+If you installed with Homebrew, used `./build.sh --cli`, or linked it yourself (see Settings → General → Command line), you can do the same from Terminal:
 
 ```bash
-appwrangler list                     # what's running, how much it uses, what it is
-appwrangler limit "Google Chrome" 50
-appwrangler ecores Slack on
+appwrangler status                   # what Auto is doing, what's frozen
+appwrangler suggest                  # recommended settings, with the command to apply each
+appwrangler show Slack               # everything about one app
+appwrangler set Slack efficiency_cores=on
 appwrangler help
 ```
+
+To let Claude or Codex look after your Mac, run `appwrangler mcp install` (see [AI assistants](mcp.md)).
 
 See the [CLI reference](cli.md).
 

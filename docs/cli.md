@@ -1,6 +1,6 @@
 # Command-line reference
 
-The `appwrangler` command is built into the app itself (`AppWrangler.app/Contents/MacOS/AppWrangler`). To add it to your `PATH`:
+The `appwrangler` command is built into the app itself (`AppWrangler.app/Contents/MacOS/AppWrangler`). Homebrew installs it for you. Otherwise, add it to your `PATH`:
 
 ```bash
 ./build.sh --install --cli            # when building from source
@@ -11,7 +11,7 @@ ln -sf /Applications/AppWrangler.app/Contents/MacOS/AppWrangler /opt/homebrew/bi
 **How changes apply:**
 - Rule changes are written to `rules.json`. The running app notices within about half a second and enforces them immediately, with no restart.
 - If the app isn't running, rules apply when it starts.
-- `freeze`, `unfreeze`, `pause` and `resume` act on the running app, so they need AppWrangler to be running.
+- `freeze`, `unfreeze`, `pause`, `resume` and `free-memory` act on the running app, so they need AppWrangler to be running.
 
 ## Naming apps
 
@@ -20,12 +20,17 @@ ln -sf /Applications/AppWrangler.app/Contents/MacOS/AppWrangler /opt/homebrew/bi
 | Form | Example | Creates/finds a rule matched by |
 |---|---|---|
 | Name of a running app (any case) | `"Google Chrome"`, `slack` | its bundle ID |
+| Name of an installed app that isn't running | `Safari` | its bundle ID |
+| Part of a running app's name, if only one app matches | `chrome` | that app's bundle ID |
 | Bundle ID | `com.google.Chrome` | bundle ID |
 | Path | `/opt/homebrew/bin/node` | path |
 | Pattern with `*` or `?` | `"*Helper*"` | name pattern |
-| Anything else | `node` | process name |
+| Anything else | `node` | process name (any case) |
 
-An existing rule is found by its display name or match value, so `appwrangler limit Slack 40` and then `appwrangler limit Slack 60` update the same rule.
+- **Existing rules first.** An existing rule is found by its display name or match value, so `appwrangler limit Slack 40` and then `appwrangler limit Slack 60` update the same rule.
+- **Ambiguous names are refused.** If a partial name matches several running apps (`code` for Xcode and Visual Studio Code), AppWrangler lists them and asks for the full name instead of guessing.
+- **Critical processes are refused.** Processes critical to macOS (WindowServer, Dock, …) can't be limited, in any letter case.
+- **Overly broad patterns are refused.** That covers patterns that would match nearly everything, such as `*` or `*a*`.
 
 ## Commands
 
@@ -76,8 +81,23 @@ Turns [Auto mode](user-manual.md#auto-mode) on or off. Without an argument, show
 ### `auto freeze-idle on|off [minutes]`
 When the Mac is low on memory, Auto mode freezes regular apps you haven't used for `minutes` (default 10). They resume the moment you switch to them, or when memory frees up. Messaging, calls and audio apps and menu bar apps are never frozen. Off by default. [More](user-manual.md#auto-mode).
 
-### `undo`
-Reverts the last rule change made from the command line, an AI assistant or a suggestion in the panel. Run it again to go further back (up to 50 changes).
+### `undo [--force]`
+Reverts the last rule change made from the command line, an AI assistant, a suggestion in the panel, a runaway alert's buttons or the right-click quick actions. Run it again to go further back (up to 50 changes).
+
+If the rule was edited in AppWrangler's window after that change, `undo` stops rather than lose your edit. Add `--force` to undo anyway.
+
+### `prefs [key=value …]`
+Without arguments, lists the app-wide settings (Settings → General) with their current values and what each means. With `key=value` pairs, changes them:
+
+```bash
+appwrangler prefs freeze_idle=on freeze_idle_minutes=30 low_memory_level=warning
+appwrangler prefs auto_efficiency_after=60 runaway_alerts=off
+```
+
+Keys: `auto`, `auto_efficiency_cores`, `auto_efficiency_after` (s), `auto_share_cpu`, `auto_busy_percent`, `freeze_idle`, `freeze_idle_minutes`, `low_memory_level` (`warning`/`critical`), `runaway_alerts`, `runaway_percent`, `runaway_minutes`, `notifications`, `menu_bar_cpu`, `pause_shortcut`. Values are checked first: nothing changes if one is invalid. `--json` prints the current values as JSON.
+
+### `free-memory`
+Freezes the apps you haven't used for a while, right now, whatever the memory pressure. Each app resumes the moment you switch to it. It never freezes the app in use, audio, busy apps, messaging and calls apps, terminals, IDEs, virtual machines or menu bar apps. [More](user-manual.md#free-memory-now).
 
 ### `mcp install|uninstall|status [--read-only] [claude-desktop|claude-code|codex]`
 Adds AppWrangler's MCP server to Claude Desktop, Claude Code and OpenAI Codex, or removes it, or shows where it's configured. Each config file is backed up first. Quit Claude Desktop before installing. [More](mcp.md#the-quick-way).
@@ -135,7 +155,7 @@ Excludes the app from runaway suggestions and automatic actions.
 Deletes the app's rule. Its limits are lifted immediately.
 
 ### `freeze <app>` / `unfreeze <app>`
-Suspends or resumes a running app and its helpers now. Needs AppWrangler running.
+Suspends or resumes a running app and its helpers now. Needs AppWrangler running. Fails (exit code 1) if no running app or process has that name. A command in a terminal's foreground is never frozen.
 
 ### `pause` / `resume`
 Pauses or resumes all CPU limits. Frozen apps stay frozen.

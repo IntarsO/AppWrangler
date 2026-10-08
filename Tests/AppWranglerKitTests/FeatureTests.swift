@@ -100,7 +100,7 @@ import Testing
 		#expect(store.rules[0].memoryLimitEnabled && store.rules[0].memoryLimitMB == 4096 && store.rules[0].memoryAction == .freeze)
 		#expect(run("memlimit", "Google Chrome", "4096", "explode").0 == 1)
 		#expect(run("memlimit", "Google Chrome", "off").0 == 0)
-		#expect(!store.rules[0].memoryLimitEnabled)
+		#expect(store.rules.isEmpty, "a rule left with nothing in it is removed, so Auto mode manages the app")
 	}
 
 	@Test func unlimitRemovesRule() {

@@ -9,7 +9,7 @@ Release builds are signed but not notarized by Apple. For the first launch:
 Builds you make yourself with `./build.sh` aren't affected.
 
 ### I can't find the menu bar icon
-AppWrangler has no Dock icon; it lives in the menu bar (a lasso loop with a needle inside). On MacBooks with a notch, a full menu bar can hide icons behind the notch. Quit a few other menu bar apps, or rearrange icons by ⌘-dragging. `appwrangler status` tells you whether it's running.
+AppWrangler has no Dock icon (except while its window is open); it lives in the menu bar (a lasso loop with a needle inside). On MacBooks with a notch, a full menu bar can hide icons behind the notch. Quit a few other menu bar apps, or rearrange icons by ⌘-dragging. `appwrangler status` tells you whether it's running.
 
 ### An app I limited is unusable / really slow when I use it
 Its rule applies even while the app is in front. Open the app's settings and turn on **Only while the app is in the background**, which is the default for new rules. Better still, remove the CPU and efficiency-core settings and let [Auto mode](user-manual.md#auto-mode) handle it: full speed while you use it, efficient in the background. Also check memory limits whose action is *Freeze*; a frozen app doesn't respond at all.
