@@ -195,6 +195,8 @@ struct AppState: Codable {
 	var runaway: [String]? = nil
 	/// Auto mode, e.g. "on — 9 apps: 2 in use, 6 on efficiency cores, 0 capped".
 	var auto: String? = nil
+	/// What Auto is doing to each app it manages (app name → state).
+	var autoApps: [String: String]? = nil
 	var updated: Date
 
 	static var url: URL { DataDirectory.url.appendingPathComponent("state.json") }

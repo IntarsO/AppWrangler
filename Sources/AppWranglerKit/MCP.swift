@@ -219,9 +219,9 @@ final class MCPServer {
 			},
 			Tool(name: "get_impact_stats", title: "Impact statistics",
 				 description: "What AppWrangler achieved and cost: CPU time and estimated energy saved, time apps were held back/frozen/on E-cores, actions taken, AppWrangler's own CPU and memory, efficiency ratio, limit accuracy, per-app and per-day breakdowns. Savings are estimates.",
-				 properties: ["period": ["type": "string", "enum": ["today", "week", "month"], "description": "Default week."]],
+				 properties: ["period": ["type": "string", "enum": ["hour", "today", "week", "month"], "description": "Default week. 'hour' = the last clock hour."]],
 				 required: [], readOnly: true, destructive: false) { [unowned self] args in
-				let days = ["today": 1, "week": 7, "month": 30][args["period"] as? String ?? "week"] ?? 7
+				let days = ["hour": 0, "today": 1, "week": 7, "month": 30][args["period"] as? String ?? "week"] ?? 7
 				let stats = Reports.stats(directory: self.directory, days: days)
 				return Outcome(text: Reports.json(stats), structured: stats)
 			},

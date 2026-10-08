@@ -451,7 +451,16 @@ final class AppModel: ObservableObject {
 		}
 	}
 
-	private var lastWrittenState: (Bool, [String], [String], String)?
+	private var lastWrittenState: (Bool, [String], [String], String, [String: String])?
+
+	/// App name → what Auto is doing to it.
+	var autoAppStates: [String: String] {
+		var out: [String: String] = [:]
+		for g in lastSnapshot.groups {
+			if let d = enforcer.autoDecisions[g.id] { out[g.name] = d.label }
+		}
+		return out
+	}
 
 	var autoDescription: String {
 		guard autoPilot.settings.enabled else { return "off" }
@@ -464,9 +473,10 @@ final class AppModel: ObservableObject {
 		let frozen = enforcer.frozen.keys.sorted()
 		let runaway = suggestions.map(\.name)
 		let auto = autoDescription
-		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto { return }
-		lastWrittenState = (paused, frozen, runaway, auto)
-		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, updated: Date()).write()
+		let apps = autoAppStates
+		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto, last.4 == apps { return }
+		lastWrittenState = (paused, frozen, runaway, auto, apps)
+		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, autoApps: apps, updated: Date()).write()
 	}
 
 	// MARK: Actions from UI

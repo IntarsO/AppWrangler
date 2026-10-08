@@ -149,6 +149,11 @@ enum CLI {
 				print("AppWrangler is running (pid \(state.pid))\(state.paused ? ", limits PAUSED" : "").")
 				if !state.frozen.isEmpty { print("Frozen: " + state.frozen.joined(separator: ", ")) }
 				if let auto = state.auto { print("Auto mode: " + auto) }
+				if let apps = state.autoApps, !apps.isEmpty {
+					for (name, what) in apps.sorted(by: { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }) {
+						print("  " + name.padding(toLength: 24, withPad: " ", startingAt: 0) + what)
+					}
+				}
 				if let runaway = state.runaway, !runaway.isEmpty {
 					print("Using a lot of CPU in the background: " + runaway.joined(separator: ", "))
 				}
@@ -173,17 +178,20 @@ enum CLI {
 			return 0
 
 		case "stats":
-			let days = rest.contains("today") ? 1 : rest.contains("month") ? 30 : 7
-			let s = StatsStore(directory: store.fileURL.deletingLastPathComponent()).summary(days: days)
+			let days = rest.contains("hour") ? 0 : rest.contains("today") ? 1 : rest.contains("month") ? 30 : 7
+			let statsStore = StatsStore(directory: store.fileURL.deletingLastPathComponent())
+			let s = days == 0 ? statsStore.summary(hours: 1) : statsStore.summary(days: days)
 			if rest.contains("--json") {
 				print(Reports.json(Reports.stats(directory: store.fileURL.deletingLastPathComponent(), days: days)))
 				return 0
 			}
-			let label = days == 1 ? "today" : "last \(days) days"
+			let label = days == 0 ? "last hour" : days == 1 ? "today" : "last \(days) days"
 			print("AppWrangler impact — \(label)")
 			print("")
 			print("  CPU time saved      \(Fmt.coreTime(s.total.savedCPUSeconds))")
-			print("  Energy saved (est.) \(Fmt.energy(s.total.savedEnergyJ))" + (Battery.capacityWh.map { s.total.savedEnergyJ > 0 ? String(format: "  (%.1f%% of battery)", s.total.savedEnergyJ / 3600 / $0 * 100) : "" } ?? ""))
+			let energy = s.total.totalSavedEnergyJ
+			print("  Energy saved (est.) \(Fmt.energy(energy))" + (Battery.capacityWh.map { energy > 0 ? String(format: "  (%.1f%% of battery)", energy / 3600 / $0 * 100) : "" } ?? ""))
+			print("    by efficiency cores \(Fmt.energy(s.total.efficiencySavedJ))   by limits/freezes \(Fmt.energy(s.total.savedEnergyJ))")
 			print("  Apps held back      \(Fmt.duration(s.total.heldBackSeconds))")
 			print("  Apps frozen         \(Fmt.duration(s.total.frozenSeconds))")
 			print("  On efficiency cores \(Fmt.duration(s.total.efficiencySeconds))")
@@ -200,7 +208,7 @@ enum CLI {
 					let wa = a.limitedSeconds > 0 ? Fmt.percent(a.averageWanted) + " → " + Fmt.percent(a.averageAllowed) : "—"
 					print("  " + a.name.padding(toLength: 26, withPad: " ", startingAt: 0) + "  "
 						  + Fmt.coreTime(a.savedCPUSeconds).padding(toLength: 12, withPad: " ", startingAt: 0) + "  "
-						  + Fmt.energy(a.savedEnergyJ).padding(toLength: 9, withPad: " ", startingAt: 0) + "  "
+						  + Fmt.energy(a.totalSavedEnergyJ).padding(toLength: 9, withPad: " ", startingAt: 0) + "  "
 						  + wa.padding(toLength: 17, withPad: " ", startingAt: 0) + "  "
 						  + (a.heldBackSeconds > 0 ? Fmt.duration(a.heldBackSeconds) : "—"))
 				}
@@ -312,7 +320,7 @@ enum CLI {
 	  list [--all] [--json]          running apps with CPU, memory and what they are
 	  rules                          show saved rules
 	  status                         running? paused? what's frozen or hogging the CPU
-	  stats [today|week|month] [--json]  how much CPU/energy was saved, and what it cost
+	  stats [hour|today|week|month] [--json]  how much CPU/energy was saved, and what it cost
 	  auto [on|off]                  Auto mode: full speed for the app you use, efficiency for the rest
 	  limit <app> <percent>          cap CPU (100 = one core). New rules apply only while
 	                                 the app isn't frontmost; --always to apply even then

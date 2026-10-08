@@ -131,6 +131,33 @@ import Testing
 		#expect(s.summary(days: 1, now: noon).apps.map(\.key) == ["bundle:b", "bundle:a"])
 	}
 
+	@Test func efficiencyCoresAreCreditedWithEnergySaved() {
+		let s = store()
+		var t = ImpactTick(key: "bundle:slack", name: "Slack")
+		t.efficiency = true
+		t.power = 0.1		// 0.1 W measured on the E-cores
+		s.record([t], selfCPU: 0, selfFootprint: 0, dt: 100, at: noon)
+		let sum = s.summary(days: 1, now: noon)
+		#expect(abs(sum.total.efficiencyEnergyJ - 10) < 0.001)
+		#expect(abs(sum.total.efficiencySavedJ - 10 * (StatsStore.efficiencyCoreEnergyFactor - 1)) < 0.001)
+		#expect(abs(sum.total.totalSavedEnergyJ - sum.total.efficiencySavedJ) < 0.001)
+	}
+
+	@Test func lastHourOnlyCountsTheCurrentHour() {
+		let s = store()
+		s.record([throttled(usage: 0, demand: 1, limit: 0.1)], selfCPU: 0, selfFootprint: 0, dt: 60, at: noon - 3 * 3600)
+		s.record([throttled(usage: 0, demand: 1, limit: 0.1)], selfCPU: 0, selfFootprint: 0, dt: 30, at: noon)
+		#expect(abs(s.summary(hours: 1, now: noon).total.savedCPUSeconds - 30) < 0.001)
+		#expect(abs(s.summary(days: 1, now: noon).total.savedCPUSeconds - 90) < 0.001)
+	}
+
+	@Test func readsStatsWrittenByTheEarlierVersion() throws {
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		let old = #"{"version":1,"days":[{"day":"2026-10-08","apps":{"bundle:x":{"name":"X","savedCPUSeconds":42,"savedEnergyJ":1,"limitedSeconds":1,"heldBackSeconds":1,"wantedCoreSeconds":1,"allowedCoreSeconds":1,"frozenSeconds":0,"efficiencySeconds":5,"memoryActions":0,"memoryFreedBytes":0,"lowMemoryActions":0}},"selfCPUSeconds":1,"uptimeSeconds":10,"selfFootprintSum":0,"selfFootprintSamples":0,"selfFootprintPeak":0,"accuracyErrorSum":0,"accuracyWeight":0,"runawayAlerts":0}]}"#
+		try Data(old.utf8).write(to: dir.appendingPathComponent("stats.json"))
+		#expect(store().summary(days: 1, now: noon).total.savedCPUSeconds == 42, "old data kept, not discarded")
+	}
+
 	@Test func formatting() {
 		#expect(Fmt.coreTime(30) == "30 core-s")
 		#expect(Fmt.coreTime(600) == "10 core-min")

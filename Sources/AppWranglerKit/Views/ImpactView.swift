@@ -10,15 +10,16 @@ import SwiftUI
 
 struct ImpactView: View {
 	@ObservedObject var stats: StatsStore
-	@AppStorage("AWImpactPeriod") private var period = 7
+	@AppStorage("AWImpactPeriod") private var period = 7	// 0 = last hour
 	@Local private var confirmReset = false
 
 	var body: some View {
-		let s = stats.summary(days: period)
+		let s = period == 0 ? stats.summary(hours: 1) : stats.summary(days: period)
 		ScrollView {
 			VStack(alignment: .leading, spacing: 18) {
 				HStack {
 					Picker(L("Period"), selection: $period) {
+						Text(L("Last hour")).tag(0)
 						Text(L("Today")).tag(1)
 						Text(L("7 days")).tag(7)
 						Text(L("30 days")).tag(30)
@@ -40,7 +41,8 @@ struct ImpactView: View {
 				section(L("How it helped")) {
 					tiles([
 						(L("CPU time saved"), Fmt.coreTime(s.total.savedCPUSeconds), "cpu"),
-						(L("Energy saved (est.)"), energyText(s.total.savedEnergyJ), "bolt"),
+						(L("Energy saved (est.)"), energyText(s.total.totalSavedEnergyJ), "bolt"),
+						(L("…of which by efficiency cores"), Fmt.energy(s.total.efficiencySavedJ), "leaf"),
 						(L("Apps held back"), Fmt.duration(s.total.heldBackSeconds), "gauge.with.dots.needle.33percent"),
 						(L("Apps frozen"), Fmt.duration(s.total.frozenSeconds), "snowflake"),
 						(L("On efficiency cores"), Fmt.duration(s.total.efficiencySeconds), "leaf"),
@@ -50,7 +52,7 @@ struct ImpactView: View {
 						.font(.caption).foregroundStyle(.secondary)
 				}
 
-				if s.days > 1 {
+				if s.days > 1 && period != 0 {
 					section(L("CPU time saved per day")) { DailyBars(daily: s.daily) }
 				}
 
@@ -82,7 +84,7 @@ struct ImpactView: View {
 								GridRow {
 									Text(a.name).lineLimit(1)
 									Text(Fmt.coreTime(a.savedCPUSeconds))
-									Text(Fmt.energy(a.savedEnergyJ))
+									Text(Fmt.energy(a.totalSavedEnergyJ))
 									Text(a.limitedSeconds > 0 ? Fmt.percent(a.averageWanted) + " → " + Fmt.percent(a.averageAllowed) : "—")
 									Text(a.heldBackSeconds > 0 ? Fmt.duration(a.heldBackSeconds) : "—")
 									Text(a.frozenSeconds > 0 ? Fmt.duration(a.frozenSeconds) : "—")
@@ -94,6 +96,9 @@ struct ImpactView: View {
 				}
 
 				Text(L("Savings are estimates: CPU saved is what limited apps tried to use minus what they were allowed (frozen apps are credited with what they used before freezing). Energy uses each app's measured watts per core."))
+					.font(.caption).foregroundStyle(.tertiary)
+					.fixedSize(horizontal: false, vertical: true)
+				Text(L("Efficiency cores: the same work on performance cores takes about 4.5× the energy (measured on an M1), so energy used on the E-cores is credited with 3.5× that as saved."))
 					.font(.caption).foregroundStyle(.tertiary)
 					.fixedSize(horizontal: false, vertical: true)
 			}

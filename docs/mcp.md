@@ -91,7 +91,7 @@ ChatGPT connects to MCP servers through *Developer Mode* or workspace connectors
 | `get_status` | Is AppWrangler running or paused, what's frozen or flagged as a runaway; chip, cores, memory; battery, Low Power, thermal and memory-pressure state |
 | `list_apps` | Measures running apps (about 1 s). Per app: CPU %, memory, energy (W), disk I/O, helper count, a plain description, vendor, how safe it is to limit, and its current rule |
 | `explain_app` | The same details for one app or process, found by name or bundle ID |
-| `get_impact_stats` | CPU and energy saved, time held back / frozen / on E-cores, actions taken, AppWrangler's own CPU and memory, efficiency ratio, limit accuracy, per-app and per-day breakdowns (`today` / `week` / `month`) |
+| `get_impact_stats` | CPU and energy saved, time held back / frozen / on E-cores, actions taken, AppWrangler's own CPU and memory, efficiency ratio, limit accuracy, per-app and per-day breakdowns (`hour` / `today` / `week` / `month`) |
 | `list_rules` | All rules with their limits, conditions and actions |
 | `set_auto_mode` | `enabled`: Auto mode on or off ([how it works](user-guide.md#auto-mode)) |
 | `set_cpu_limit` | `app`, `percent` (100 = one core), optional `background_only` |

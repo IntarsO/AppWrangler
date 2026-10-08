@@ -41,6 +41,18 @@ struct AutoSettings: Equatable {
 
 struct AutoDecision: Equatable {
 	enum Reason: String { case foreground, audio, recent, background }
+
+	/// Plain-language state, for status output.
+	var label: String {
+		switch reason {
+		case .foreground: return "in use — full speed"
+		case .audio: return "playing or recording audio — full speed"
+		case .recent: return "just used — full speed for a few seconds"
+		case .background:
+			if let cap { return String(format: "background — efficiency cores, shared CPU %.0f%% (Mac busy)", cap * 100) }
+			return efficiency ? "background — efficiency cores" : "background — moves to efficiency cores shortly"
+		}
+	}
 	var reason: Reason
 	var efficiency = false
 	/// CPU cap in cores, when the Mac is busy.

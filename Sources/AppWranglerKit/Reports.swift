@@ -48,18 +48,23 @@ enum Reports {
 		return row
 	}
 
+	/// `days` = 0 means the last hour.
 	static func stats(directory: URL, days: Int) -> [String: Any] {
-		let s = StatsStore(directory: directory).summary(days: days)
+		let store = StatsStore(directory: directory)
+		let s = days == 0 ? store.summary(hours: 1) : store.summary(days: days)
 		let apps: [[String: Any]] = s.apps.map { row in
 			["key": row.key, "name": row.impact.name, "savedCPUSeconds": row.impact.savedCPUSeconds,
-			 "savedEnergyWh": row.impact.savedEnergyJ / 3600, "limitedSeconds": row.impact.limitedSeconds,
+			 "savedEnergyWh": row.impact.totalSavedEnergyJ / 3600, "efficiencySavedWh": row.impact.efficiencySavedJ / 3600,
+			 "limitedSeconds": row.impact.limitedSeconds,
 			 "heldBackSeconds": row.impact.heldBackSeconds, "frozenSeconds": row.impact.frozenSeconds,
 			 "efficiencySeconds": row.impact.efficiencySeconds, "averageWantedCores": row.impact.averageWanted,
 			 "averageAllowedCores": row.impact.averageAllowed, "memoryActions": row.impact.memoryActions,
 			 "lowMemoryActions": row.impact.lowMemoryActions, "memoryFreedBytes": row.impact.memoryFreedBytes]
 		}
 		var out: [String: Any] = [
-			"days": days, "savedCPUSeconds": s.total.savedCPUSeconds, "savedEnergyWh": s.total.savedEnergyJ / 3600,
+			"period": days == 0 ? "hour" : days == 1 ? "today" : "\(days) days",
+			"days": days, "savedCPUSeconds": s.total.savedCPUSeconds, "savedEnergyWh": s.total.totalSavedEnergyJ / 3600,
+			"efficiencySavedWh": s.total.efficiencySavedJ / 3600, "throttleSavedWh": s.total.savedEnergyJ / 3600,
 			"heldBackSeconds": s.total.heldBackSeconds, "frozenSeconds": s.total.frozenSeconds,
 			"efficiencySeconds": s.total.efficiencySeconds, "runawayAlerts": s.runawayAlerts,
 			"memoryActions": s.total.memoryActions, "lowMemoryActions": s.total.lowMemoryActions,
@@ -95,6 +100,7 @@ enum Reports {
 			out["frozen"] = state.frozen
 			out["runaway"] = state.runaway ?? []
 			out["autoMode"] = state.auto ?? "off"
+			out["autoApps"] = state.autoApps ?? [:]
 		} else {
 			out["running"] = false
 			out["autoMode"] = UserDefaults.standard.bool(forKey: Prefs.autoEnabled) ? "on" : "off"

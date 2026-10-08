@@ -47,8 +47,8 @@ Shows whether AppWrangler is running, whether limits are paused, what's frozen, 
 ### `auto [on|off]`
 Turns [Auto mode](user-guide.md#auto-mode) on or off. Without an argument, shows whether it's on. `status` also shows what Auto is doing (apps managed, in use, on E-cores, capped).
 
-### `stats [today|week|month] [--json]`
-Shows what AppWrangler achieved and what it cost over today, the last 7 days (default) or 30 days:
+### `stats [hour|today|week|month] [--json]`
+Shows what AppWrangler achieved and what it cost over the last clock hour, today, the last 7 days (default) or 30 days:
 - CPU time saved and estimated energy saved;
 - time apps were held back, frozen or on E-cores;
 - actions taken;

@@ -212,12 +212,16 @@ final class Enforcer {
 			// Auto mode manages apps whose rule doesn't set CPU / E-cores itself.
 			if let d = auto[group.id], !(rule?.cpuLimitEnabled ?? false), !(rule?.backgroundMode ?? false) {
 				if d.reason != .background { inUsePids.formUnion(group.pids) }
-				if let cap = d.cap, !pids.isEmpty {
-					desired[gid] = Applied(pids: pids, limit: cap, frozen: false)
+				// Auto treats the app as a whole: a rule's "include helpers" only
+				// scopes that rule's own limits (e.g. a memory limit).
+				let appPids = group.pids.sorted()
+				let stoppable = appPids.filter { !controller.isTerminalForeground($0) }
+				if let cap = d.cap, !stoppable.isEmpty {
+					desired[gid] = Applied(pids: stoppable, limit: cap, frozen: false)
 					limits[group.id] = cap
 				}
 				if d.efficiency {
-					for pid in allPids { wantBackground[pid] = group.id }
+					for pid in appPids { wantBackground[pid] = group.id }
 				}
 			}
 			guard let rule else { continue }
@@ -312,12 +316,15 @@ final class Enforcer {
 				onEvent?(groupNames[groupID] ?? groupID, L("Couldn't enable efficiency mode: %@", String(cString: strerror(err))), false)
 			}
 		}
-		for pid in backgroundPids.keys where want[pid] == nil {
+		for (pid, groupID) in backgroundPids where want[pid] == nil {
 			_ = controller.setBackground(pid, on: false)
 			// Processes it started while in efficiency mode inherited the policy
 			// (e.g. shells and builds launched from a terminal app); restore them
-			// too, unless their own rule wants efficiency cores.
-			for child in controller.descendants(of: pid) where want[child] == nil {
+			// too, unless their own rule wants efficiency cores. The app's own
+			// helpers are skipped: we restored the ones we set, and apps like
+			// Chromium deliberately background some helpers themselves.
+			let own = Set(lastGroups[groupID]?.pids ?? [])
+			for child in controller.descendants(of: pid) where want[child] == nil && !own.contains(child) {
 				_ = controller.setBackground(child, on: false)
 			}
 		}
@@ -430,9 +437,12 @@ final class Enforcer {
 		controller.removeAllGroups()
 		applied.removeAll()
 		for id in frozen.keys { clearFrozen(id) }
-		for pid in backgroundPids.keys {
+		for (pid, groupID) in backgroundPids {
 			_ = controller.setBackground(pid, on: false)
-			for child in controller.descendants(of: pid) { _ = controller.setBackground(child, on: false) }
+			let own = Set(lastGroups[groupID]?.pids ?? [])
+			for child in controller.descendants(of: pid) where !own.contains(child) {
+				_ = controller.setBackground(child, on: false)
+			}
 		}
 		backgroundPids.removeAll()
 		controller.releaseAll()

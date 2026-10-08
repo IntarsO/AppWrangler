@@ -218,14 +218,14 @@ Each app is suggested at most once an hour. Turn alerts off, or change the thres
 
 ## Impact
 
-**Settings → Impact** shows what AppWrangler has achieved, and what it cost to run, for **Today**, **7 days** or **30 days**. The same numbers are available from `appwrangler stats` and the [MCP server](mcp.md). The panel footer shows "saved … today".
+**Settings → Impact** shows what AppWrangler has achieved, and what it cost to run, for the **Last hour**, **Today**, **7 days** or **30 days**. The same numbers are available from `appwrangler stats` and the [MCP server](mcp.md). The panel footer shows "saved … today".
 
 **How it helped:**
 
 | Number | How it's measured |
 |---|---|
 | **CPU time saved** | While an app is held back, the limiter measures how much CPU it *wanted* and how much it *got*; the difference adds up. A frozen app is credited with the CPU it was using when frozen. Shown in core-minutes or core-hours (1 core-hour = one core busy for an hour). |
-| **Energy saved (est.)** | CPU saved × that app's own measured watts per core (1.5 W/core until it's been measured). On a MacBook it's also shown as a share of a full battery. |
+| **Energy saved (est.)** | Two parts. **Limits and freezes:** CPU saved × that app's own measured watts per core (1.5 W/core until it's been measured). **Efficiency cores:** the energy apps used while on the E-cores × 3.5. That's because the same work takes about 4.5× the energy on performance cores (5.3 J vs 1.16 J for a fixed workload, measured on an M1). On a MacBook it's also shown as a share of a full battery. |
 | **Apps held back** | Time apps wanted more than their limit. |
 | **Apps frozen / on efficiency cores** | Time spent in those states. |
 | **Memory freed** | Memory released by memory-limit *Quit/Force quit* actions. |

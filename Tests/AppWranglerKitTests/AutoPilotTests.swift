@@ -145,6 +145,35 @@ import Testing
 		#expect(controller.background[600] == nil, "Auto's E-cores not applied over a manual CPU rule")
 	}
 
+	@Test func autoManagesHelpersEvenIfTheRuleExcludesThem() {
+		let controller = FakeController()
+		let store = tempStore()
+		var r = AppRule(matchKind: .bundleID, matchValue: "com.example.slack", displayName: "Slack")
+		r.memoryLimitEnabled = true
+		r.includeHelpers = false
+		store.upsert(r)
+		let e = Enforcer(controller: controller)
+		let slack = app("Slack", pid: 900, helpers: [901, 902])
+		e.apply(makeSnapshot([slack], seq: 1), rules: store, state: SystemState(), frontmostPid: 0,
+				auto: [slack.id: AutoDecision(reason: .background, efficiency: true)])
+		#expect(controller.background == [900: true, 901: true, 902: true])
+	}
+
+	@Test func restoringDescendantsLeavesTheAppsOwnHelpersAlone() {
+		let controller = FakeController()
+		let e = Enforcer(controller: controller)
+		let slack = app("Slack", pid: 900, helpers: [901])
+		controller.children = [900: [901, 950]]		// 950: a shell it started, outside the app
+		let bg = [slack.id: AutoDecision(reason: .background, efficiency: true)]
+		e.apply(makeSnapshot([slack], seq: 1), rules: tempStore(), state: SystemState(), frontmostPid: 0, auto: bg)
+		controller.background = [:]
+		// Auto drops E-cores (e.g. the app was focused): only pids we set + the outside child are touched.
+		e.apply(makeSnapshot([slack], seq: 2), rules: tempStore(), state: SystemState(), frontmostPid: 0,
+				auto: [slack.id: AutoDecision(reason: .background, efficiency: false)])
+		#expect(controller.background[900] == false && controller.background[901] == false)
+		#expect(controller.background[950] == false)
+	}
+
 	@Test func appsInUseAreForcedBackToFullSpeedOnce() {
 		let controller = FakeController()
 		let e = Enforcer(controller: controller)

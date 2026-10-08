@@ -34,11 +34,35 @@ struct AppImpact: Codable, Equatable {
 	var allowedCoreSeconds: Double = 0
 	var frozenSeconds: Double = 0
 	var efficiencySeconds: Double = 0
+	/// Energy measured while on efficiency cores, and the estimated energy that
+	/// the same work would have cost more on performance cores.
+	var efficiencyEnergyJ: Double = 0
+	var efficiencySavedJ: Double = 0
 	var memoryActions: Int = 0
 	var memoryFreedBytes: Double = 0
 	var lowMemoryActions: Int = 0
 
 	init(name: String) { self.name = name }
+
+	// Tolerate files written by older versions (missing fields default to 0).
+	init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		func d(_ k: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: k) ?? 0 }
+		name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+		savedCPUSeconds = try d(.savedCPUSeconds)
+		savedEnergyJ = try d(.savedEnergyJ)
+		limitedSeconds = try d(.limitedSeconds)
+		heldBackSeconds = try d(.heldBackSeconds)
+		wantedCoreSeconds = try d(.wantedCoreSeconds)
+		allowedCoreSeconds = try d(.allowedCoreSeconds)
+		frozenSeconds = try d(.frozenSeconds)
+		efficiencySeconds = try d(.efficiencySeconds)
+		efficiencyEnergyJ = try d(.efficiencyEnergyJ)
+		efficiencySavedJ = try d(.efficiencySavedJ)
+		memoryActions = try c.decodeIfPresent(Int.self, forKey: .memoryActions) ?? 0
+		memoryFreedBytes = try d(.memoryFreedBytes)
+		lowMemoryActions = try c.decodeIfPresent(Int.self, forKey: .lowMemoryActions) ?? 0
+	}
 
 	mutating func add(_ o: AppImpact) {
 		savedCPUSeconds += o.savedCPUSeconds
@@ -49,12 +73,16 @@ struct AppImpact: Codable, Equatable {
 		allowedCoreSeconds += o.allowedCoreSeconds
 		frozenSeconds += o.frozenSeconds
 		efficiencySeconds += o.efficiencySeconds
+		efficiencyEnergyJ += o.efficiencyEnergyJ
+		efficiencySavedJ += o.efficiencySavedJ
 		memoryActions += o.memoryActions
 		memoryFreedBytes += o.memoryFreedBytes
 		lowMemoryActions += o.lowMemoryActions
 	}
 
 	var averageWanted: Double { limitedSeconds > 0 ? wantedCoreSeconds / limitedSeconds : 0 }
+	/// Energy saved by limits/freezes plus by efficiency cores (estimates).
+	var totalSavedEnergyJ: Double { savedEnergyJ + efficiencySavedJ }
 	var averageAllowed: Double { limitedSeconds > 0 ? allowedCoreSeconds / limitedSeconds : 0 }
 }
 
@@ -110,14 +138,22 @@ final class StatsStore: ObservableObject {
 
 	let fileURL: URL
 	private(set) var days: [DayStats] = []
+	/// Hourly buckets for the last 48 hours ("last hour" view).
+	private(set) var hours: [DayStats] = []
 	private var wattsPerCore: [String: Double] = [:]
 	private let calendar: Calendar
 	private let keepDays = 35
 	private var dirty = false
 	private let formatter: DateFormatter
+	private let hourFormatter: DateFormatter
+	private let keepHours = 48
 
 	/// Typical Apple Silicon P-core draw, used until an app's own ratio is measured.
 	static let defaultWattsPerCore = 1.5
+	/// Energy for the same work on performance cores ÷ on efficiency cores.
+	/// Measured on an M1 with a fixed CPU workload: 5.3 J vs 1.16 J (≈ 4.6×).
+	/// Real apps vary, so energy saved by efficiency cores is an estimate.
+	static let efficiencyCoreEnergyFactor = 4.5
 
 	init(directory: URL = DataDirectory.url, calendar: Calendar = .current) {
 		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -128,10 +164,24 @@ final class StatsStore: ObservableObject {
 		formatter.timeZone = calendar.timeZone
 		formatter.locale = Locale(identifier: "en_US_POSIX")
 		formatter.dateFormat = "yyyy-MM-dd"
+		hourFormatter = DateFormatter()
+		hourFormatter.calendar = calendar
+		hourFormatter.timeZone = calendar.timeZone
+		hourFormatter.locale = Locale(identifier: "en_US_POSIX")
+		hourFormatter.dateFormat = "yyyy-MM-dd'T'HH"
 		load()
 	}
 
 	// MARK: Recording
+
+	private func hourIndex(for date: Date) -> Int {
+		let key = hourFormatter.string(from: date)
+		if let i = hours.lastIndex(where: { $0.day == key }) { return i }
+		hours.append(DayStats(day: key))
+		hours.sort { $0.day < $1.day }
+		if hours.count > keepHours { hours.removeFirst(hours.count - keepHours) }
+		return hours.lastIndex(where: { $0.day == key })!
+	}
 
 	private func dayIndex(for date: Date) -> Int {
 		let key = formatter.string(from: date)
@@ -142,11 +192,24 @@ final class StatsStore: ObservableObject {
 		return days.lastIndex(where: { $0.day == key })!
 	}
 
-	/// Record one sample interval of `dt` seconds.
+	/// Record one sample interval of `dt` seconds (into the day and the hour).
 	func record(_ ticks: [ImpactTick], selfCPU: Double, selfFootprint: UInt64, dt: TimeInterval, at date: Date = Date(), ncpu: Int = SystemInfo.ncpu) {
 		guard dt > 0 else { return }
-		let i = dayIndex(for: date)
-		var day = days[i]
+		// Learn each app's watts per core from live measurements (once per sample).
+		for t in ticks where t.cpu > 0.05 && t.power > 0 {
+			let ratio = min(max(t.power / t.cpu, 0.1), 10)
+			wattsPerCore[t.key] = (wattsPerCore[t.key] ?? ratio) * 0.8 + ratio * 0.2
+		}
+		let d = dayIndex(for: date)
+		days[d] = Self.add(ticks, to: days[d], selfCPU: selfCPU, selfFootprint: selfFootprint, dt: dt, ncpu: ncpu, wattsPerCore: wattsPerCore)
+		let h = hourIndex(for: date)
+		hours[h] = Self.add(ticks, to: hours[h], selfCPU: selfCPU, selfFootprint: selfFootprint, dt: dt, ncpu: ncpu, wattsPerCore: wattsPerCore)
+		changed()
+	}
+
+	private static func add(_ ticks: [ImpactTick], to bucket: DayStats, selfCPU: Double, selfFootprint: UInt64, dt: TimeInterval,
+							ncpu: Int, wattsPerCore: [String: Double]) -> DayStats {
+		var day = bucket
 		day.uptimeSeconds += dt
 		day.selfCPUSeconds += max(0, selfCPU) * dt
 		let fp = Double(selfFootprint)
@@ -155,17 +218,10 @@ final class StatsStore: ObservableObject {
 			day.selfFootprintSamples += 1
 			day.selfFootprintPeak = max(day.selfFootprintPeak, fp)
 		}
-
 		for t in ticks {
-			// Learn this app's watts per core from live measurements.
-			if t.cpu > 0.05, t.power > 0 {
-				let ratio = min(max(t.power / t.cpu, 0.1), 10)
-				wattsPerCore[t.key] = (wattsPerCore[t.key] ?? ratio) * 0.8 + ratio * 0.2
-			}
 			let wpc = wattsPerCore[t.key] ?? Self.defaultWattsPerCore
 			var a = day.apps[t.key] ?? AppImpact(name: t.name)
 			a.name = t.name
-
 			if let th = t.throttle {
 				let demand = min(max(th.demand, 0), Double(ncpu))
 				let usage = max(th.usage, 0)
@@ -187,11 +243,15 @@ final class StatsStore: ObservableObject {
 				a.savedCPUSeconds += saved
 				a.savedEnergyJ += saved * wpc
 			}
-			if t.efficiency { a.efficiencySeconds += dt }
+			if t.efficiency {
+				a.efficiencySeconds += dt
+				let used = max(t.power, 0) * dt
+				a.efficiencyEnergyJ += used
+				a.efficiencySavedJ += used * (Self.efficiencyCoreEnergyFactor - 1)
+			}
 			day.apps[t.key] = a
 		}
-		days[i] = day
-		changed()
+		return day
 	}
 
 	enum Event {
@@ -201,20 +261,25 @@ final class StatsStore: ObservableObject {
 	}
 
 	func record(_ event: Event, key: String, name: String, at date: Date = Date()) {
-		let i = dayIndex(for: date)
-		switch event {
-		case .runawayAlert:
-			days[i].runawayAlerts += 1
-		case .memoryAction(let freed):
-			var a = days[i].apps[key] ?? AppImpact(name: name)
-			a.memoryActions += 1
-			a.memoryFreedBytes += freed
-			days[i].apps[key] = a
-		case .lowMemoryAction:
-			var a = days[i].apps[key] ?? AppImpact(name: name)
-			a.lowMemoryActions += 1
-			days[i].apps[key] = a
+		func apply(_ b: inout DayStats) {
+			switch event {
+			case .runawayAlert:
+				b.runawayAlerts += 1
+			case .memoryAction(let freed):
+				var a = b.apps[key] ?? AppImpact(name: name)
+				a.memoryActions += 1
+				a.memoryFreedBytes += freed
+				b.apps[key] = a
+			case .lowMemoryAction:
+				var a = b.apps[key] ?? AppImpact(name: name)
+				a.lowMemoryActions += 1
+				b.apps[key] = a
+			}
 		}
+		let d = dayIndex(for: date)
+		apply(&days[d])
+		let h = hourIndex(for: date)
+		apply(&hours[h])
 		changed()
 	}
 
@@ -225,19 +290,19 @@ final class StatsStore: ObservableObject {
 
 	// MARK: Reading
 
-	/// Totals for the last `days` calendar days including today (1 = today).
-	func summary(days count: Int, now: Date = Date()) -> ImpactSummary {
-		var s = ImpactSummary(days: count)
-		let start = calendar.date(byAdding: .day, value: -(count - 1), to: calendar.startOfDay(for: now))!
-		let first = formatter.string(from: start)
-		let last = formatter.string(from: now)
+	/// Totals for the last `hours` clock hours including the current one.
+	func summary(hours count: Int, now: Date = Date()) -> ImpactSummary {
+		let start = calendar.date(byAdding: .hour, value: -(count - 1), to: now)!
+		let first = hourFormatter.string(from: start), last = hourFormatter.string(from: now)
+		var s = ImpactSummary(days: 0)
+		Self.accumulate(hours.filter { $0.day >= first && $0.day <= last }, into: &s)
+		return s
+	}
+
+	private static func accumulate(_ buckets: [DayStats], into s: inout ImpactSummary) {
 		var perApp: [String: AppImpact] = [:]
 		var footprintSum = 0.0, footprintSamples = 0, accSum = 0.0, accWeight = 0.0
-
-		// One entry per calendar day in range, including days with no data.
-		var dayCursor = start
-		var dailyMap: [String: Double] = [:]
-		for d in days where d.day >= first && d.day <= last {
+		for d in buckets {
 			for (key, impact) in d.apps {
 				var a = perApp[key] ?? AppImpact(name: impact.name)
 				a.name = impact.name
@@ -253,19 +318,30 @@ final class StatsStore: ObservableObject {
 			accSum += d.accuracyErrorSum
 			accWeight += d.accuracyWeight
 			s.runawayAlerts += d.runawayAlerts
-			dailyMap[d.day] = d.apps.values.reduce(0) { $0 + $1.savedCPUSeconds }
-		}
-		for _ in 0..<count {
-			let key = formatter.string(from: dayCursor)
-			s.daily.append((key, dailyMap[key] ?? 0))
-			dayCursor = calendar.date(byAdding: .day, value: 1, to: dayCursor)!
 		}
 		s.averageFootprint = footprintSamples > 0 ? footprintSum / Double(footprintSamples) : 0
 		s.accuracyError = accWeight > 30 ? accSum / accWeight : nil
 		s.apps = perApp.map { ($0.key, $0.value) }.sorted {
-			$0.impact.savedCPUSeconds != $1.impact.savedCPUSeconds
-				? $0.impact.savedCPUSeconds > $1.impact.savedCPUSeconds
+			$0.impact.totalSavedEnergyJ != $1.impact.totalSavedEnergyJ
+				? $0.impact.totalSavedEnergyJ > $1.impact.totalSavedEnergyJ
 				: $0.impact.name.localizedCaseInsensitiveCompare($1.impact.name) == .orderedAscending
+		}
+	}
+
+	/// Totals for the last `days` calendar days including today (1 = today).
+	func summary(days count: Int, now: Date = Date()) -> ImpactSummary {
+		var s = ImpactSummary(days: count)
+		let start = calendar.date(byAdding: .day, value: -(count - 1), to: calendar.startOfDay(for: now))!
+		let first = formatter.string(from: start), last = formatter.string(from: now)
+		let inRange = days.filter { $0.day >= first && $0.day <= last }
+		Self.accumulate(inRange, into: &s)
+		var dailyMap: [String: Double] = [:]
+		for d in inRange { dailyMap[d.day] = d.apps.values.reduce(0) { $0 + $1.savedCPUSeconds } }
+		var cursor = start
+		for _ in 0..<count {
+			let key = formatter.string(from: cursor)
+			s.daily.append((key, dailyMap[key] ?? 0))
+			cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
 		}
 		return s
 	}
@@ -275,6 +351,7 @@ final class StatsStore: ObservableObject {
 	private struct File: Codable {
 		var version = 1
 		var days: [DayStats]
+		var hours: [DayStats]?
 		var wattsPerCore: [String: Double]?
 	}
 
@@ -282,6 +359,7 @@ final class StatsStore: ObservableObject {
 		guard let data = try? Data(contentsOf: fileURL),
 			  let file = try? JSONDecoder().decode(File.self, from: data) else { return }
 		days = file.days.sorted { $0.day < $1.day }.suffix(keepDays)
+		hours = (file.hours ?? []).sorted { $0.day < $1.day }.suffix(keepHours)
 		wattsPerCore = file.wattsPerCore ?? [:]
 	}
 
@@ -296,13 +374,14 @@ final class StatsStore: ObservableObject {
 		dirty = false
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = [.sortedKeys]
-		if let data = try? encoder.encode(File(days: days, wattsPerCore: wattsPerCore)) {
+		if let data = try? encoder.encode(File(days: days, hours: hours, wattsPerCore: wattsPerCore)) {
 			try? data.write(to: fileURL, options: .atomic)
 		}
 	}
 
 	func reset() {
 		days.removeAll()
+		hours.removeAll()
 		wattsPerCore.removeAll()
 		dirty = true
 		flush()
