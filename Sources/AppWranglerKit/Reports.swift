@@ -11,15 +11,20 @@ import AppKit
 import ProcKit
 
 enum Reports {
-	/// Measure running apps for `seconds` and describe each one.
-	static func apps(store: RuleStore, apps: [RunningApp], includeProcesses: Bool, limit: Int? = nil,
-					 seconds: Double = 1) -> [[String: Any]] {
+	/// Measure everything running for `seconds` (rates need two samples).
+	static func sampleGroups(apps: [RunningApp], seconds: Double = 1) -> [AppGroup] {
 		let appMap = Dictionary(apps.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
 		let sampler = Sampler()
 		let request = SampleRequest(apps: appMap, includeAll: true, includeOtherUsers: false, withThreads: true, matcher: GroupMatcher())
 		_ = sampler.sampleNow(request)
 		usleep(useconds_t(max(0.2, seconds) * 1_000_000))
-		var groups = sampler.sampleNow(request).groups.filter { includeProcesses || $0.kind != .process }
+		return sampler.sampleNow(request).groups
+	}
+
+	/// Measure running apps for `seconds` and describe each one.
+	static func apps(store: RuleStore, apps: [RunningApp], includeProcesses: Bool, limit: Int? = nil,
+					 seconds: Double = 1) -> [[String: Any]] {
+		var groups = sampleGroups(apps: apps, seconds: seconds).filter { includeProcesses || $0.kind != .process }
 		groups.sort { $0.cpu > $1.cpu }
 		if let limit { groups = Array(groups.prefix(max(0, limit))) }
 		return groups.map { group(store: store, $0) }
@@ -105,6 +110,40 @@ enum Reports {
 			out["running"] = false
 			out["autoMode"] = UserDefaults.standard.bool(forKey: Prefs.autoEnabled) ? "on" : "off"
 		}
+		return out
+	}
+
+	/// The running group a user-supplied name refers to: exact name or bundle id
+	/// first, then a name containing it (apps before processes, biggest first).
+	static func findGroup(_ target: String, in groups: [AppGroup]) -> AppGroup? {
+		let t = target.trimmingCharacters(in: .whitespaces).lowercased()
+		guard !t.isEmpty else { return nil }
+		let ranked = groups.sorted { ($0.kind == .process ? 1 : 0, $1.footprint) < ($1.kind == .process ? 1 : 0, $0.footprint) }
+		return ranked.first { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t || $0.path.lowercased() == t }
+			?? ranked.first { $0.name.lowercased().contains(t) }
+	}
+
+	/// Everything about one app: what it is, live usage, every setting (with the
+	/// keys `configure_app` / `appwrangler set` take), who manages it, and suggestions.
+	static func appSettings(_ target: String, store: RuleStore, apps: [RunningApp], input: SuggestionInput) -> [String: Any]? {
+		let group = findGroup(target, in: input.groups)
+		let rule = group.flatMap { store.rule(for: $0) } ?? RuleTargets.resolve(target, store: store, apps: apps, create: false)
+		guard group != nil || rule != nil else { return nil }
+		let name = group?.name ?? rule?.displayName ?? target
+		let managed = AppSettings.managedBy(group, rule: rule, autoEnabled: input.autoEnabled)
+		var out: [String: Any] = [
+			"app": name,
+			"running": group != nil,
+			"rule": rule?.summary ?? "no rule",
+			"settings": AppSettings.settings(rule),
+			"managedBy": managed,
+			"managedByMeaning": AppSettings.managedByHelp[managed] ?? "",
+			"suggestions": Suggestions.make(input, app: name).map(\.json),
+			"settingKeys": Dictionary(uniqueKeysWithValues: RuleChanges.keys.map { ($0.key, $0.help) }),
+		]
+		if let rule { out["matchedBy"] = "\(rule.matchKind.rawValue): \(rule.matchValue)" }
+		if let group { out["usage"] = Self.group(store: store, group) }
+		if let auto = AppState.read()?.autoApps?[name] { out["autoState"] = auto }
 		return out
 	}
 

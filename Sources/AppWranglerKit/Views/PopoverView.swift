@@ -173,6 +173,7 @@ struct PopoverView: View {
 				Text(L("Off — only your rules apply")).font(.caption2).foregroundStyle(.secondary)
 			}
 			Spacer()
+			HelpButton(anchor: "auto-mode").controlSize(.mini)
 		}
 	}
 
@@ -337,6 +338,7 @@ struct PopoverView: View {
 				.font(.caption).foregroundStyle(.secondary)
 				.help(L("See Settings → Impact for details"))
 			Spacer()
+			HelpButton(topic: .gettingStarted)
 			Button(L("Settings…"), action: openSettings)
 			Button(L("Quit")) { NSApp.terminate(nil) }
 		}

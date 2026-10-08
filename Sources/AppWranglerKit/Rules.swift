@@ -262,6 +262,32 @@ struct AppRule: Codable, Identifiable, Equatable {
 	}
 }
 
+/// Turns a user-supplied name ("Google Chrome", com.google.Chrome, node,
+/// /path, "*Helper*") into the matching rule, or a new one. Shared by the CLI
+/// and the MCP server so both resolve names the same way.
+enum RuleTargets {
+	static func resolve(_ target: String, store: RuleStore, apps: [RunningApp], groups: [AppGroup] = [], create: Bool) -> AppRule? {
+		let t = target.trimmingCharacters(in: .whitespaces).lowercased()
+		guard !t.isEmpty else { return nil }
+		if let existing = store.rules.first(where: { $0.displayName.lowercased() == t || $0.matchValue.lowercased() == t }) {
+			return existing
+		}
+		// A running app or process with that name gets a rule for exactly it.
+		if let group = groups.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
+			if let existing = store.rule(for: group) { return existing }
+			return create ? AppRule.forGroup(group) : nil
+		}
+		guard create else { return nil }
+		if let app = apps.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
+			if let bundleID = app.bundleID { return AppRule(matchKind: .bundleID, matchValue: bundleID, displayName: app.name) }
+			if let path = app.bundlePath { return AppRule(matchKind: .path, matchValue: path, displayName: app.name) }
+		}
+		if target.contains("*") || target.contains("?") { return AppRule(matchKind: .pattern, matchValue: target, displayName: target) }
+		if target.hasPrefix("/") { return AppRule(matchKind: .path, matchValue: target, displayName: (target as NSString).lastPathComponent) }
+		return AppRule(matchKind: .name, matchValue: target, displayName: target)
+	}
+}
+
 /// Carries settings over from the AppPolice builds this project grew out of.
 enum Migration {
 	/// AppPolice 1.x kept per-app limits in its own defaults domain.

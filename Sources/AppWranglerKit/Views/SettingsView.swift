@@ -266,7 +266,7 @@ struct GeneralSettings: View {
 				}
 			}
 
-			Section(L("Auto mode")) {
+			Section(header: helpHeader(L("Auto mode"), "auto-mode")) {
 				Toggle(L("Manage apps automatically"), isOn: $autoEnabled)
 				Text(L("The app you're using (and anything playing or recording audio) always runs at full speed. Apps without their own CPU or efficiency-core rule are managed for you."))
 					.font(.caption).foregroundStyle(.secondary)
@@ -291,7 +291,7 @@ struct GeneralSettings: View {
 				}
 			}
 
-			Section(L("Monitoring")) {
+			Section(header: helpHeader(L("Monitoring"), "settings-window")) {
 				Picker(L("Refresh while window is open"), selection: $uiInterval) {
 					Text("0.5 s").tag(0.5)
 					Text("1 s").tag(1.0)
@@ -310,7 +310,7 @@ struct GeneralSettings: View {
 				Toggle(L("Show CPU usage in the menu bar"), isOn: $menuBarCPU)
 			}
 
-			Section(L("Runaway apps")) {
+			Section(header: helpHeader(L("Runaway apps"), "runaway-alerts")) {
 				Toggle(L("Tell me when an app keeps using a lot of CPU in the background"), isOn: $runawayEnabled)
 				if runawayEnabled {
 					Stepper(L("Above %d%% CPU", Int(runawayPercent)), value: $runawayPercent, in: 20...800, step: 10)
@@ -318,7 +318,7 @@ struct GeneralSettings: View {
 				}
 			}
 
-			Section(L("Low memory")) {
+			Section(header: helpHeader(L("Low memory"), "when-the-mac-is-low-on-memory")) {
 				Picker(L("Treat the Mac as low on memory at"), selection: $pressureLevel) {
 					Text(L("Warning pressure")).tag(2)
 					Text(L("Critical pressure")).tag(4)
@@ -327,7 +327,7 @@ struct GeneralSettings: View {
 					.font(.caption).foregroundStyle(.secondary)
 			}
 
-			Section(L("CPU limiter")) {
+			Section(header: helpHeader(L("CPU limiter"), "limit-cpu")) {
 				HStack {
 					Slider(value: Binding(get: { Double(limiterPeriod) }, set: { limiterPeriod = Int($0) }), in: 10...200, step: 10)
 						.accessibilityLabel(L("Throttle cycle length"))
@@ -343,7 +343,7 @@ struct GeneralSettings: View {
 				Toggle(L("Notify me about memory limits, low memory and runaway apps"), isOn: $notifications)
 			}
 
-			Section(L("Command line")) {
+			Section(header: helpHeader(L("Command line"), nil, topic: .cli)) {
 				Text(L("Control AppWrangler from Terminal. Add it to your PATH once:"))
 					.font(.caption)
 				Text("ln -sf \"\(cliPath)\" /opt/homebrew/bin/appwrangler")
@@ -353,6 +353,14 @@ struct GeneralSettings: View {
 			}
 		}
 		.formStyle(.grouped)
+	}
+
+	private func helpHeader(_ title: String, _ anchor: String?, topic: HelpTopic = .manual) -> some View {
+		HStack {
+			Text(title)
+			Spacer()
+			HelpButton(topic: topic, anchor: anchor)
+		}
 	}
 }
 
@@ -404,7 +412,8 @@ struct AboutView: View {
 			Text(L("Per-app CPU, efficiency-core and memory limits for Apple Silicon Macs.\nForked from AppPolice by Maksym Stefanchuk."))
 				.multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.top, 6)
 			HStack(spacing: 16) {
-				Link(L("Documentation"), destination: Links.documentation)
+				Button(L("Open Help")) { HelpCenter.open(.gettingStarted) }
+					.buttonStyle(.link)
 				Link(L("Source code"), destination: Links.repository)
 				Link(L("Report a problem"), destination: Links.issues)
 				Link(L("Original AppPolice"), destination: Links.upstream)

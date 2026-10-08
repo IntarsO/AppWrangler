@@ -12,7 +12,15 @@ Builds you make yourself with `./build.sh` aren't affected.
 AppWrangler has no Dock icon; it lives in the menu bar (a lasso loop with a needle inside). On MacBooks with a notch, a full menu bar can hide icons behind the notch. Quit a few other menu bar apps, or rearrange icons by ⌘-dragging. `appwrangler status` tells you whether it's running.
 
 ### An app I limited is unusable / really slow when I use it
-Its rule applies even while the app is in front. Open the app's settings and turn on **Only while the app is in the background**, which is the default for new rules. Better still, remove the CPU and efficiency-core settings and let [Auto mode](user-guide.md#auto-mode) handle it: full speed while you use it, efficient in the background. Also check memory limits whose action is *Freeze*; a frozen app doesn't respond at all.
+Its rule applies even while the app is in front. Open the app's settings and turn on **Only while the app is in the background**, which is the default for new rules. Better still, remove the CPU and efficiency-core settings and let [Auto mode](user-manual.md#auto-mode) handle it: full speed while you use it, efficient in the background. Also check memory limits whose action is *Freeze*; a frozen app doesn't respond at all.
+
+### What should I limit? Can AppWrangler tell me?
+Yes. Run `appwrangler suggest`, or ask your AI assistant for suggestions (see [AI assistants](mcp.md)). You get concrete recommendations for what's running right now: what to change, why, the expected benefit, and the command to apply it. `appwrangler show <app>` explains one app and all its settings. See [Suggestions](user-manual.md#suggestions-what-to-change).
+
+For everyday apps, the best setting is usually *none*: let [Auto mode](user-manual.md#auto-mode) manage them.
+
+### Where's the manual?
+Inside the app: click the **?** in the panel's footer, or the **?** next to any setting to jump to its explanation. It's also on [GitHub](user-manual.md).
 
 ### The limited app feels choppy or beachballs
 CPU limiting works by pausing and resuming the app many times a second. At very low limits, apps with a UI can feel jerky. Options:

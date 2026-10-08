@@ -2,6 +2,34 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Suggestions.**
+  - `appwrangler suggest` and the MCP tool `suggest_settings` recommend settings for what's running:
+    - memory hogs when the Mac is short of memory, with browser tab-sleeping tips;
+    - busy unmanaged background processes;
+    - rules that slow an app while you use it;
+    - limits that held an app back most of the week;
+    - memory limits an app is always over;
+    - rules for apps that no longer exist.
+  - Each suggestion gives the reason, the expected benefit and ready-to-apply actions (MCP call and CLI command).
+- **Every setting of an app in one place.** `appwrangler show <app>` and MCP `get_app_settings` show:
+  - what the app is and its live usage;
+  - every setting;
+  - who manages it (its own rule, Auto mode, or nothing);
+  - suggestions for it.
+- **Change any setting in one step.** `appwrangler set <app> key=value …` and MCP `configure_app` change any combination of settings, including `use_auto` to hand an app back to Auto mode.
+- **MCP prompt `tune_app`** for a guided conversation about one app.
+- **In-app Help.**
+  - The User Manual, Getting Started, CLI, AI-assistant and FAQ pages are built into the app: searchable, offline, light and dark.
+  - Open them from the **?** in the panel, the menu bar menu, Settings → About, or ⌘?.
+  - **?** buttons next to settings open the manual at the right section.
+- Standard keyboard shortcuts (⌘C/⌘V/⌘X/⌘A/⌘Z in text fields, ⌘W, ⌘,) now work in AppWrangler's windows.
+
+### Changed
+- The User Guide is now the **User Manual** (`docs/user-manual.md`), with new chapters on suggestions, per-app settings, AI assistants and in-app Help.
+
 ## [1.0.0] — 2026-10-08
 
 The first release of AppWrangler: a ground-up rewrite of [AppPolice](https://github.com/fuyu/AppPolice) 1.1 for Apple Silicon, under a new name.

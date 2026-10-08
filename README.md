@@ -34,8 +34,10 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — with *Limit*, *E-cores* and *Ignore* buttons. |
 | ❄️ **Freeze, quit, force quit** | Suspend any app instantly and resume it later. |
 | 📊 **Impact & efficiency** | See how much CPU time and battery it saved — per app, per day — and what AppWrangler itself cost to run. |
-| 🤖 **AI assistants (MCP)** | Let Claude, OpenAI Codex or your own agents audit your Mac, analyse the savings and suggest (or, with your OK, apply) better limits. |
-| ⌨️ **Command line** | `appwrangler limit Slack 30`, `appwrangler stats`, … for scripts and power users. |
+| 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, each with the reason, the benefit and a one-step fix. |
+| 🤖 **AI assistants (MCP)** | Talk to Claude, OpenAI Codex or your own agents about your Mac: they audit it, explain any app, suggest settings and, with your OK, configure each app for you. |
+| ⌨️ **Command line** | `appwrangler suggest`, `appwrangler show Slack`, `appwrangler set Slack efficiency_cores=on`, `appwrangler stats`, … |
+| 📖 **Built-in help** | The full manual inside the app, searchable and offline, with a **?** next to every setting. |
 
 It uses well under 1% of one core. It never connects to the network.
 
@@ -50,7 +52,7 @@ It uses well under 1% of one core. It never connects to the network.
 ## Documentation
 
 - [Getting Started](docs/getting-started.md): install, first limit, launch at login, uninstall
-- [User Guide](docs/user-guide.md): every feature and setting explained
+- [User Manual](docs/user-manual.md): every feature and setting explained (also built into the app: **?** → Help)
 - [Command-line reference](docs/cli.md)
 - [AI assistants via MCP](docs/mcp.md): Claude Desktop, Claude Code, OpenAI Codex, Agents SDK
 - [FAQ & Troubleshooting](docs/faq.md)

@@ -4,7 +4,7 @@
 # drives it through its CLI and checks real enforcement on real processes —
 # including that rule changes apply on the fly, without restarting the app.
 #
-#   ./Tests/e2e/run.sh        (builds the app first if needed)
+#   ./Tests/e2e/run.sh        (rebuilds the app first if the sources changed)
 #
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -14,7 +14,10 @@ cd "$(dirname "$0")/../.."
 taskpolicy -B -p $$ 2>/dev/null || true
 ROOT="$PWD"
 APP_BIN="$ROOT/build/AppWrangler.app/Contents/MacOS/AppWrangler"
-[ -x "$APP_BIN" ] || ./build.sh >/dev/null
+# (Re)build when there's no app yet or the sources changed since the last build.
+if [ ! -x "$APP_BIN" ] || [ -n "$(find Sources Resources docs Package.swift build.sh -newer "$APP_BIN" -print -quit)" ]; then
+	./build.sh >/dev/null
+fi
 
 WORK="$(mktemp -d -t appwrangler-e2e)"
 export APPWRANGLER_DATA_DIR="$WORK/data"
@@ -201,6 +204,19 @@ echo "$stats" | grep '"id":3' | python3 -c 'import json,sys; r=json.loads(sys.st
 	&& ok "MCP get_impact_stats reports savings and AppWrangler's own cost" || bad "MCP stats missing"
 ro=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$APP_BIN" mcp --read-only 2>/dev/null)
 echo "$ro" | grep -q set_cpu_limit && bad "read-only MCP exposes changing tools" || ok "mcp --read-only exposes only audit tools"
+echo "$ro" | python3 -c 'import json,sys; n={t["name"] for t in json.loads(sys.stdin.read())["result"]["tools"]}; sys.exit(0 if "suggest_settings" in n and "get_app_settings" in n and "configure_app" not in n else 1)' \
+	&& ok "read-only MCP still offers suggestions, not configure_app" || bad "read-only MCP tool list wrong"
+
+# configure_app: change an app's settings while talking about it
+reply=$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"configure_app","arguments":{"app":"e2e-burner","cpu_limit":40,"background_only":false}}}')
+echo "$reply" | grep '"id":4' | grep -q '"isError":false' && ok "MCP configure_app accepted" || bad "configure_app failed: $reply"
+sleep 2.5
+v=$(cpu 2 "$B")
+between "$v" 0.28 0.55 && ok "configure_app limit is enforced: $v cores" || bad "configure_app limit measured $v"
+"$APP_BIN" show e2e-burner --json | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r["managedBy"]=="rule" and r["settings"]["cpu_limit"]==40 and r["running"] else 1)' \
+	&& ok "show reports the app, its settings and who manages it" || bad "show output wrong"
+"$APP_BIN" suggest --json | python3 -c 'import json,sys; l=json.load(sys.stdin); sys.exit(0 if isinstance(l,list) and all("actions" in x and "reason" in x for x in l) else 1)' \
+	&& ok "suggest returns structured suggestions" || bad "suggest output wrong"
 
 # --- Removal, persistence, crash safety -----------------------------------------
 cli unlimit e2e-burner

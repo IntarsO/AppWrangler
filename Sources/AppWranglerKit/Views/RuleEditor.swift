@@ -24,8 +24,12 @@ struct RuleEditor: View {
 				Divider()
 			}
 
-			Toggle(isOn: $rule.onlyWhenInactive) {
-				Label(L("Only while the app is in the background"), systemImage: "rectangle.on.rectangle")
+			HStack {
+				Toggle(isOn: $rule.onlyWhenInactive) {
+					Label(L("Only while the app is in the background"), systemImage: "rectangle.on.rectangle")
+				}
+				Spacer()
+				HelpButton(anchor: "only-while-the-app-is-in-the-background")
 			}
 			Text(rule.onlyWhenInactive
 				 ? L("CPU limit and efficiency cores apply only while you're not using the app — it runs at full speed when it's in front.")
@@ -42,17 +46,29 @@ struct RuleEditor: View {
 			conditionsSection
 			Divider()
 
-			Toggle(L("Include helper processes"), isOn: $rule.includeHelpers)
+			HStack {
+				Toggle(L("Include helper processes"), isOn: $rule.includeHelpers)
+				Spacer()
+				HelpButton(anchor: "helper-processes")
+			}
 			Text(L("Applies limits to the app's renderers, XPC services and other helpers too."))
 				.font(.caption).foregroundStyle(.secondary)
-			Toggle(L("Ignore this app in suggestions and automatic actions"), isOn: $rule.ignored)
+			HStack {
+				Toggle(L("Ignore this app in suggestions and automatic actions"), isOn: $rule.ignored)
+				Spacer()
+				HelpButton(anchor: "ignoring-an-app")
+			}
 		}
 	}
 
 	private var cpuSection: some View {
 		VStack(alignment: .leading, spacing: 8) {
-			Toggle(isOn: $rule.cpuLimitEnabled) {
-				Label(L("Limit CPU"), systemImage: "cpu")
+			HStack {
+				Toggle(isOn: $rule.cpuLimitEnabled) {
+					Label(L("Limit CPU"), systemImage: "cpu")
+				}
+				Spacer()
+				HelpButton(anchor: "limit-cpu")
 			}
 			if rule.cpuLimitEnabled {
 				HStack(spacing: 8) {
@@ -88,11 +104,19 @@ struct RuleEditor: View {
 	private var efficiencySection: some View {
 		VStack(alignment: .leading, spacing: 6) {
 			if !rule.cpuLimitEnabled && !rule.backgroundMode {
-				Label(L("No CPU or efficiency-core setting here, so Auto mode manages this app."), systemImage: "wand.and.stars")
-					.font(.caption).foregroundStyle(.teal)
+				HStack {
+					Label(L("No CPU or efficiency-core setting here, so Auto mode manages this app."), systemImage: "wand.and.stars")
+						.font(.caption).foregroundStyle(.teal)
+					Spacer()
+					HelpButton(anchor: "auto-mode")
+				}
 			}
-			Toggle(isOn: $rule.backgroundMode) {
-				Label(L("Efficiency cores only"), systemImage: "leaf")
+			HStack {
+				Toggle(isOn: $rule.backgroundMode) {
+					Label(L("Efficiency cores only"), systemImage: "leaf")
+				}
+				Spacer()
+				HelpButton(anchor: "efficiency-cores-only")
 			}
 			Text(L("Runs the app on the E-cores with throttled disk and network I/O. Saves battery and heat without freezing the app."))
 				.font(.caption).foregroundStyle(.secondary)
@@ -102,8 +126,12 @@ struct RuleEditor: View {
 
 	private var memorySection: some View {
 		VStack(alignment: .leading, spacing: 8) {
-			Toggle(isOn: $rule.memoryLimitEnabled) {
-				Label(L("Memory limit"), systemImage: "memorychip")
+			HStack {
+				Toggle(isOn: $rule.memoryLimitEnabled) {
+					Label(L("Memory limit"), systemImage: "memorychip")
+				}
+				Spacer()
+				HelpButton(anchor: "memory-limit")
 			}
 			if rule.memoryLimitEnabled {
 				HStack(spacing: 8) {
@@ -133,10 +161,14 @@ struct RuleEditor: View {
 					.font(.caption).foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
 			}
-			Picker(L("When the Mac is low on memory"), selection: $rule.pressureAction) {
-				ForEach(PressureAction.allCases) { Text($0.label).tag($0) }
+			HStack {
+				Picker(L("When the Mac is low on memory"), selection: $rule.pressureAction) {
+					ForEach(PressureAction.allCases) { Text($0.label).tag($0) }
+				}
+				.fixedSize()
+				Spacer()
+				HelpButton(anchor: "when-the-mac-is-low-on-memory")
 			}
-			.fixedSize()
 		}
 	}
 

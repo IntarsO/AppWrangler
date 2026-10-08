@@ -41,11 +41,37 @@ Lists running apps with CPU, memory, helper count and either their rule or a des
 ### `rules`
 Shows saved rules: ● enabled, ○ disabled.
 
+### `suggest [app] [--json]`
+Recommends settings for what's running: memory hogs when the Mac is short of memory (with browser tab-sleeping tips), busy unmanaged background processes, rules that slow an app while you use it, limits that are too strict, memory limits an app is always over, and rules for apps that no longer exist. Each suggestion gives the reason, the expected benefit and the command to apply it. Nothing changes until you run one. Give an app name to see only suggestions about it. [More](user-manual.md#suggestions-what-to-change).
+
+```text
+1. [medium] Slack is limited even while you use it
+   Why: Its rule (CPU 30%) also applies when it's the frontmost app, which makes it feel slow and laggy.
+   Benefit: Full speed while you use it, still efficient in the background.
+   → Only limit it in the background:  appwrangler set Slack background_only=true
+   → Hand it to Auto mode:  appwrangler set Slack use_auto=true
+```
+
+### `show <app> [--json]`
+Everything about one app: what it is, whether it's safe to limit, CPU/memory/processes right now, who manages it (its own rule, Auto mode, or nothing), what Auto is doing to it, every setting, and suggestions for it.
+
+### `set <app> key=value …`
+Changes any combination of an app's settings in one command; only the settings you name change:
+
+```bash
+appwrangler set Slack efficiency_cores=on background_only=true
+appwrangler set "Brave Browser" memory_limit_mb=6144 low_memory_action=freeze
+appwrangler set Dropbox efficiency_cores=on power=battery schedule=09:00-18:00 weekdays=2,3,4,5,6
+appwrangler set Slack use_auto=true      # remove its own CPU settings; Auto mode manages it
+```
+
+Keys: `cpu_limit` (0 = off), `efficiency_cores`, `background_only`, `memory_limit_mb` (0 = off), `memory_action`, `low_memory_action`, `include_helpers`, `enabled`, `ignored`, `use_auto`, `power`, `low_power_mode_only`, `hot_only`, `schedule` (`HH:MM-HH:MM` or `off`), `weekdays`. Booleans accept `true/false`, `on/off` or `yes/no`. The [full table](user-manual.md#every-setting-of-an-app) explains each one. A rule left with nothing in it is removed, so Auto mode manages the app again.
+
 ### `status`
-Shows whether AppWrangler is running, whether limits are paused, what's frozen, any apps currently flagged by [runaway alerts](user-guide.md#runaway-alerts), and how many rules are active.
+Shows whether AppWrangler is running, whether limits are paused, what's frozen, any apps currently flagged by [runaway alerts](user-manual.md#runaway-alerts), and how many rules are active.
 
 ### `auto [on|off]`
-Turns [Auto mode](user-guide.md#auto-mode) on or off. Without an argument, shows whether it's on. `status` also shows what Auto is doing (apps managed, in use, on E-cores, capped).
+Turns [Auto mode](user-manual.md#auto-mode) on or off. Without an argument, shows whether it's on. `status` also shows what Auto is doing (apps managed, in use, on E-cores, capped).
 
 ### `stats [hour|today|week|month] [--json]`
 Shows what AppWrangler achieved and what it cost over the last clock hour, today, the last 7 days (default) or 30 days:

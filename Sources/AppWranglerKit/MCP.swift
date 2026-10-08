@@ -23,16 +23,23 @@ final class MCPServer {
 	private let runningApps: () -> [RunningApp]
 	private let postToApp: (String, String?) -> Bool
 	private let sampleSeconds: Double
+	/// Builds the suggestion engine's input (tests substitute a fixed one).
+	private let suggestionInput: (RuleStore, [RunningApp], Double) -> SuggestionInput
 
 	init(readOnly: Bool, directory: URL = DataDirectory.url,
 		 runningApps: @escaping () -> [RunningApp] = { Array(RunningApps.collect().values) },
 		 postToApp: @escaping (String, String?) -> Bool = CLI.postToApp,
-		 sampleSeconds: Double = 1) {
+		 sampleSeconds: Double = 1,
+		 suggestionInput: ((RuleStore, [RunningApp], Double) -> SuggestionInput)? = nil) {
 		self.readOnly = readOnly
 		self.directory = directory
 		self.runningApps = runningApps
 		self.postToApp = postToApp
 		self.sampleSeconds = sampleSeconds
+		self.suggestionInput = suggestionInput ?? { store, apps, seconds in
+			SuggestionInput.current(groups: Reports.sampleGroups(apps: apps, seconds: seconds), store: store,
+									frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
+		}
 	}
 
 	// MARK: Entry point
@@ -225,6 +232,33 @@ final class MCPServer {
 				let stats = Reports.stats(directory: self.directory, days: days)
 				return Outcome(text: Reports.json(stats), structured: stats)
 			},
+			Tool(name: "suggest_settings", title: "Suggest settings",
+				 description: "Analyse what's running, memory and swap, the saved rules and the last week's impact, and recommend settings. Each suggestion has a severity, the reason, the expected benefit, an optional manual tip (e.g. a browser setting), and ready-to-call actions (tool + arguments, plus the equivalent CLI command). Changes nothing — present the suggestions and apply only the ones the user agrees to.",
+				 properties: ["app": ["type": "string", "description": "Only suggestions about this app (name, bundle ID or part of the name)."],
+							  "focus": ["type": "string", "enum": ["memory", "cpu", "battery", "rules", "auto"], "description": "Only this kind of suggestion."]],
+				 required: [], readOnly: true, destructive: false) { [unowned self] args in
+				let store = self.store()
+				let input = self.suggestionInput(store, self.runningApps(), self.sampleSeconds)
+				var list = Suggestions.make(input, app: (args["app"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+				if let focus = args["focus"] as? String { list = list.filter { $0.category.rawValue == focus } }
+				let rows = list.map(\.json)
+				let summary = list.isEmpty ? "No suggestions — everything looks well tuned right now."
+					: "\(list.count) suggestion\(list.count == 1 ? "" : "s"): " + list.prefix(5).map(\.title).joined(separator: "; ")
+				var structured: [String: Any] = ["summary": summary, "suggestions": rows, "autoMode": input.autoEnabled ? "on" : "off"]
+				if self.readOnly { structured["note"] = "This server is read-only: show the user the CLI commands instead of calling the actions." }
+				return Outcome(text: summary + "\n\n" + Reports.json(structured), structured: structured)
+			},
+			Tool(name: "get_app_settings", title: "App settings",
+				 description: "Everything about one app: what it is, whether it's safe to limit, live CPU/memory/energy, every current setting (same keys configure_app takes, with an explanation of each), who manages it (its own rule, Auto mode, or nothing), what Auto is doing to it, and suggestions for it. Use this when the user talks about a specific app.",
+				 properties: ["app": Self.appProperty], required: ["app"], readOnly: true, destructive: false) { [unowned self] args in
+				let target = args["app"] as? String ?? ""
+				let store = self.store()
+				let apps = self.runningApps()
+				guard let report = Reports.appSettings(target, store: store, apps: apps, input: self.suggestionInput(store, apps, self.sampleSeconds)) else {
+					return Outcome(text: "\(target) isn't running and has no rule. Check the name with list_apps.", isError: true)
+				}
+				return Outcome(text: Reports.json(report), structured: report)
+			},
 			Tool(name: "list_rules", title: "List rules",
 				 description: "All saved per-app rules (limits, conditions, actions), including for apps that aren't running.",
 				 properties: [:], required: [], readOnly: true, destructive: false) { [unowned self] _ in
@@ -234,6 +268,11 @@ final class MCPServer {
 		]
 		guard !readOnly else { return all }
 		all += [
+			Tool(name: "configure_app", title: "Configure an app",
+				 description: "Change any combination of an app's settings in one call; only the settings you pass change. Creates a rule if needed, and removes it when nothing is left (Auto mode then manages the app). Applies immediately. Use get_app_settings first to see the current values, and ask the user before changing anything.",
+				 properties: Self.configureProperties, required: ["app"], readOnly: false, destructive: true) { [unowned self] args in
+				self.configure(args)
+			},
 			Tool(name: "set_cpu_limit", title: "Set CPU limit",
 				 description: "Cap an app's CPU (and its helpers'). 100 = one full core. Applies immediately and whenever the app runs.",
 				 properties: ["app": Self.appProperty,
@@ -318,6 +357,51 @@ final class MCPServer {
 		return ""
 	}
 
+	static let configureProperties: [String: Any] = {
+		var p: [String: Any] = ["app": appProperty]
+		let help = Dictionary(uniqueKeysWithValues: RuleChanges.keys.map { ($0.key, $0.help) })
+		func prop(_ key: String, _ schema: [String: Any]) { p[key] = schema.merging(["description": help[key] ?? ""]) { a, _ in a } }
+		prop("cpu_limit", ["type": "number", "minimum": 0])
+		prop("efficiency_cores", ["type": "boolean"])
+		prop("background_only", ["type": "boolean"])
+		prop("memory_limit_mb", ["type": "number", "minimum": 0])
+		prop("memory_action", ["type": "string", "enum": ["notify", "freeze", "quit", "forcequit"]])
+		prop("low_memory_action", ["type": "string", "enum": ["none", "freeze", "quit"]])
+		prop("include_helpers", ["type": "boolean"])
+		prop("enabled", ["type": "boolean"])
+		prop("ignored", ["type": "boolean"])
+		prop("use_auto", ["type": "boolean"])
+		prop("power", ["type": "string", "enum": ["any", "battery", "charger"]])
+		prop("low_power_mode_only", ["type": "boolean"])
+		prop("hot_only", ["type": "boolean"])
+		prop("schedule", ["type": "string", "pattern": "^(off|\\d{1,2}:\\d{2}-\\d{1,2}:\\d{2})$"])
+		prop("weekdays", ["type": "array", "items": ["type": "integer", "minimum": 1, "maximum": 7]])
+		return p
+	}()
+
+	private func configure(_ args: [String: Any]) -> Outcome {
+		let s = store()
+		let apps = runningApps()
+		let target = args["app"] as? String ?? ""
+		let current = RuleTargets.resolve(target, store: s, apps: apps, create: false)?.conditions.schedule ?? Schedule()
+		let changes: RuleChanges
+		do { changes = try RuleChanges.parse(args, current: current) } catch { return Outcome(text: "\(error)", isError: true) }
+		let auto = UserDefaults.standard.bool(forKey: Prefs.autoEnabled)
+		let pending = AppState.read() == nil ? " (AppWrangler isn't running; applies when it starts)" : ""
+		switch AppSettings.configure(target, changes: changes, store: s, apps: apps) {
+		case .failed(let message):
+			return Outcome(text: message, isError: true)
+		case .removed(let rule):
+			let text = "\(rule.displayName): rule removed — " + (auto ? "Auto mode manages it now." : "no limits (Auto mode is off).") + pending
+			return Outcome(text: text, structured: ["app": rule.displayName, "rule": "none", "managedBy": auto ? "auto" : "nothing"])
+		case .saved(let rule, let before):
+			let managed = AppSettings.managedBy(nil, rule: rule, autoEnabled: auto)
+			return Outcome(text: "\(rule.displayName): \(rule.summary) (was: \(before))" + pending,
+						   structured: ["app": rule.displayName, "rule": rule.summary, "before": before,
+										"settings": AppSettings.settings(rule), "managedBy": managed])
+		}
+	}
+
 	private func setConditions(_ args: [String: Any]) -> Outcome {
 		let s = store()
 		let target = (args["app"] as? String ?? "").lowercased()
@@ -369,11 +453,22 @@ final class MCPServer {
 			let focus = args["focus"].map { " Focus on \($0)." } ?? ""
 			return """
 			Audit my Mac's resource usage with AppWrangler.\(focus)
-			1. Call get_status, list_apps (include_processes: true), list_rules and get_impact_stats (period: week).
+			1. Call get_status, suggest_settings, list_apps (include_processes: true), list_rules and get_impact_stats (period: week).
 			2. Identify what uses the most CPU, memory and energy — especially in the background — and explain in plain words what each of those apps is.
 			3. Judge whether my existing rules are working: compare wanted vs allowed CPU, time held back, savings, and AppWrangler's own cost and limit accuracy.
-			4. Recommend specific changes (new limits, efficiency cores, memory or low-memory actions, conditions such as "only on battery"), each with the reason and expected benefit. Avoid apps marked protected, and be careful with ones marked caution.
-			Don't apply any change until I confirm.
+			4. Recommend specific changes (start from suggest_settings; add your own: new limits, efficiency cores, memory or low-memory actions, conditions such as "only on battery"), each with the reason and expected benefit. Prefer leaving apps to Auto mode over fixed limits that also apply while I use them. Avoid apps marked protected, and be careful with ones marked caution.
+			Show them as a numbered list. Don't apply any change until I confirm; then apply exactly the ones I pick (configure_app) and confirm what changed.
+			"""
+		},
+		Prompt(name: "tune_app", description: "Look at one app, explain what it is and how it's managed, and suggest the best settings for it.",
+			   arguments: [["name": "app", "description": "App name, e.g. Slack", "required": true]]) { args in
+			let app = args["app"] ?? "the app I name"
+			return """
+			Help me tune \(app) with AppWrangler.
+			1. Call get_app_settings for \(app) (and suggest_settings with app: \(app)).
+			2. Tell me in plain words what it is, how much CPU, memory and energy it uses now, whether it's safe to limit, and who manages it (its own rule, Auto mode, or nothing).
+			3. Recommend settings for how I use it (e.g. full speed while focused, efficiency cores in the background, a memory warning, a low-memory freeze unless it's a messaging/calls app), with the reason and expected benefit for each.
+			Don't change anything until I confirm; then apply exactly what I agree to with configure_app and show the before → after.
 			"""
 		},
 		Prompt(name: "explain_impact", description: "Summarise in plain words what AppWrangler has saved and what it cost.",
@@ -388,6 +483,8 @@ final class MCPServer {
 		Auto mode (see get_status → autoMode) keeps the focused app at full speed and manages background apps; \
 		prefer it over fixed limits that also apply while an app is in use. \
 		Use get_status, list_apps, explain_app, list_rules and get_impact_stats to audit and analyse. \
+		When the user asks for advice, call suggest_settings; when they talk about a specific app, call get_app_settings for it \
+		and offer the matching configure_app changes (one call can change any of its settings). \
 		CPU percentages are per core (100 = one full core). Savings in get_impact_stats are estimates. \
 		\(readOnly ? "This server is read-only." : "Changes apply immediately to the running app; ask the user before changing rules, and never limit apps marked protected.")
 		"""

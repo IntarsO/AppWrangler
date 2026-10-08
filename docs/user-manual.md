@@ -1,4 +1,8 @@
-# AppWrangler User Guide
+# AppWrangler User Manual
+
+Everything AppWrangler does, and every setting, explained. New here? Start with [Getting Started](getting-started.md).
+
+This manual is also built into the app (no internet needed). Open it from the **?** button in the panel, **Help & Documentation** in the menu bar icon's right-click menu, the **?** next to any setting, or **⌘?** in an AppWrangler window. See [Help inside the app](#help-inside-the-app).
 
 - [Key ideas](#key-ideas)
 - [Auto mode](#auto-mode)
@@ -15,6 +19,10 @@
 - [Pausing all limits](#pausing-all-limits)
 - [Runaway alerts](#runaway-alerts)
 - [Impact: how much it helped](#impact)
+- [Suggestions: what to change](#suggestions-what-to-change)
+- [Every setting of an app](#every-setting-of-an-app)
+- [Asking an AI assistant](#asking-an-ai-assistant)
+- [Help inside the app](#help-inside-the-app)
 - [Settings window](#settings-window)
 - [Safety](#safety)
 - [Where your data lives](#where-your-data-lives)
@@ -77,7 +85,7 @@ Click the menu bar icon.
 | Search | Matches names, bundle IDs and descriptions. Try "browser", "sync" or "Spotlight". |
 | Sort | By CPU, Memory, Energy or Name. Rows don't reorder while your pointer is over the list or a row is open, so they don't jump around. |
 | Sections | **Apps**, **Menu bar & background apps**, **macOS system services**, **Processes**. Click a header to collapse or expand it. Searching shows matches in every section. |
-| Footer | Number of active rules, **Settings…**, **Quit**. |
+| Footer | Number of active rules and CPU time saved today, **?** (Help), **Settings…**, **Quit**. |
 
 **Row badges:**
 
@@ -252,6 +260,124 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 ---
 
+## Suggestions: what to change
+
+AppWrangler can look at your Mac and recommend settings:
+
+```bash
+appwrangler suggest            # everything
+appwrangler suggest Brave      # just one app
+```
+
+The same suggestions are available to AI assistants through the [MCP server](mcp.md) (`suggest_settings`). They look at what's running right now, memory and swap, your rules, and the last week of [impact statistics](#impact):
+
+| It looks for | What it suggests |
+|---|---|
+| Auto mode is off | Turn it on |
+| The Mac is short of memory (memory pressure, swap or almost-full RAM) | The biggest users, a memory warning for them, and freezing them in the background if memory runs out. Messaging and call apps are never suggested for freezing. For browsers, where to turn on tab sleeping (e.g. Brave: `brave://settings/system` → Memory Saver) |
+| A process or unmanaged app using a lot of CPU in the background | Efficiency cores, or a background-only CPU cap; with Auto off, turning Auto on |
+| A rule whose CPU limit or efficiency cores also apply while you use the app | Make it background-only, or hand the app to Auto mode |
+| A CPU limit that held an app back most of the time last week | A higher limit, or Auto mode |
+| An app that's always over its memory limit | A realistic limit, or, if it already uses most of the RAM, reducing what the app uses |
+| A rule for an app that no longer exists | Removing it |
+
+Each suggestion says **why**, the **expected benefit**, and gives ready commands, for example:
+
+```
+1. [high] Brave Browser uses 9.7 GB — more than this Mac's 8 GB of RAM
+   Why: Your Mac is short of memory and Brave Browser is one of the biggest users.
+   Benefit: Less swapping, so the app you're using stays responsive.
+   Tip: Turn on the browser's tab sleeping: brave://settings/system → Memory Saver.
+   → Freeze it in the background when memory runs out:  appwrangler set "Brave Browser" low_memory_action=freeze
+```
+
+Nothing changes until you run one of the commands (or tell your AI assistant to apply it). CPU readings are taken over about a second, so check again if something looks like a short spike.
+
+---
+
+## Every setting of an app
+
+`appwrangler show <app>` tells you everything about one app:
+
+- what it is and whether it's safe to limit;
+- its CPU, memory and processes right now;
+- **who manages it** (see below) and what Auto mode is doing to it;
+- every setting, and suggestions for it.
+
+`appwrangler set <app> key=value …` changes any of them in one go. Only the settings you name change, and it applies immediately:
+
+```bash
+appwrangler set Slack efficiency_cores=on background_only=true
+appwrangler set "Brave Browser" memory_limit_mb=6144 memory_action=notify low_memory_action=freeze
+appwrangler set Dropbox efficiency_cores=on power=battery
+appwrangler set Slack use_auto=true          # drop Slack's own CPU settings; Auto manages it again
+```
+
+| Setting | Values | Same as in the app |
+|---|---|---|
+| `cpu_limit` | % of one core (100 = one core); `0` = no cap | [Limit CPU](#limit-cpu) |
+| `efficiency_cores` | `on` / `off` | [Efficiency cores only](#efficiency-cores-only) |
+| `background_only` | `true` / `false` | [Only while the app is in the background](#only-while-the-app-is-in-the-background) |
+| `memory_limit_mb` | MB; `0` = no limit | [Memory limit](#memory-limit) |
+| `memory_action` | `notify`, `freeze`, `quit`, `forcequit` | *When exceeded* |
+| `low_memory_action` | `none`, `freeze`, `quit` | [When the Mac is low on memory](#when-the-mac-is-low-on-memory) |
+| `include_helpers` | `true` / `false` | [Include helper processes](#helper-processes) |
+| `enabled` | `true` / `false` | *Rule enabled* |
+| `ignored` | `true` / `false` | [Ignore this app](#ignoring-an-app) |
+| `use_auto` | `true` | Turns off the CPU cap and efficiency cores, so [Auto mode](#auto-mode) manages the app |
+| `power` | `any`, `battery`, `charger` | [When to apply](#when-to-apply-conditions) → Power |
+| `low_power_mode_only` | `true` / `false` | Only in Low Power Mode |
+| `hot_only` | `true` / `false` | Only when the Mac is hot |
+| `schedule` | `09:00-18:00` or `off` | Only during these hours |
+| `weekdays` | e.g. `2,3,4,5,6` (1 = Sunday … 7 = Saturday) | The day buttons under the hours |
+
+A rule is created when you turn something on. When nothing is left (no limits, not ignored), the rule is removed and Auto mode manages the app again. Critical macOS processes are refused.
+
+**Who manages an app:**
+
+| `show` says | Meaning |
+|---|---|
+| auto | Auto mode: full speed while in use, efficiency cores after 30 s in the background, a fair CPU share when the Mac is busy. Memory settings in a rule still apply. |
+| rule | Its own CPU cap or efficiency-core setting; Auto leaves it alone. |
+| rule (memory only) | Only memory settings apply; CPU is unmanaged (Auto is off, or it's a plain process). |
+| ignored | You told AppWrangler to leave it alone. |
+| protected | Critical to macOS; never limited. |
+| nothing | Runs unmanaged. |
+
+---
+
+## Asking an AI assistant
+
+Connect AppWrangler to Claude Desktop, Claude Code, OpenAI Codex or another MCP client ([setup](mcp.md)) and just talk about your Mac:
+
+- *"What's slowing my Mac down?"* The assistant calls `suggest_settings` and explains each suggestion.
+- *"How is Slack set up?"* It calls `get_app_settings`: what Slack is, what it uses now, its settings, and who manages it.
+- *"Make Slack run on efficiency cores only while it's in the background."*
+- *"Warn me when Brave goes over 6 GB, and freeze it in the background if memory runs out."*
+- *"Hand Brave back to Auto mode."* / *"Undo that."*
+- *"How much has AppWrangler saved this week?"*
+
+Changes go through `configure_app`, which takes the same settings as [`appwrangler set`](#every-setting-of-an-app). Assistants ask before changing anything (and your MCP client asks you to approve each change). Run the server with `--read-only` if you only want advice. The built-in prompts **Audit my Mac** (`audit_mac`) and **Tune an app** (`tune_app`) guide the conversation.
+
+---
+
+## Help inside the app
+
+The Help window shows this manual, [Getting Started](getting-started.md), the [command line](cli.md), [AI assistants](mcp.md), the [FAQ](faq.md) and [How it works](how-it-works.md). They're bundled with the app, so they work offline and always match the version you have.
+
+- **Open it:**
+  - the **?** in the panel footer;
+  - **Help & Documentation** in the menu bar icon's right-click menu;
+  - **Settings → About → Open Help**;
+  - **⌘?** while an AppWrangler window is active.
+- **Context help:** the **?** next to a setting opens the manual at the section about it. Settings in the rule editor, the Auto mode line, the sections in Settings → General, and Settings → Impact all have one.
+- **Search:** type in the search box to find every section mentioning your words, across all the pages.
+- Links to other pages open in the Help window; web links open in your browser. **Read online on GitHub** opens the same page on the web.
+
+Standard shortcuts work in AppWrangler's windows: ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields, ⌘W to close, ⌘, for Settings, and ⌘Q to quit.
+
+---
+
 ## Settings window
 
 **App Rules:** every rule, including ones for apps that aren't running.
@@ -279,7 +405,9 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 **Activity:** a log of what AppWrangler did: limits paused, apps frozen, memory limits hit, rules reloaded, permission problems.
 
-**About:** version, links to the documentation, source code, issue tracker and the original AppPolice.
+**About:** version, **Open Help**, and links to the source code, issue tracker and the original AppPolice.
+
+The **?** next to a section in Settings → General opens the matching part of this manual.
 
 ---
 

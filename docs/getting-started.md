@@ -127,4 +127,4 @@ rm -f /opt/homebrew/bin/appwrangler /usr/local/bin/appwrangler ~/.local/bin/appw
 
 ---
 
-**Next:** the [User Guide](user-guide.md) explains every feature in detail. Something not working? See the [FAQ](faq.md).
+**Next:** the [User Manual](user-manual.md) explains every feature in detail, and it's built into the app: click **?** in the panel, or the **?** next to any setting. Want advice? Run `appwrangler suggest` or ask your [AI assistant](mcp.md). Something not working? See the [FAQ](faq.md).

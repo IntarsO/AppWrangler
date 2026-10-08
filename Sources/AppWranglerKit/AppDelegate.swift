@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 			button.setAccessibilityLabel("AppWrangler")
 		}
 
+		installMainMenu()
 		popover.behavior = .transient
 		popover.animates = true
 		popover.delegate = self
@@ -181,7 +182,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
 	@objc private func openSettingsMenu() { showSettings() }
 
-	@objc private func openHelp() { NSWorkspace.shared.open(Links.documentation) }
+	@objc private func openHelp() { HelpCenter.open() }
+
+	/// Menu bar apps show no menu bar, but a main menu still makes the standard
+	/// shortcuts work in our windows: ⌘C/⌘V/⌘A in text fields, ⌘W, ⌘? for Help.
+	private func installMainMenu() {
+		let main = NSMenu()
+		func submenu(_ title: String, _ items: [NSMenuItem]) {
+			let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+			let menu = NSMenu(title: title)
+			items.forEach(menu.addItem)
+			holder.submenu = menu
+			main.addItem(holder)
+		}
+		func item(_ title: String, _ action: Selector?, _ key: String, _ mods: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) -> NSMenuItem {
+			let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+			i.keyEquivalentModifierMask = mods
+			i.target = target
+			return i
+		}
+		submenu("AppWrangler", [
+			item(L("Settings…"), #selector(openSettingsMenu), ",", target: self),
+			item(L("Quit AppWrangler"), #selector(NSApplication.terminate(_:)), "q"),
+		])
+		submenu(L("Edit"), [
+			item(L("Undo"), Selector(("undo:")), "z"),
+			item(L("Redo"), Selector(("redo:")), "z", [.command, .shift]),
+			.separator(),
+			item(L("Cut"), #selector(NSText.cut(_:)), "x"),
+			item(L("Copy"), #selector(NSText.copy(_:)), "c"),
+			item(L("Paste"), #selector(NSText.paste(_:)), "v"),
+			item(L("Select All"), #selector(NSText.selectAll(_:)), "a"),
+		])
+		submenu(L("Window"), [
+			item(L("Close Window"), #selector(NSWindow.performClose(_:)), "w"),
+			item(L("Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
+		])
+		submenu(L("Help"), [item(L("AppWrangler Help"), #selector(openHelp), "?", target: self)])
+		NSApp.mainMenu = main
+	}
 
 	// MARK: Popover
 

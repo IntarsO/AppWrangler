@@ -345,3 +345,31 @@
 "Last hour" = "Последний час";
 "…of which by efficiency cores" = "…из них энергоэффективными ядрами";
 "Efficiency cores: the same work on performance cores takes about 4.5× the energy (measured on an M1), so energy used on the E-cores is credited with 3.5× that as saved." = "Энергоэффективные ядра: та же работа на производительных ядрах требует примерно в 4,5 раза больше энергии (измерено на M1), поэтому за энергию, потраченную на E-ядрах, засчитывается экономия в 3,5 раза больше.";
+
+/* Help */
+"AppWrangler Help" = "Справка AppWrangler";
+"Help" = "Справка";
+"Open Help" = "Открыть справку";
+"Open Help for this" = "Открыть справку по этому пункту";
+"Search help" = "Поиск по справке";
+"No results" = "Ничего не найдено";
+"Read online on GitHub" = "Читать на GitHub";
+"This page isn't included in this build. Read it online:" = "Этой страницы нет в данной сборке. Читайте онлайн:";
+"Getting Started" = "Начало работы";
+"User Manual" = "Руководство пользователя";
+"AI Assistants (MCP)" = "ИИ-ассистенты (MCP)";
+"Command Line" = "Командная строка";
+"FAQ" = "Вопросы и ответы";
+"How It Works" = "Как это работает";
+
+/* Main menu */
+"Edit" = "Правка";
+"Undo" = "Отменить";
+"Redo" = "Повторить";
+"Cut" = "Вырезать";
+"Copy" = "Скопировать";
+"Paste" = "Вставить";
+"Select All" = "Выбрать всё";
+"Window" = "Окно";
+"Close Window" = "Закрыть окно";
+"Minimize" = "Свернуть";

@@ -49,6 +49,7 @@ enum CLI {
 	static let commands: Set<String> = [
 		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
+		"suggest", "show", "set",
 	]
 
 	static func isInvocation(_ args: [String]) -> Bool {
@@ -87,18 +88,7 @@ enum CLI {
 
 		/// Find (or create) the rule for a user-supplied app name.
 		func ruleFor(_ target: String, create: Bool) -> AppRule? {
-			let t = target.lowercased()
-			if let existing = store.rules.first(where: { $0.displayName.lowercased() == t || $0.matchValue.lowercased() == t }) {
-				return existing
-			}
-			guard create else { return nil }
-			if let app = apps.first(where: { $0.name.lowercased() == t || $0.bundleID?.lowercased() == t }) {
-				if let bundleID = app.bundleID { return AppRule(matchKind: .bundleID, matchValue: bundleID, displayName: app.name) }
-				if let path = app.bundlePath { return AppRule(matchKind: .path, matchValue: path, displayName: app.name) }
-			}
-			if target.contains("*") || target.contains("?") { return AppRule(matchKind: .pattern, matchValue: target, displayName: target) }
-			if target.hasPrefix("/") { return AppRule(matchKind: .path, matchValue: target, displayName: (target as NSString).lastPathComponent) }
-			return AppRule(matchKind: .name, matchValue: target, displayName: target)
+			RuleTargets.resolve(target, store: store, apps: apps, create: create)
 		}
 
 		func save(_ rule: AppRule, _ message: String) -> Int32 {
@@ -214,8 +204,47 @@ enum CLI {
 				}
 			}
 			print("")
-			print("  Savings are estimates (see docs/user-guide.md#impact). Updated by the running app every 30 s.")
+			print("  Savings are estimates (see docs/user-manual.md#impact). Updated by the running app every 30 s.")
 			return 0
+
+		case "suggest":
+			let json = rest.contains("--json")
+			let app = rest.first { !$0.hasPrefix("--") }
+			let input = SuggestionInput.current(groups: Reports.sampleGroups(apps: apps), store: store,
+												frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
+			let list = Suggestions.make(input, app: app)
+			print(json ? Reports.json(list.map(\.json)) : Suggestions.text(list))
+			return 0
+
+		case "show":
+			guard let target = rest.first(where: { !$0.hasPrefix("--") }) else { return fail("usage: show <app> [--json]") }
+			let input = SuggestionInput.current(groups: Reports.sampleGroups(apps: apps), store: store,
+												frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
+			guard let report = Reports.appSettings(target, store: store, apps: apps, input: input) else {
+				return fail("\(target) isn't running and has no rule")
+			}
+			if rest.contains("--json") { print(Reports.json(report)); return 0 }
+			print(showText(report))
+			return 0
+
+		case "set":
+			guard rest.count >= 2 else {
+				return fail("usage: set <app> key=value …   keys: " + RuleChanges.keys.map(\.key).joined(separator: ", "))
+			}
+			let current = ruleFor(rest[0], create: false)?.conditions.schedule ?? Schedule()
+			let changes: RuleChanges
+			do { changes = try RuleChanges.parse(cli: Array(rest.dropFirst()), current: current) } catch { return fail("\(error)") }
+			switch AppSettings.configure(rest[0], changes: changes, store: store, apps: apps) {
+			case .failed(let message):
+				return fail(message)
+			case .removed(let rule):
+				print("\(rule.displayName): rule removed — " + (UserDefaults.standard.bool(forKey: Prefs.autoEnabled) ? "Auto mode manages it" : "no limits"))
+				return 0
+			case .saved(let rule, let before):
+				print("\(rule.displayName): \(rule.summary)  (was: \(before))"
+					  + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
+				return 0
+			}
 
 		case "limit":
 			guard rest.count >= 2, let percent = Double(rest[1].replacingOccurrences(of: "%", with: "")), percent.isFinite, percent >= 1 else {
@@ -312,6 +341,46 @@ enum CLI {
 		}
 	}
 
+	/// Human-readable `show` output.
+	static func showText(_ r: [String: Any]) -> String {
+		var lines: [String] = []
+		let name = r["app"] as? String ?? "?"
+		if let u = r["usage"] as? [String: Any] {
+			lines.append("\(name) — \(u["description"] as? String ?? "")")
+			lines.append(String(format: "  Now: %.1f%% CPU, %@ memory, %d processes", u["cpuPercent"] as? Double ?? 0,
+								Fmt.megabytes(u["memoryMB"] as? Double ?? 0), u["processes"] as? Int ?? 0))
+			lines.append("  Safety: \(u["safety"] as? String ?? "")")
+		} else {
+			lines.append("\(name) — not running")
+		}
+		lines.append("  Managed by: \(r["managedBy"] as? String ?? "") — \(r["managedByMeaning"] as? String ?? "")")
+		if let auto = r["autoState"] as? String { lines.append("  Auto mode: \(auto)") }
+		lines.append("  Rule: \(r["rule"] as? String ?? "")" + ((r["matchedBy"] as? String).map { "   [\($0)]" } ?? ""))
+		lines.append("")
+		lines.append("  Settings (change with: appwrangler set \(Suggestions.quoted(name)) key=value …)")
+		let settings = r["settings"] as? [String: Any] ?? [:]
+		for (key, _) in RuleChanges.keys where settings[key] != nil || key == "use_auto" {
+			guard key != "use_auto" else { continue }
+			let value = settings[key].map { v -> String in
+				if let a = v as? [Int] { return a.map(String.init).joined(separator: ",") }
+				if let d = v as? Double { return d == d.rounded() ? String(Int(d)) : String(d) }
+				return "\(v)"
+			} ?? ""
+			lines.append("    " + key.padding(toLength: 20, withPad: " ", startingAt: 0) + value)
+		}
+		if let suggestions = r["suggestions"] as? [[String: Any]], !suggestions.isEmpty {
+			lines.append("")
+			lines.append("  Suggestions:")
+			for s in suggestions {
+				lines.append("    • \(s["title"] as? String ?? "")")
+				for a in s["actions"] as? [[String: Any]] ?? [] {
+					lines.append("      → \(a["label"] as? String ?? ""):  \(a["cli"] as? String ?? "")")
+				}
+			}
+		}
+		return lines.joined(separator: "\n")
+	}
+
 	static let usage = """
 	AppWrangler — per-app CPU, efficiency-core and memory limits
 
@@ -319,6 +388,10 @@ enum CLI {
 
 	  list [--all] [--json]          running apps with CPU, memory and what they are
 	  rules                          show saved rules
+	  suggest [app] [--json]         recommended settings for what's running, with ready commands
+	  show <app> [--json]            what an app is, its usage, every setting, and suggestions
+	  set <app> key=value …          change any setting, e.g. set Slack efficiency_cores=on
+	                                 background_only=true   (run `set` alone to list the keys)
 	  status                         running? paused? what's frozen or hogging the CPU
 	  stats [hour|today|week|month] [--json]  how much CPU/energy was saved, and what it cost
 	  auto [on|off]                  Auto mode: full speed for the app you use, efficiency for the rest

@@ -53,7 +53,7 @@ import Testing
 			((self.call(s, 1, "tools/list")["result"] as! [String: Any])["tools"] as! [[String: Any]]).map { $0["name"] as! String }
 		}
 		let ro = names(server(readOnly: true))
-		#expect(Set(ro) == ["get_status", "list_apps", "explain_app", "get_impact_stats", "list_rules"])
+		#expect(Set(ro) == ["get_status", "list_apps", "explain_app", "get_impact_stats", "list_rules", "suggest_settings", "get_app_settings"])
 		#expect(names(server()).contains("set_cpu_limit"))
 	}
 
@@ -113,7 +113,7 @@ import Testing
 	@Test func promptsGuideAnAudit() {
 		let s = server()
 		let list = (call(s, 1, "prompts/list")["result"] as! [String: Any])["prompts"] as! [[String: Any]]
-		#expect(list.map { $0["name"] as! String } == ["audit_mac", "explain_impact"])
+		#expect(list.map { $0["name"] as! String } == ["audit_mac", "tune_app", "explain_impact"])
 		let got = call(s, 2, "prompts/get", ["name": "audit_mac", "arguments": ["focus": "battery"]])["result"] as! [String: Any]
 		let text = (((got["messages"] as! [[String: Any]])[0]["content"]) as! [String: Any])["text"] as! String
 		#expect(text.contains("Focus on battery"))

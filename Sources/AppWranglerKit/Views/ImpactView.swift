@@ -27,6 +27,7 @@ struct ImpactView: View {
 					.pickerStyle(.segmented)
 					.frame(maxWidth: 300)
 					Spacer()
+					HelpButton(anchor: "impact")
 					Button(L("Reset Statistics…")) { confirmReset = true }
 						.confirmationDialog(L("Reset all impact statistics?"), isPresented: $confirmReset) {
 							Button(L("Reset"), role: .destructive) { stats.reset() }
