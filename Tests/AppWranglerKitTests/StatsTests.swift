@@ -166,3 +166,41 @@ import Testing
 		#expect(Fmt.energy(360) == "100 mWh")
 	}
 }
+
+@Suite struct MemoryStatsTests {
+	let dir = FileManager.default.temporaryDirectory.appendingPathComponent("AppWranglerMemStats-\(UUID().uuidString)")
+	let noon = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 10, day: 8, hour: 12).date!
+	private func store() -> StatsStore { StatsStore(directory: dir, calendar: Calendar(identifier: .gregorian)) }
+
+	@Test func memoryPressureSwapAndFreezesAreRecorded() {
+		let s = store()
+		// 60 s fine, then 120 s short of memory (60 s of it critical) reading back 30 MB of swap.
+		s.record([], selfCPU: 0, selfFootprint: 0, dt: 60, at: noon,
+				 memory: MemorySample(pressure: 1, swapUsedBytes: 1_000_000_000, swapInBytes: 1_000_000, memoryFrozenApps: 0))
+		s.record([], selfCPU: 0, selfFootprint: 0, dt: 60, at: noon,
+				 memory: MemorySample(pressure: 2, swapUsedBytes: 3_000_000_000, swapInBytes: 10_000_000, memoryFrozenApps: 2))
+		s.record([], selfCPU: 0, selfFootprint: 0, dt: 60, at: noon,
+				 memory: MemorySample(pressure: 4, swapUsedBytes: 2_000_000_000, swapInBytes: 20_000_000, memoryFrozenApps: 1))
+		s.record(.memoryFreeze(bytes: 800_000_000), key: "bundle:x", name: "X", at: noon)
+		let m = s.summary(days: 1, now: noon).memory
+		#expect(m.measuredSeconds == 180 && m.shortSeconds == 120 && m.criticalSeconds == 60)
+		#expect(m.swapPeakBytes == 3_000_000_000)
+		#expect(m.swapInBytes == 31_000_000 && m.swapInBytesWhileShort == 30_000_000)
+		#expect(m.frozenAppSeconds == 180)
+		#expect(m.freezes == 1 && m.frozenBytes == 800_000_000)
+		#expect(m.swapInPerShortHour.map { abs($0 - 900_000_000) < 1 } == true, "30 MB over 2 min = 900 MB/h")
+		#expect(s.summary(hours: 1, now: noon).memory.shortSeconds == 120, "the last-hour view too")
+	}
+
+	@Test func statsWithoutMemoryStillLoadAndPersist() throws {
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		let old = #"{"version":1,"days":[{"day":"2026-10-08","apps":{},"selfCPUSeconds":1,"uptimeSeconds":10,"selfFootprintSum":0,"selfFootprintSamples":0,"selfFootprintPeak":0,"accuracyErrorSum":0,"accuracyWeight":0,"runawayAlerts":0}]}"#
+		try Data(old.utf8).write(to: dir.appendingPathComponent("stats.json"))
+		let s = store()
+		#expect(s.summary(days: 1, now: noon).uptimeSeconds == 10, "1.x stats load")
+		s.record([], selfCPU: 0, selfFootprint: 0, dt: 30, at: noon,
+				 memory: MemorySample(pressure: 2, swapUsedBytes: 5, swapInBytes: 0, memoryFrozenApps: 0))
+		s.flush()
+		#expect(store().summary(days: 1, now: noon).memory.shortSeconds == 30)
+	}
+}

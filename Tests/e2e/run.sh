@@ -258,6 +258,10 @@ sleep 0.5
 start_app
 cli freeze $BURNER
 for _ in $(seq 20); do [ "$(state "$B")" = "T" ] && break; sleep 0.25; done
+# The watchdog runs under its own name, so `killall AppWrangler` can't take it down too.
+dog=$(pgrep -P "$APP" | head -1)
+[ -n "$dog" ] && [ "$(basename "$(ps -o comm= -p "$dog")")" = "AppWranglerWatchdog" ] \
+	&& ok "the watchdog runs as its own process (AppWranglerWatchdog)" || bad "watchdog name: $(ps -o comm= -p "$dog" 2>/dev/null)"
 kill -9 "$APP"; wait "$APP" 2>/dev/null; APP=""
 thawed=no
 for _ in $(seq 20); do [ "$(state "$B")" != "T" ] && { thawed=yes; break; }; sleep 0.1; done

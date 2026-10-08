@@ -424,6 +424,10 @@ final class RuleStore: ObservableObject {
 	private var saveWork: DispatchWorkItem?
 	private var loading = false
 	private var lastWritten: Data?
+	/// The rules as last read from or written to disk; a save applies only what
+	/// changed since, on top of the file as it is then (another process may have
+	/// written it meanwhile: the app, the CLI, an MCP server).
+	private var baseline: [AppRule] = []
 	private var lastSeenModification: Date?
 	private var watcher: DispatchSourceFileSystemObject?
 	private let ioQueue = DispatchQueue(label: "AppWrangler.rules.io", qos: .utility)
@@ -506,6 +510,7 @@ final class RuleStore: ObservableObject {
 		   let decoded = try? JSONDecoder().decode([AppRule].self, from: data) {
 			loading = true
 			rules = decoded
+			baseline = decoded
 			loading = false
 			return
 		}
@@ -524,8 +529,23 @@ final class RuleStore: ObservableObject {
 		else { return false }
 		loading = true
 		rules = decoded
+		baseline = decoded
 		loading = false
 		return true
+	}
+
+	/// `disk` plus whatever `local` added, changed or removed relative to `base`.
+	static func merge(local: [AppRule], base: [AppRule], disk: [AppRule]) -> [AppRule] {
+		var result = disk
+		let baseByID = Dictionary(base.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+		for rule in local where baseByID[rule.id] != rule {
+			if let i = result.firstIndex(where: { $0.id == rule.id }) { result[i] = rule } else { result.append(rule) }
+		}
+		let localIDs = Set(local.map(\.id))
+		for rule in base where !localIDs.contains(rule.id) {
+			result.removeAll { $0.id == rule.id }
+		}
+		return result
 	}
 
 	/// AppPolice 1.x stored `{ "App Name": fraction }` under APApplicationLimits.
@@ -556,11 +576,42 @@ final class RuleStore: ObservableObject {
 
 	private func write(sync: Bool) {
 		saveWork = nil
-		guard let data = Self.encode(rules) else { return }
-		lastWritten = data
-		let url = fileURL
-		let job: () -> Void = { try? data.write(to: url, options: .atomic) }
-		if sync { ioQueue.sync(execute: job) } else { ioQueue.async(execute: job) }
+		let local = rules, base = baseline, url = fileURL
+		let lockPath = fileURL.deletingLastPathComponent().appendingPathComponent(".rules.lock").path
+		// Under a lock shared by every AppWrangler process: read what's on disk now,
+		// apply our own changes to it, write.
+		let merge: () -> ([AppRule], Data?) = {
+			let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+			if fd >= 0 { flock(fd, LOCK_EX) }
+			defer { if fd >= 0 { flock(fd, LOCK_UN); close(fd) } }
+			let disk = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([AppRule].self, from: $0) } ?? base
+			let merged = Self.merge(local: local, base: base, disk: disk)
+			guard let data = Self.encode(merged) else { return (merged, nil) }
+			try? data.write(to: url, options: .atomic)
+			return (merged, data)
+		}
+		// Back on the main queue: adopt others' changes, keeping edits made since.
+		let adopt: ([AppRule], Data?) -> Void = { [weak self] merged, data in
+			guard let self else { return }
+			if let data { self.lastWritten = data }
+			let current = Self.merge(local: self.rules, base: local, disk: merged)
+			self.baseline = merged
+			if current != self.rules {
+				self.loading = true
+				self.rules = current
+				self.loading = false
+				self.onExternalChange?()
+			}
+		}
+		if sync {
+			let (merged, data) = ioQueue.sync(execute: merge)
+			adopt(merged, data)
+		} else {
+			ioQueue.async {
+				let (merged, data) = merge()
+				DispatchQueue.main.async { adopt(merged, data) }
+			}
+		}
 	}
 
 	/// Flush pending changes to disk now (quit, CLI, tests).

@@ -104,6 +104,16 @@ struct SuggestionInput {
 }
 
 enum Swap {
+	/// Everything read back from swap since boot, in bytes (the kernel's swap-in counter).
+	static var swapInBytesTotal: Double {
+		var info = vm_statistics64()
+		var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+		let result = withUnsafeMutablePointer(to: &info) {
+			$0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
+		}
+		return result == KERN_SUCCESS ? Double(info.swapins) * Double(vm_kernel_page_size) : 0
+	}
+
 	static var usedBytes: UInt64 {
 		var usage = xsw_usage()
 		var size = MemoryLayout<xsw_usage>.size

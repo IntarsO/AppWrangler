@@ -62,7 +62,7 @@ macOS passes the efficiency-core (background) policy on to processes an app star
 macOS doesn't allow hard memory caps on other apps. AppWrangler *reacts* when the app stays over the limit for two measurements (about 4 seconds with the panel closed) by notifying you, freezing, quitting or force-quitting it. Choose **Freeze** or **Quit** if you want it enforced.
 
 ### An app is stuck "not responding" after AppWrangler stopped
-That shouldn't happen any more. AppWrangler releases paused and efficiency-core apps when it quits, crashes or is killed. A small watchdog process (a second "AppWrangler" in Activity Monitor) restores everything even after `kill -9`, then exits. If an app is ever left suspended anyway:
+That shouldn't happen any more. AppWrangler releases paused and efficiency-core apps when it quits, crashes or is killed. A small watchdog process (**AppWranglerWatchdog** in Activity Monitor) restores everything even after `kill -9` or `killall -9 AppWrangler`, then exits. If an app is ever left suspended anyway:
 
 ```bash
 kill -CONT <pid-of-the-app>          # or: killall -CONT "App Name"

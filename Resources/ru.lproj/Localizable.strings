@@ -474,3 +474,12 @@
 "Copy Bundle ID" = "Скопировать Bundle ID";
 "With the window closed AppWrangler measures apps that have rules and, while Auto mode is on, every app (not plain processes), plus a light scan every 5 s for runaway apps. With nothing to do it stops sampling." = "Когда окно закрыто, AppWrangler измеряет приложения с правилами, а при включённом авторежиме — все приложения (кроме обычных процессов), плюс лёгкая проверка каждые 5 с на «прожорливые» приложения. Когда делать нечего, измерения прекращаются.";
 "Control AppWrangler from Terminal. Installed with Homebrew? `appwrangler` is already on your PATH. Otherwise add it once:" = "Управляйте AppWrangler из Терминала. Установили через Homebrew? Команда `appwrangler` уже доступна. Иначе добавьте её один раз:";
+
+/* Impact: memory */
+"Short of memory" = "Не хватало памяти";
+"Peak swap" = "Пик подкачки";
+"Read back from swap" = "Прочитано из подкачки";
+"Apps frozen for memory" = "Заморожено ради памяти";
+"%d · held %@" = "%d · занимали %@";
+"Time frozen for memory" = "Время заморозки ради памяти";
+"While short of memory the Mac read back %@ from swap per hour. Lower is better: compare days with idle freezing on and off to see how much it helps on this Mac." = "Пока не хватало памяти, Mac читал из подкачки %@ в час. Чем меньше, тем лучше: сравните дни с заморозкой неиспользуемых приложений и без неё, чтобы увидеть, насколько она помогает на этом Mac.";

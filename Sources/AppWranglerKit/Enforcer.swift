@@ -432,6 +432,9 @@ final class Enforcer {
 
 	// MARK: Manual actions
 
+	/// Called whenever an app is frozen (for statistics).
+	var onFreeze: ((AppGroup, FreezeReason) -> Void)?
+
 	func freeze(_ group: AppGroup, reason: FreezeReason = .manual) {
 		guard !Protected.contains(group), group.ownerPid != getpid() else { return }
 		// Never stop a shell's foreground job: the shell would treat it as suspended.
@@ -449,6 +452,7 @@ final class Enforcer {
 		let gid = gid(for: group.id)
 		controller.setGroup(gid, pids: pids, limit: 0, frozen: true)
 		applied[gid] = Applied(pids: pids, limit: 0, frozen: true)
+		onFreeze?(group, reason)
 	}
 
 	private func clearFrozen(_ id: String) {

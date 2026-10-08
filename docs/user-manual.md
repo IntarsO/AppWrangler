@@ -297,6 +297,18 @@ Each app is flagged at most once an hour. `appwrangler undo` reverts what these 
 
 A daily bar chart shows CPU time saved per day.
 
+**Memory:** how your Mac's memory fared, and what was frozen because of it:
+
+| Number | Meaning |
+|---|---|
+| **Short of memory** | Time memory pressure was at *warning* or worse, and the share of the measured time |
+| **Peak swap** | The most swap in use at once |
+| **Read back from swap** | Data macOS had to read back from disk because memory was short. This is what makes a Mac feel sluggish; lower is better |
+| **Apps frozen for memory** | How many apps were frozen because of memory (low memory, idle freezing, [Free memory now](#free-memory-now)), and how much memory they held |
+| **Time frozen for memory** | How long those apps stayed frozen, added up |
+
+The figure to watch is **swap read back per hour while short of memory**. Try a few days with [idle freezing](#auto-mode) on and a few with it off: if the number drops with it on, freezing idle apps is helping your Mac.
+
 **What AppWrangler cost:**
 - its average CPU use and total CPU time;
 - its memory (average and peak);
@@ -546,7 +558,8 @@ The **?** next to a section in Settings → General opens the matching part of t
 
 ## Safety
 
-- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or any kind of kill (even `kill -9 <pid>`) releases every app AppWrangler had paused or moved to the efficiency cores. A tiny watchdog process takes care of the cases AppWrangler can't handle itself. The watchdog is also called "AppWrangler", so `killall -9 AppWrangler` stops both at once and nothing is left to release the apps. Use Quit, or `kill` the main process by pid.
+- **Nothing stays frozen if AppWrangler stops.** Quitting, a crash, or any kind of kill (even `kill -9` or `killall -9 AppWrangler`) releases every app AppWrangler had paused or moved to the efficiency cores. A tiny watchdog process, **AppWranglerWatchdog**, takes care of the cases AppWrangler can't handle itself. It has its own name, so killing AppWrangler can't take it down too.
+- **Edits from several places don't overwrite each other.** The window, the command line and AI assistants can change rules at the same moment; each change is merged into the rules file rather than replacing it.
 - **Terminal jobs are left running.** A command in a terminal's foreground is never paused, because the shell would suspend it. Efficiency cores still apply.
 - **Critical processes are protected.** WindowServer, loginwindow, the Dock, Control Center, launchd and other session-critical processes can't be limited or frozen.
 - **Your processes only.** Like any normal app, AppWrangler can only control processes running as your user.
@@ -565,7 +578,7 @@ The **?** next to a section in Settings → General opens the matching part of t
 | Recent per-app averages (for suggestions) | `~/Library/Application Support/AppWrangler/usage.json` (rewritten every minute) |
 | What the widget shows | `~/Library/Application Support/AppWrangler/widget.json` (rewritten every minute) |
 | Undo history | `~/Library/Application Support/AppWrangler/changes.json` (last 50 changes) |
-| Single-instance lock | `~/Library/Application Support/AppWrangler/.lock` |
+| Locks | `.lock` (one AppWrangler at a time), `.rules.lock` and `.changes.lock` (safe concurrent edits) in the same folder |
 | Preferences | `defaults read io.github.intarso.AppWrangler` |
 
 On first launch AppWrangler imports rules from AppPolice 2.x (`~/Library/Application Support/AppPolice/`) and limits saved by AppPolice 1.x.

@@ -27,6 +27,7 @@ This is a tour of the internals for curious users and contributors.
 | `appwrangler mcp install` (Claude / Codex config files) | `Sources/AppWranglerKit/MCPInstaller.swift` |
 | In-app Help (Markdown → HTML in a web view) | `Markdown.swift`, `Views/HelpView.swift` |
 | Desktop widget (sandboxed WidgetKit extension; reads `widget.json`) | `Widget/AppWranglerWidget.swift` + `WidgetSnapshot.swift` |
+| Watchdog helper (restores apps if AppWrangler dies; maps the shared tables from an inherited fd) | `Sources/AppWranglerWatchdog/main.c` → `pk_watchdog_main` |
 | Entry point (app or CLI) | `Sources/AppWrangler/main.swift` → `AppWranglerMain.run()` |
 
 Almost everything lives in the `AppWranglerKit` library, so tests can `@testable import` it; the executable is two lines.
@@ -81,7 +82,7 @@ The C module keeps a lock-free table of every PID it has stopped. Several things
 
 The handler is async-signal-safe: atomics, `kill` and `setpriority` only.
 
-The tables live in memory shared with a **watchdog**: a process forked at launch that waits on a pipe. When AppWrangler dies in any way, including `SIGKILL`, the pipe closes. The watchdog then resumes every stopped pid and restores efficiency-core pids and their children, then exits. Release is terminal: it sets a shutdown flag that the limiter checks before *and after* each stop, so a stop racing with the exit can't leave an app suspended.
+The tables live in an unnamed shared-memory object, shared with a **watchdog**. At launch AppWrangler forks, and the child execs the small `AppWranglerWatchdog` helper, which maps the same tables from the inherited file descriptor and waits on a pipe. It's a separate executable so it has its own process name: `killall AppWrangler` can't take it down too. Development builds without the helper fall back to a plain fork. When AppWrangler dies in any way, including `SIGKILL`, the pipe closes. The watchdog then resumes every stopped pid and restores efficiency-core pids and their children, then exits. Release is terminal: it sets a shutdown flag that the limiter checks before *and after* each stop, so a stop racing with the exit can't leave an app suspended.
 
 Session-critical processes are on a protected list. An `flock` on the data folder ensures one instance.
 

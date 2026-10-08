@@ -78,6 +78,14 @@ enum Reports {
 			"apps": apps,
 			"daily": s.daily.map { ["day": $0.day, "savedCPUSeconds": $0.savedCPUSeconds] },
 		]
+		let m = s.memory
+		var memory: [String: Any] = [
+			"measuredSeconds": m.measuredSeconds, "shortOfMemorySeconds": m.shortSeconds, "criticalSeconds": m.criticalSeconds,
+			"swapPeakBytes": m.swapPeakBytes, "swapReadBytes": m.swapInBytes, "swapReadBytesWhileShort": m.swapInBytesWhileShort,
+			"appsFrozenForMemory": m.freezes, "memoryHeldByFrozenAppsBytes": m.frozenBytes, "frozenForMemoryAppSeconds": m.frozenAppSeconds,
+		]
+		if let perHour = m.swapInPerShortHour { memory["swapReadBytesPerShortHour"] = perHour }
+		out["memory"] = memory
 		if let acc = s.accuracyError { out["limitAccuracy"] = acc }
 		if let ratio = s.efficiencyRatio { out["efficiencyRatio"] = ratio }
 		if let wh = Battery.capacityWh { out["batteryCapacityWh"] = wh }

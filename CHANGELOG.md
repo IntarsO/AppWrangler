@@ -2,6 +2,21 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Memory in Impact.** Impact (and `appwrangler stats`, MCP `get_impact_stats`) shows:
+  - time the Mac was short of memory, and peak swap;
+  - how much macOS had to read back from swap (also per hour of memory shortage);
+  - how many apps were frozen for memory, and the memory they held.
+
+  Compare days with idle freezing on and off to see whether it helps your Mac.
+- **One-command releases.** `scripts/release.sh X.Y.Z` tags a release. GitHub Actions then tests, builds, publishes it with notes from the CHANGELOG, and updates the Homebrew cask. A manual dry run builds without publishing.
+
+### Changed
+- **The watchdog is its own process, `AppWranglerWatchdog`,** so `killall -9 AppWrangler` can no longer take it down too and leave apps frozen.
+- **Rule edits from several places are merged.** Edits from the window, the CLI and AI assistants at the same moment are applied under a lock, instead of the last writer replacing the file.
+
 ## [1.3.0] — 2026-10-08
 
 ### Added

@@ -148,6 +148,9 @@ void pk_release_all_reset_for_testing(void);
    first thing in main, before other threads exist. */
 void pk_install_safety_handlers(void);
 
+/* main() of the AppWranglerWatchdog helper that pk_install_safety_handlers starts. */
+int pk_watchdog_main(int argc, char **argv);
+
 /* True for a shell's foreground job (SIGSTOP would suspend it as a job). */
 int pk_is_terminal_foreground(pid_t pid);
 

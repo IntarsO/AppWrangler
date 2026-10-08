@@ -20,6 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <mach-o/dyld.h>
+#include <stdio.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sysctl.h>
@@ -217,10 +220,29 @@ typedef struct {
 } pk_tables_t;
 
 static pk_tables_t *g_tables;
+/* The tables' shared-memory object, inherited by the watchdog across exec. */
+static int g_tables_fd = -1;
 
 static pk_tables_t *pk_tables(void) {
 	static dispatch_once_t once;
 	dispatch_once(&once, ^{
+		/* An unnamed shared-memory object (created, then unlinked at once), so a
+		   separate watchdog executable can map the same tables from the fd. */
+		char name[32];
+		snprintf(name, sizeof(name), "/awt.%d.%u", (int)getpid(), arc4random());
+		int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+		if (fd >= 0) {
+			shm_unlink(name);
+			if (ftruncate(fd, (off_t)sizeof(pk_tables_t)) == 0) {
+				void *m = mmap(NULL, sizeof(pk_tables_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+				if (m != MAP_FAILED) {
+					g_tables = m;
+					g_tables_fd = fd;
+					return;
+				}
+			}
+			close(fd);
+		}
 		void *m = mmap(NULL, sizeof(pk_tables_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
 		g_tables = (m == MAP_FAILED) ? calloc(1, sizeof(pk_tables_t)) : m;
 	});
@@ -809,10 +831,42 @@ static void pk_watchdog(int fd, pk_tables_t *t) {
 	_exit(0);
 }
 
+/* Entry point of the AppWranglerWatchdog helper:
+   AppWranglerWatchdog --watch <pipe fd> <tables fd> */
+int pk_watchdog_main(int argc, char **argv) {
+	if (argc != 4 || strcmp(argv[1], "--watch") != 0) {
+		fprintf(stderr, "AppWranglerWatchdog is started by AppWrangler; it isn't meant to be run by hand.\n");
+		return 2;
+	}
+	int pipe_fd = atoi(argv[2]), tables_fd = atoi(argv[3]);
+	void *m = mmap(NULL, sizeof(pk_tables_t), PROT_READ | PROT_WRITE, MAP_SHARED, tables_fd, 0);
+	if (m == MAP_FAILED) {
+		perror("AppWranglerWatchdog: mmap");
+		return 1;
+	}
+	pk_watchdog(pipe_fd, (pk_tables_t *)m);
+	return 0;
+}
+
 void pk_install_safety_handlers(void) {
 	pk_tables_t *t = pk_tables();
 	pk_install_handlers();
 	atexit(pk_release_all);
+
+	/* The watchdog runs as its own executable (AppWranglerWatchdog, next to the
+	   app's binary) so `killall AppWrangler` can't take it down with the app.
+	   Without it (development builds) it's a plain fork of this process. */
+	char helper[PATH_MAX] = {0}, exe[PATH_MAX], real[PATH_MAX];
+	uint32_t size = sizeof(exe);
+	if (g_tables_fd >= 0 && _NSGetExecutablePath(exe, &size) == 0 && realpath(exe, real)) {
+		char *slash = strrchr(real, '/');
+		if (slash) {
+			*slash = 0;
+			snprintf(helper, sizeof(helper), "%s/AppWranglerWatchdog", real);
+			if (access(helper, X_OK) != 0)
+				helper[0] = 0;
+		}
+	}
 
 	/* Watchdog: holds the read end of a pipe; when every write end closes
 	   (AppWrangler exited, crashed or was SIGKILLed) read() returns 0. */
@@ -822,6 +876,16 @@ void pk_install_safety_handlers(void) {
 	pid_t child = fork();
 	if (child == 0) {
 		close(fds[1]);
+		if (helper[0]) {
+			char pipe_arg[16], tables_arg[16];
+			snprintf(pipe_arg, sizeof(pipe_arg), "%d", fds[0]);
+			snprintf(tables_arg, sizeof(tables_arg), "%d", g_tables_fd);
+			char *args[] = { helper, "--watch", pipe_arg, tables_arg, NULL };
+			/* shm_open's descriptor is close-on-exec; the helper needs it. */
+			fcntl(g_tables_fd, F_SETFD, 0);
+			execv(helper, args);
+			/* exec failed: carry on as a plain fork. */
+		}
 		pk_watchdog(fds[0], t);
 	}
 	close(fds[0]);
@@ -829,8 +893,10 @@ void pk_install_safety_handlers(void) {
 		close(fds[1]);
 		return;
 	}
-	/* Don't leak the write end into processes we spawn, or they'd keep it open. */
+	/* Don't leak the write end (or the tables) into processes we spawn. */
 	fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+	if (g_tables_fd >= 0)
+		fcntl(g_tables_fd, F_SETFD, FD_CLOEXEC);
 }
 
 /* A shell's foreground job: SIGSTOP would make the shell treat it as suspended. */

@@ -224,6 +224,14 @@ enum CLI {
 			print("  Apps frozen         \(Fmt.duration(s.total.frozenSeconds))")
 			print("  On efficiency cores \(Fmt.duration(s.total.efficiencySeconds))")
 			print("  Actions             \(s.total.memoryActions) memory-limit, \(s.total.lowMemoryActions) low-memory, \(s.runawayAlerts) runaway alerts")
+			let m = s.memory
+			if m.measuredSeconds > 0 {
+				print("")
+				print("  Short of memory     \(Fmt.duration(m.shortSeconds)) (\(Int(m.shortSeconds / max(m.measuredSeconds, 1) * 100))% of the time), critical \(Fmt.duration(m.criticalSeconds))")
+				print("  Swap                peak \(Fmt.bytes(UInt64(m.swapPeakBytes))), read back \(Fmt.bytes(UInt64(m.swapInBytes)))"
+					  + (m.swapInPerShortHour.map { " (\(Fmt.bytes(UInt64($0)))/h while short)" } ?? ""))
+				print("  Frozen for memory   \(m.freezes) apps holding \(Fmt.bytes(UInt64(m.frozenBytes))), \(Fmt.duration(m.frozenAppSeconds)) in total")
+			}
 			print("")
 			print("  AppWrangler itself  \(Fmt.percent(s.averageSelfCPU)) CPU on average, \(Fmt.coreTime(s.selfCPUSeconds)) total, \(Fmt.bytes(UInt64(s.averageFootprint))) memory")
 			if let ratio = s.efficiencyRatio { print(String(format: "  Efficiency          saved %.0f× more CPU time than it used", ratio)) }

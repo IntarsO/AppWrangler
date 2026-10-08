@@ -1,0 +1,86 @@
+name: Release
+
+# Push a tag (scripts/release.sh X.Y.Z does it) to test, build and publish.
+# Run it by hand with dry_run to build everything without publishing.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build (X.Y.Z, must have a CHANGELOG section)
+        required: true
+      dry_run:
+        description: Build only; don't publish or touch the cask
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then V="${GITHUB_REF_NAME#v}"; else V="${{ inputs.version }}"; fi
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version $V"; exit 1; }
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: Unit tests
+        run: ./test.sh
+
+      - name: Build the zip
+        run: ./build.sh --zip
+
+      - name: Check the build
+        run: |
+          APP=build/AppWrangler.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' $APP/Contents/Info.plist)" = "$VERSION"
+          test -x $APP/Contents/MacOS/AppWranglerWatchdog
+          test -d $APP/Contents/PlugIns/AppWranglerWidget.appex
+          test -f $APP/Contents/Resources/Help/user-manual.md
+          codesign --verify --strict --deep $APP
+
+      - name: Release notes
+        run: python3 scripts/release-notes.py "$VERSION" "build/AppWrangler-$VERSION.zip" > build/release-notes.md
+
+      - name: Keep the build (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppWrangler-${{ env.VERSION }}
+          path: |
+            build/AppWrangler-${{ env.VERSION }}.zip
+            build/release-notes.md
+
+      - name: Publish the release
+        if: github.event_name == 'push' || !inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" "build/AppWrangler-$VERSION.zip" --verify-tag \
+            --title "AppWrangler $VERSION" --notes-file build/release-notes.md --latest
+
+      - name: Update the Homebrew cask
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: |
+          SHA=$(shasum -a 256 "build/AppWrangler-$VERSION.zip" | cut -d' ' -f1)
+          git fetch origin main
+          git checkout -B main origin/main
+          sed -i '' -e "s/^  version \".*\"/  version \"$VERSION\"/" -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" Casks/appwrangler.rb
+          if git diff --quiet; then echo "cask already up to date"; exit 0; fi
+          git config user.name "IntarsO"
+          git config user.email "30525407+IntarsO@users.noreply.github.com"
+          git commit -am "Homebrew cask: AppWrangler $VERSION"
+          git push origin main

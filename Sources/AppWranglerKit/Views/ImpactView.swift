@@ -53,6 +53,24 @@ struct ImpactView: View {
 						.font(.caption).foregroundStyle(.secondary)
 				}
 
+				if s.memory.measuredSeconds > 0 {
+					section(L("Memory")) {
+						let m = s.memory
+						tiles([
+							(L("Short of memory"), Fmt.duration(m.shortSeconds) + " · " + String(format: "%.0f%%", m.shortSeconds / max(m.measuredSeconds, 1) * 100), "exclamationmark.triangle"),
+							(L("Peak swap"), Fmt.bytes(UInt64(m.swapPeakBytes)), "externaldrive"),
+							(L("Read back from swap"), Fmt.bytes(UInt64(m.swapInBytes)), "arrow.down.doc"),
+							(L("Apps frozen for memory"), L("%d · held %@", m.freezes, Fmt.bytes(UInt64(m.frozenBytes))), "snowflake"),
+							(L("Time frozen for memory"), Fmt.duration(m.frozenAppSeconds), "clock"),
+						])
+						if let perHour = m.swapInPerShortHour {
+							Text(L("While short of memory the Mac read back %@ from swap per hour. Lower is better: compare days with idle freezing on and off to see how much it helps on this Mac.", Fmt.bytes(UInt64(perHour))))
+								.font(.caption).foregroundStyle(.secondary)
+								.fixedSize(horizontal: false, vertical: true)
+						}
+					}
+				}
+
 				if s.days > 1 && period != 0 {
 					section(L("CPU time saved per day")) { DailyBars(daily: s.daily) }
 				}

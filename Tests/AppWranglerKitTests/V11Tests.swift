@@ -531,3 +531,47 @@ import Testing
 		#expect(Set(PreferenceSettings.specs.map(\.defaultsKey)).count == PreferenceSettings.specs.count)
 	}
 }
+
+@Suite struct ConcurrentRuleWriteTests {
+	let dir = FileManager.default.temporaryDirectory.appendingPathComponent("AppWranglerRaces-\(UUID().uuidString)")
+	private func store() -> RuleStore { RuleStore(directory: dir, defaults: UserDefaults(suiteName: UUID().uuidString)!) }
+	private func rule(_ name: String) -> AppRule {
+		var r = AppRule(matchKind: .name, matchValue: name, displayName: name)
+		r.backgroundMode = true
+		return r
+	}
+
+	@Test func twoWritersDoNotOverwriteEachOther() {
+		let app = store(), cli = store()	// both loaded the same (empty) file
+		app.upsert(rule("a"))
+		cli.upsert(rule("b"))
+		app.saveNow()
+		cli.saveNow()		// would have written only [b] before
+		#expect(Set(store().rules.map(\.displayName)) == ["a", "b"])
+		#expect(Set(cli.rules.map(\.displayName)) == ["a", "b"], "the writer picks up the other's change")
+	}
+
+	@Test func editsAndRemovalsMergeByRule() {
+		let first = store()
+		first.upsert(rule("a")); first.upsert(rule("b")); first.saveNow()
+		let app = store(), cli = store()
+		var a = app.rules.first { $0.displayName == "a" }!
+		a.cpuLimitEnabled = true
+		a.cpuLimit = 30
+		app.upsert(a)								// the app edits a…
+		cli.remove(id: cli.rules.first { $0.displayName == "b" }!.id)	// …while the CLI removes b
+		cli.saveNow()
+		app.saveNow()
+		let final = store().rules
+		#expect(final.map(\.displayName) == ["a"])
+		#expect(final.first?.cpuLimit == 30)
+	}
+
+	@Test func mergeIsPure() {
+		let a = rule("a"), b = rule("b"), c = rule("c")
+		var a2 = a; a2.cpuLimitEnabled = true
+		// base [a, b]; local changed a, removed b; disk meanwhile added c.
+		let merged = RuleStore.merge(local: [a2], base: [a, b], disk: [a, b, c])
+		#expect(merged.map(\.displayName) == ["a", "c"] && merged[0].cpuLimitEnabled)
+	}
+}

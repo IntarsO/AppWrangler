@@ -56,6 +56,7 @@ echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/AppWrangler"
+cp "$(dirname "$BIN")/AppWranglerWatchdog" "$APP/Contents/MacOS/AppWranglerWatchdog"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NUMBER/" Resources/Info.plist > "$APP/Contents/Info.plist"
 cp Resources/status_icon.png Resources/status_icon@2x.png "$APP/Contents/Resources/"
 for lproj in Resources/*.lproj; do
@@ -93,12 +94,14 @@ iconutil -c icns Resources/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.i
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
 	echo "==> Signing with $SIGN_IDENTITY (hardened runtime)"
+	codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/AppWranglerWatchdog"
 	codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
 		--entitlements Resources/Widget.entitlements "$WIDGET"
 	codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
 		--entitlements Resources/AppWrangler.entitlements "$APP"
 else
 	echo "==> Signing (ad-hoc — runs on this Mac; set SIGN_IDENTITY to distribute)"
+	codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/AppWranglerWatchdog"
 	codesign --force --sign - --entitlements Resources/Widget.entitlements --timestamp=none "$WIDGET"
 	codesign --force --sign - --entitlements Resources/AppWrangler.entitlements --timestamp=none "$APP"
 fi

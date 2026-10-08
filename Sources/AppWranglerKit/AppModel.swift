@@ -79,6 +79,10 @@ final class AppModel: ObservableObject {
 		enforcer.onImpact = { [weak self] group, event in
 			self?.stats.record(event, key: ImpactKey.of(group), name: group.name)
 		}
+		enforcer.onFreeze = { [weak self] group, reason in
+			guard reason.resumesOnFocus else { return }	// frozen because of memory
+			self?.stats.record(.memoryFreeze(bytes: Double(group.footprint)), key: ImpactKey.of(group), name: group.name)
+		}
 		log.notifier = { title, body in Notifier.shared.post(title: title, body: body) }
 	}
 
@@ -170,6 +174,10 @@ final class AppModel: ObservableObject {
 			}
 			lastSelfCPU = (usage.cpu_ns, t)
 		}
+		// Swap reads since the last call (the baseline always advances, like the CPU one).
+		let swapIn = Swap.swapInBytesTotal
+		let swapInDelta = lastSwapIn.map { max(0, swapIn - $0) } ?? 0
+		lastSwapIn = swapIn
 		guard let last = lastStatsTime else { return }
 		let dt = now.timeIntervalSince(last)
 		// A long gap means the Mac slept or we stalled: don't credit it.
@@ -198,8 +206,13 @@ final class AppModel: ObservableObject {
 			ticks.append(tick)
 		}
 
-		stats.record(ticks, selfCPU: selfCPU, selfFootprint: footprint, dt: dt, at: now)
+		// The Mac's memory over the same interval.
+		let memory = MemorySample(pressure: state.memoryPressure, swapUsedBytes: Swap.usedBytes, swapInBytes: swapInDelta,
+								  memoryFrozenApps: enforcer.frozen.values.filter(\.resumesOnFocus).count)
+		stats.record(ticks, selfCPU: selfCPU, selfFootprint: footprint, dt: dt, at: now, memory: memory)
 	}
+
+	private var lastSwapIn: Double?
 
 	private func scheduleStatsFlush() {
 		let seconds = max(1, UserDefaults.standard.double(forKey: Prefs.statsFlushSeconds))

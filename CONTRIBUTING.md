@@ -70,10 +70,16 @@ The icons are drawn in code by `scripts/make-icons.swift`. Edit it and run `swif
 
 ## Releasing (maintainers)
 
-1. Run `./test.sh` and `./Tests/e2e/run.sh`.
-2. Update `CHANGELOG.md`, bump `VERSION` in `build.sh` (or pass `VERSION=x.y.z`), and build with `./build.sh --zip`.
-3. Put the zip's SHA-256 (`shasum -a 256 build/AppWrangler-x.y.z.zip`) and the version into [`Casks/appwrangler.rb`](Casks/appwrangler.rb), commit, and push; wait for CI.
-4. Tag the release (`git tag -a vx.y.z -m … && git push origin vx.y.z`), then `gh release create vx.y.z build/AppWrangler-x.y.z.zip --verify-tag`.
+1. Run `./test.sh` and `./Tests/e2e/run.sh` (the end-to-end tests don't run on CI).
+2. Make sure `CHANGELOG.md` has an `## [Unreleased]` section describing the release.
+3. Run `scripts/release.sh X.Y.Z`. It dates the CHANGELOG section, sets the version in `build.sh`, commits, tags `vX.Y.Z` and pushes.
+4. [`.github/workflows/release.yml`](.github/workflows/release.yml) takes over:
+   - it runs the unit tests and builds and checks the zip;
+   - it publishes the GitHub release, with notes from that CHANGELOG section (`scripts/release-notes.py`);
+   - it commits the new version and SHA-256 to [`Casks/appwrangler.rb`](Casks/appwrangler.rb).
+5. Afterwards, `git pull` to get the cask commit.
+
+To try the pipeline without publishing anything, run it by hand with *dry run*: `gh workflow run release.yml -f version=X.Y.Z -f dry_run=true`. The zip and notes are attached to the run as an artifact. Builds are ad-hoc signed; with a Developer ID you'd set `SIGN_IDENTITY` and `NOTARY_PROFILE` (see `build.sh`).
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on every push and pull request, on Apple Silicon. Two kinds of test don't run there, because shared CI machines are too noisy for measurements of real CPU time:
 - the limiter's timing tests (they skip themselves when `CI` is set);

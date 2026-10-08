@@ -25,6 +25,13 @@ let package = Package(
 			dependencies: ["AppWranglerKit"],
 			path: "Sources/AppWrangler"
 		),
+		// Restores frozen / efficiency-core apps if AppWrangler dies, even by
+		// `killall -9 AppWrangler` (it has its own name for that reason).
+		.executableTarget(
+			name: "AppWranglerWatchdog",
+			dependencies: ["ProcKit"],
+			path: "Sources/AppWranglerWatchdog"
+		),
 		.testTarget(
 			name: "AppWranglerKitTests",
 			dependencies: ["AppWranglerKit", "ProcKit"],

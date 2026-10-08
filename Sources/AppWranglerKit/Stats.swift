@@ -86,6 +86,48 @@ struct AppImpact: Codable, Equatable {
 	var averageAllowed: Double { limitedSeconds > 0 ? allowedCoreSeconds / limitedSeconds : 0 }
 }
 
+/// How the Mac's memory fared, and what AppWrangler froze because of it.
+/// Optional in each bucket, so stats written by older versions still load.
+struct MemoryStats: Codable, Equatable {
+	/// Time memory pressure was at warning or worse, and at critical.
+	var shortSeconds: Double = 0
+	var criticalSeconds: Double = 0
+	/// Time measured (to put the above in proportion).
+	var measuredSeconds: Double = 0
+	var swapPeakBytes: Double = 0
+	/// Data read back from swap — what memory pressure actually costs you.
+	var swapInBytes: Double = 0
+	var swapInBytesWhileShort: Double = 0
+	/// Apps frozen because of memory (low memory, idle freezing, Free memory now),
+	/// how much memory they held then, and how long they stayed frozen (summed).
+	var freezes: Int = 0
+	var frozenBytes: Double = 0
+	var frozenAppSeconds: Double = 0
+
+	mutating func add(_ o: MemoryStats) {
+		shortSeconds += o.shortSeconds
+		criticalSeconds += o.criticalSeconds
+		measuredSeconds += o.measuredSeconds
+		swapPeakBytes = max(swapPeakBytes, o.swapPeakBytes)
+		swapInBytes += o.swapInBytes
+		swapInBytesWhileShort += o.swapInBytesWhileShort
+		freezes += o.freezes
+		frozenBytes += o.frozenBytes
+		frozenAppSeconds += o.frozenAppSeconds
+	}
+
+	/// Swap reads per hour of memory shortage — compare days with idle freezing on and off.
+	var swapInPerShortHour: Double? { shortSeconds >= 60 ? swapInBytesWhileShort / (shortSeconds / 3600) : nil }
+}
+
+/// One measurement of the Mac's memory over a sample interval.
+struct MemorySample {
+	var pressure: Int			// 1 normal, 2 warning, 4 critical
+	var swapUsedBytes: UInt64
+	var swapInBytes: Double		// read back from swap during the interval
+	var memoryFrozenApps: Int	// apps frozen for memory during the interval
+}
+
 struct DayStats: Codable, Equatable {
 	var day: String					// yyyy-MM-dd, local time
 	var apps: [String: AppImpact] = [:]
@@ -98,6 +140,7 @@ struct DayStats: Codable, Equatable {
 	var accuracyErrorSum: Double = 0
 	var accuracyWeight: Double = 0
 	var runawayAlerts: Int = 0
+	var memory: MemoryStats?
 }
 
 /// What happened to one controlled app during one sample interval.
@@ -125,6 +168,7 @@ struct ImpactSummary {
 	var accuracyError: Double?		// e.g. 0.02 = limits held within ±2 %
 	var runawayAlerts = 0
 	var daily: [(day: String, savedCPUSeconds: Double)] = []
+	var memory = MemoryStats()
 
 	/// AppWrangler's average CPU use while running, in cores.
 	var averageSelfCPU: Double { uptimeSeconds > 0 ? selfCPUSeconds / uptimeSeconds : 0 }
@@ -193,7 +237,8 @@ final class StatsStore: ObservableObject {
 	}
 
 	/// Record one sample interval of `dt` seconds (into the day and the hour).
-	func record(_ ticks: [ImpactTick], selfCPU: Double, selfFootprint: UInt64, dt: TimeInterval, at date: Date = Date(), ncpu: Int = SystemInfo.ncpu) {
+	func record(_ ticks: [ImpactTick], selfCPU: Double, selfFootprint: UInt64, dt: TimeInterval, at date: Date = Date(), ncpu: Int = SystemInfo.ncpu,
+				memory: MemorySample? = nil) {
 		guard dt > 0 else { return }
 		// Learn each app's watts per core from live measurements (once per sample).
 		for t in ticks where t.cpu > 0.05 && t.power > 0 {
@@ -204,7 +249,24 @@ final class StatsStore: ObservableObject {
 		days[d] = Self.add(ticks, to: days[d], selfCPU: selfCPU, selfFootprint: selfFootprint, dt: dt, ncpu: ncpu, wattsPerCore: wattsPerCore)
 		let h = hourIndex(for: date)
 		hours[h] = Self.add(ticks, to: hours[h], selfCPU: selfCPU, selfFootprint: selfFootprint, dt: dt, ncpu: ncpu, wattsPerCore: wattsPerCore)
+		if let memory {
+			Self.add(memory, dt: dt, to: &days[d])
+			Self.add(memory, dt: dt, to: &hours[h])
+		}
 		changed()
+	}
+
+	private static func add(_ m: MemorySample, dt: TimeInterval, to bucket: inout DayStats) {
+		var s = bucket.memory ?? MemoryStats()
+		let short = m.pressure >= 2
+		s.measuredSeconds += dt
+		if short { s.shortSeconds += dt }
+		if m.pressure >= 4 { s.criticalSeconds += dt }
+		s.swapPeakBytes = max(s.swapPeakBytes, Double(m.swapUsedBytes))
+		s.swapInBytes += max(0, m.swapInBytes)
+		if short { s.swapInBytesWhileShort += max(0, m.swapInBytes) }
+		s.frozenAppSeconds += Double(max(0, m.memoryFrozenApps)) * dt
+		bucket.memory = s
 	}
 
 	private static func add(_ ticks: [ImpactTick], to bucket: DayStats, selfCPU: Double, selfFootprint: UInt64, dt: TimeInterval,
@@ -258,6 +320,8 @@ final class StatsStore: ObservableObject {
 		case memoryAction(freedBytes: Double)
 		case lowMemoryAction
 		case runawayAlert
+		/// An app frozen because of memory, and the memory it held.
+		case memoryFreeze(bytes: Double)
 	}
 
 	func record(_ event: Event, key: String, name: String, at date: Date = Date()) {
@@ -274,6 +338,11 @@ final class StatsStore: ObservableObject {
 				var a = b.apps[key] ?? AppImpact(name: name)
 				a.lowMemoryActions += 1
 				b.apps[key] = a
+			case .memoryFreeze(let bytes):
+				var m = b.memory ?? MemoryStats()
+				m.freezes += 1
+				m.frozenBytes += max(0, bytes)
+				b.memory = m
 			}
 		}
 		let d = dayIndex(for: date)
@@ -318,6 +387,7 @@ final class StatsStore: ObservableObject {
 			accSum += d.accuracyErrorSum
 			accWeight += d.accuracyWeight
 			s.runawayAlerts += d.runawayAlerts
+			if let m = d.memory { s.memory.add(m) }
 		}
 		s.averageFootprint = footprintSamples > 0 ? footprintSum / Double(footprintSamples) : 0
 		s.accuracyError = accWeight > 30 ? accSum / accWeight : nil
