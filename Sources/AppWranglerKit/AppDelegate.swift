@@ -47,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	private var statusItem: NSStatusItem!
 	private let popover = NSPopover()
 	private var settingsWindow: NSWindow?
+	/// The panel's contents in a standalone, resizable window (like Activity Monitor).
+	private var mainWindow: NSWindow?
 	private var lastLoad: Double = 0
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,7 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		popover.animates = true
 		popover.delegate = self
 		popover.contentViewController = NSHostingController(
-			rootView: PopoverView(model: model, rules: model.rules, openSettings: { [weak self] in self?.showSettings() }))
+			rootView: PopoverView(model: model, rules: model.rules, openSettings: { [weak self] in self?.showSettings() },
+								  openWindow: { [weak self] in self?.showMainWindow() }))
 
 		Notifier.shared.setUp()
 		Notifier.shared.onAction = { [weak self] action, info in self?.model.applySuggestion(action, info: info) }
@@ -89,11 +92,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 			self?.applyPreferences()
 		}
 
+		// Reopen the window if it was open when AppWrangler last quit, as Activity Monitor does.
+		if UserDefaults.standard.bool(forKey: Prefs.mainWindowOpen) && statusItem != nil {
+			showMainWindow(activate: false)
+		}
+
 		#if DEBUG
 		// `AppWrangler --args -AWOpenOnLaunch popover|settings -AWDebugSnapshotDir /tmp/x`
 		switch UserDefaults.standard.string(forKey: "AWOpenOnLaunch") {
 		case "popover": DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.showPopover(activate: false) }
 		case "settings": showSettings()
+		case "window": showMainWindow(activate: false)
 		default: break
 		}
 		if let dir = UserDefaults.standard.string(forKey: "AWDebugSnapshotDir") {
@@ -102,13 +111,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		#endif
 	}
 
+	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		terminating = true
+		return .terminateNow
+	}
+
 	func applicationWillTerminate(_ notification: Notification) {
 		// Resume everything we throttled or froze before exiting.
 		model.shutdown()
 	}
 
 	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-		showSettings()
+		if mainWindow != nil { showMainWindow() } else { showSettings() }
 		return true
 	}
 
@@ -157,7 +171,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		if activate { NSApp.activate(ignoringOtherApps: true) }
 		popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 		if activate { popover.contentViewController?.view.window?.makeKey() }
+		keepPopoverOnScreen()
+		DispatchQueue.main.async { self.keepPopoverOnScreen() }
 	}
+
+	/// Near the screen edge (e.g. icons beside the notch, or a second display)
+	/// the panel could be cut off; slide it back inside the visible area.
+	private func keepPopoverOnScreen() {
+		guard let window = popover.contentViewController?.view.window,
+			  let screen = window.screen ?? statusItem?.button?.window?.screen else { return }
+		let visible = screen.visibleFrame.insetBy(dx: 6, dy: 0)
+		var frame = window.frame
+		if frame.maxX > visible.maxX { frame.origin.x -= frame.maxX - visible.maxX }
+		if frame.minX < visible.minX { frame.origin.x = visible.minX }
+		if frame.origin != window.frame.origin { window.setFrameOrigin(frame.origin) }
+	}
+
+	// MARK: Main window
+
+	func showMainWindow(activate: Bool = true) {
+		popover.performClose(nil)
+		if mainWindow == nil {
+			let window = NSWindow(
+				contentRect: NSRect(x: 0, y: 0, width: 560, height: 760),
+				styleMask: [.titled, .closable, .miniaturizable, .resizable],
+				backing: .buffered, defer: false)
+			window.title = "AppWrangler"
+			window.isReleasedWhenClosed = false
+			window.contentViewController = NSHostingController(
+				rootView: PopoverView(model: model, rules: model.rules, openSettings: { [weak self] in self?.showSettings() }, inWindow: true))
+			window.setContentSize(NSSize(width: 560, height: 760))
+			window.center()
+			window.setFrameAutosaveName("AppWranglerMain")
+			window.delegate = self
+			mainWindow = window
+			model.surfaceDidAppear()
+		}
+		UserDefaults.standard.set(true, forKey: Prefs.mainWindowOpen)
+		// While the window is open AppWrangler behaves like a regular app: Dock icon, ⌘-Tab.
+		NSApp.setActivationPolicy(.regular)
+		if activate { NSApp.activate(ignoringOtherApps: true) }
+		activate ? mainWindow?.makeKeyAndOrderFront(nil) : mainWindow?.orderFront(nil)
+	}
+
+	@objc private func openMainWindowMenu() { showMainWindow() }
 
 	private func showContextMenu() {
 		let menu = NSMenu()
@@ -165,6 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		pause.target = self
 		menu.addItem(pause)
 		menu.addItem(.separator())
+		let window = NSMenuItem(title: L("Open in a Window"), action: #selector(openMainWindowMenu), keyEquivalent: "")
+		window.target = self
+		menu.addItem(window)
 		let settings = NSMenuItem(title: L("Settings…"), action: #selector(openSettingsMenu), keyEquivalent: ",")
 		settings.target = self
 		menu.addItem(settings)
@@ -261,7 +321,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
 	func windowWillClose(_ notification: Notification) {
 		if (notification.object as? NSWindow) === settingsWindow { model.surfaceDidDisappear() }
+		if (notification.object as? NSWindow) === mainWindow {
+			model.surfaceDidDisappear()
+			mainWindow = nil
+			// Closed by you (not by quitting): don't reopen it next time.
+			if !terminating { UserDefaults.standard.set(false, forKey: Prefs.mainWindowOpen) }
+			NSApp.setActivationPolicy(.accessory)
+		}
 	}
+
+	private var terminating = false
 
 	#if DEBUG
 	/// Debug aid: capture our own windows to PNGs. An app may capture its own
@@ -288,6 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 			try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
 		}
 		write(popover.contentViewController?.view.window, "popover.png")
+		write(mainWindow, "window.png")
 		if UserDefaults.standard.bool(forKey: "AWDebugSnapshotHelp") {
 			HelpCenter.open(.manual, anchor: UserDefaults.standard.string(forKey: "AWDebugHelpAnchor"))
 			DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { write(HelpCenter.window, "help.png") }

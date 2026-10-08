@@ -100,6 +100,11 @@ Click the menu bar icon.
 | Sections | **Apps**, **Menu bar & background apps**, **macOS system services**, **Processes**. Click a header to collapse or expand it. Searching shows matches in every section. |
 | Footer | Number of active rules and CPU time saved today, **?** (Help), **Settings…**, **Quit**. |
 
+**Open it in a window.** The window button (top right of the panel) opens the same view in a normal, resizable window that stays open, like Activity Monitor. *Open in a Window* in the menu bar icon's right-click menu does the same.
+- While the window is open, AppWrangler shows a Dock icon and appears in ⌘-Tab.
+- If you quit AppWrangler with the window open, it reopens next time.
+- The menu bar panel keeps working as before.
+
 **Row badges:**
 
 | Badge | Meaning |

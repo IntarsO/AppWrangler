@@ -126,6 +126,7 @@ enum Prefs {
 	static let autoFreezeIdle = "AWAutoFreezeIdle"
 	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
 	static let dismissedAdvice = "AWDismissedAdvice"
+	static let mainWindowOpen = "AWMainWindowOpen"
 
 	static var autoSettings: AutoSettings {
 		let d = UserDefaults.standard

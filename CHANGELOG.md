@@ -9,6 +9,7 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   - They resume the moment you switch to them, or when memory frees up.
   - It never freezes the app in use, audio apps, messaging and calls apps, or menu bar apps.
   - Turn it on in Settings → General → Auto mode, with `appwrangler auto freeze-idle on`, or with MCP `set_auto_mode`.
+- **Open the panel in a window** that stays open, like Activity Monitor: use the window button in the panel or *Open in a Window* in the menu. It has a Dock icon while open, and reopens at launch if it was open when you quit.
 - **Suggestions in the panel**, with one-click buttons to apply them and **×** to hide one for a week.
 - **Suggestions use recent averages.** The running app shares 10-minute per-app averages (`usage.json`), so a short CPU spike isn't flagged as a problem.
 - **Undo.**
@@ -20,6 +21,10 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   - `brew install --cask appwrangler`
 - **CI:** GitHub Actions builds the app and runs the unit tests on every push.
 - An app frozen because memory was low (by Auto or by its rule) now resumes as soon as you switch to it.
+
+### Fixed
+- The panel could extend past the right edge of the screen when the menu bar icon was near it. It now stays inside the screen.
+- `test.sh` failed under full Xcode (bash 3.2 and an empty argument list).
 - **Suggestions.**
   - `appwrangler suggest` and the MCP tool `suggest_settings` recommend settings for what's running:
     - memory hogs when the Mac is short of memory, with browser tab-sleeping tips;

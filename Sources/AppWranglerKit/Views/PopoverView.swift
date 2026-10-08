@@ -57,6 +57,9 @@ struct PopoverView: View {
 	@ObservedObject var model: AppModel
 	@ObservedObject var rules: RuleStore
 	var openSettings: () -> Void
+	/// Opens the same view in a standalone window (nil when this *is* the window).
+	var openWindow: (() -> Void)? = nil
+	var inWindow = false
 
 	@AppStorage(Prefs.sortBy) private var sortRaw = SortKey.cpu.rawValue
 	@AppStorage(Prefs.collapsedSections) private var collapsedRaw = ""
@@ -118,7 +121,8 @@ struct PopoverView: View {
 			Divider()
 			footer
 		}
-		.frame(width: 480, height: 660)
+		.frame(minWidth: 480, idealWidth: inWindow ? 560 : 480, maxWidth: inWindow ? .infinity : 480,
+			   minHeight: inWindow ? 480 : 660, idealHeight: inWindow ? 760 : 660, maxHeight: inWindow ? .infinity : 660)
 		.onChange(of: model.snapshot.seq) { _ in refreshOrder() }
 		.onChange(of: sortRaw) { _ in order.update(with: sortedIDs(model.snapshot.groups), frozen: false) }
 		.onAppear { order.update(with: sortedIDs(model.snapshot.groups), frozen: false) }
@@ -132,6 +136,14 @@ struct PopoverView: View {
 				Text("AppWrangler").font(.headline)
 				Text(SystemInfo.summary).font(.caption).foregroundStyle(.secondary)
 				Spacer()
+				if let openWindow {
+					Button(action: openWindow) {
+						Image(systemName: "macwindow.on.rectangle")
+					}
+					.buttonStyle(.borderless)
+					.help(L("Open in a window that stays open, like Activity Monitor"))
+					.accessibilityLabel(L("Open in a window"))
+				}
 				Toggle(isOn: Binding(get: { !model.paused }, set: { model.paused = !$0 })) {
 					Text(model.paused ? L("Paused") : L("Active")).font(.caption)
 				}
@@ -248,7 +260,7 @@ struct PopoverView: View {
 						ForEach(model.advice, id: \.id) { s in adviceCard(s) }
 					}
 				}
-				.frame(maxHeight: 170)
+				.frame(maxHeight: inWindow ? 300 : 170)
 			}
 		}
 		.padding(.horizontal, 12)

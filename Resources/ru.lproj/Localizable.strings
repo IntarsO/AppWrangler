@@ -437,3 +437,8 @@
 "When the Mac is low on memory, freeze apps I haven't used for a while" = "При нехватке памяти замораживать приложения, которыми я давно не пользовался";
 "Your Mac is short of memory" = "Mac не хватает памяти";
 "Your Mac is short of memory and %@ is one of the biggest users." = "Mac не хватает памяти, и %@ — один из главных потребителей.";
+
+/* Main window */
+"Open in a window that stays open, like Activity Monitor" = "Открыть в окне, которое остаётся открытым, как Мониторинг системы";
+"Open in a window" = "Открыть в окне";
+"Open in a Window" = "Открыть в окне";
