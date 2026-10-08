@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/IntarsO/AppWrangler/security/advisories/new
+    about: Please report security issues privately (see SECURITY.md).
+  - name: Documentation
+    url: https://github.com/IntarsO/AppWrangler/tree/main/docs
+    about: Getting started, user guide, CLI reference and FAQ.

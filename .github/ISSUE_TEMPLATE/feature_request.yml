@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an idea for AppWrangler
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the app or situation you're trying to control.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like AppWrangler to do?
+    validations:
+      required: true

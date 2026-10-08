@@ -1,0 +1,278 @@
+/* AppWrangler — Russian. Keys are the English UI text (see L() in Support.swift).
+   LocalizationTests fails if a key used in the code is missing here. */
+
+/* Sections & kinds */
+"Apps" = "Приложения";
+"Menu bar & background apps" = "Строка меню и фоновые приложения";
+"macOS system services" = "Системные службы macOS";
+"Processes" = "Процессы";
+"App" = "Приложение";
+"Background app" = "Фоновое приложение";
+"macOS service" = "Служба macOS";
+"Process" = "Процесс";
+"%@, %d items" = "%@, элементов: %d";
+
+/* Header & toolbar */
+"Active" = "Активно";
+"Paused" = "Пауза";
+"CPU" = "ЦП";
+"Memory" = "Память";
+"Energy" = "Энергия";
+"Name" = "Имя";
+"%@ of %d%%" = "%@ из %d%%";
+"%d cores" = "ядер: %d";
+"critical" = "критично";
+"pressure" = "нагрузка";
+"On battery" = "От батареи";
+"Low Power Mode" = "Режим энергосбережения";
+"Mac is hot" = "Mac перегрет";
+"Pause or resume all CPU limits (%@). Frozen apps stay frozen." = "Приостановить или возобновить все ограничения ЦП (%@). Замороженные приложения остаются замороженными.";
+"Search apps and processes" = "Поиск приложений и процессов";
+"Clear search" = "Очистить поиск";
+"Sort by" = "Сортировка";
+"Measuring…" = "Измерение…";
+"Nothing matches “%@”" = "Ничего не найдено по «%@»";
+"%d active rules" = "Активных правил: %d";
+"CPU limits paused" = "Ограничения ЦП приостановлены";
+"Settings…" = "Настройки…";
+"Quit" = "Завершить";
+
+/* Runaway suggestions */
+"%@ is using a lot of CPU" = "%@ сильно нагружает ЦП";
+"Has used %@ CPU for %d minutes in the background." = "Использует %@ ЦП уже %d мин в фоне.";
+"Limit 50%" = "Ограничить 50%";
+"E-cores" = "E-ядра";
+"Dismiss" = "Скрыть";
+"Limit to 50%" = "Ограничить до 50%";
+"Use efficiency cores" = "Только энергоэффективные ядра";
+"Ignore this app" = "Игнорировать приложение";
+
+/* Rows & context menu */
+"%d helper processes" = "Вспомогательных процессов: %d";
+"Shows details and limits" = "Показывает подробности и ограничения";
+"CPU %@" = "ЦП %@";
+"memory %@" = "память %@";
+"Frozen" = "Заморожено";
+"Permission denied" = "Нет доступа";
+"Limit paused" = "Ограничение приостановлено";
+"CPU limited" = "ЦП ограничен";
+"Efficiency cores" = "Энергоэффективные ядра";
+"Memory limit" = "Лимит памяти";
+"Limit CPU" = "Ограничить ЦП";
+"No CPU limit" = "Без ограничения ЦП";
+"Efficiency cores only" = "Только энергоэффективные ядра";
+"Stop using efficiency cores only" = "Не ограничивать E-ядрами";
+"Unfreeze" = "Разморозить";
+"Freeze" = "Заморозить";
+"Force Quit" = "Завершить принудительно";
+"Remove Rule" = "Удалить правило";
+"Show in Finder" = "Показать в Finder";
+"Copy Name" = "Скопировать имя";
+
+/* Detail */
+"Changes apply immediately." = "Изменения применяются сразу.";
+"Processes (%d)" = "Процессы (%d)";
+"Disk read" = "Чтение с диска";
+"Disk write" = "Запись на диск";
+"Threads" = "Потоки";
+"CPU · peak %@" = "ЦП · пик %@";
+"Memory · peak %@" = "Память · пик %@";
+"Last %d min" = "Последние %d мин";
+"Can't control this process: it belongs to another user." = "Нельзя управлять процессом: он принадлежит другому пользователю.";
+"Frozen — all %d processes suspended." = "Заморожено — приостановлено процессов: %d.";
+"CPU limit paused." = "Ограничение ЦП приостановлено.";
+"Throttling: using %@, allowed to run %d%% of the time." = "Ограничение: использует %@, может работать %d%% времени.";
+"Rule waiting for its conditions: %@" = "Правило ждёт условий: %@";
+"Suspend the app and its helpers until you unfreeze it" = "Приостановить приложение и его помощников до разморозки";
+"Force quit %@?" = "Принудительно завершить %@?";
+"Unsaved changes will be lost." = "Несохранённые изменения будут потеряны.";
+
+/* Rule editor */
+"Rule enabled" = "Правило включено";
+"CPU limit" = "Лимит ЦП";
+"%d percent" = "%d процентов";
+"CPU limit percent" = "Лимит ЦП в процентах";
+"100%% = one full core. This Mac has %d cores (%d%% max)." = "100%% = одно ядро целиком. В этом Mac ядер: %d (максимум %d%%).";
+"Only while the app is in the background" = "Только когда приложение в фоне";
+"Runs the app on the E-cores with throttled disk and network I/O. Saves battery and heat without freezing the app." = "Запускает приложение на энергоэффективных ядрах и замедляет его диск и сеть. Экономит батарею и снижает нагрев, не замораживая приложение.";
+"Memory limit in megabytes" = "Лимит памяти в мегабайтах";
+"Presets" = "Варианты";
+"When exceeded" = "При превышении";
+"macOS can't hard-cap another app's RAM, so AppWrangler watches its memory footprint (as in Activity Monitor) and acts when it stays over the limit." = "macOS не позволяет жёстко ограничить память чужого приложения, поэтому AppWrangler следит за объёмом памяти (как в Мониторинге системы) и действует, если он держится выше лимита.";
+"When the Mac is low on memory" = "Когда Mac не хватает памяти";
+"Power" = "Питание";
+"Only in Low Power Mode" = "Только в режиме энергосбережения";
+"Only when the Mac is hot" = "Только когда Mac перегрет";
+"Only during these hours" = "Только в эти часы";
+"From" = "С";
+"to" = "до";
+"on" = "вкл";
+"off" = "выкл";
+"When to apply: %@" = "Когда применять: %@";
+"When to apply: always" = "Когда применять: всегда";
+"Include helper processes" = "Включая вспомогательные процессы";
+"Applies limits to the app's renderers, XPC services and other helpers too." = "Применяет ограничения и к рендерерам, XPC-службам и другим помощникам приложения.";
+"Ignore this app in suggestions and automatic actions" = "Не предлагать ограничения и не трогать автоматически";
+
+/* Rule model */
+"Bundle ID" = "Bundle ID";
+"Path" = "Путь";
+"Process name" = "Имя процесса";
+"Name pattern" = "Шаблон имени";
+"Notify me" = "Уведомить меня";
+"Freeze (suspend)" = "Заморозить (приостановить)";
+"Quit app" = "Завершить приложение";
+"Force quit" = "Принудительно завершить";
+"Do nothing" = "Ничего не делать";
+"Freeze until memory frees up" = "Заморозить, пока не освободится память";
+"Always" = "Всегда";
+"Only on battery" = "Только от батареи";
+"Only when plugged in" = "Только от сети";
+"on battery" = "от батареи";
+"on charger" = "от сети";
+"when hot" = "при перегреве";
+"Disabled" = "Выключено";
+"Ignored" = "Игнорируется";
+"CPU %d%%" = "ЦП %d%%";
+"(background)" = "(в фоне)";
+"RAM %@" = "ОЗУ %@";
+"low-memory: %@" = "мало памяти: %@";
+"freeze" = "заморозить";
+"quit" = "завершить";
+"No limits" = "Без ограничений";
+
+/* Enforcer events */
+"Memory pressure eased — resumed" = "Нехватка памяти прошла — возобновлено";
+"Couldn't enable efficiency mode: %@" = "Не удалось включить энергоэффективный режим: %@";
+"Memory %@ exceeded limit %@" = "Память %@ превысила лимит %@";
+"frozen" = "заморожено";
+"quitting" = "завершается";
+"force quit" = "принудительно завершено";
+"Mac is low on memory — frozen" = "Mac не хватает памяти — заморожено";
+"Mac is low on memory — quitting" = "Mac не хватает памяти — завершается";
+"Permission denied — the process belongs to another user" = "Нет доступа — процесс принадлежит другому пользователю";
+"CPU limits paused (frozen apps stay frozen)" = "Ограничения ЦП приостановлены (замороженные приложения остаются замороженными)";
+"Limits resumed" = "Ограничения возобновлены";
+"Rules reloaded from disk" = "Правила перечитаны с диска";
+"No running app named %@" = "Нет запущенного приложения %@";
+"Resumed" = "Возобновлено";
+"Quit requested" = "Запрошено завершение";
+
+/* Catalog */
+"Safe to limit" = "Можно ограничивать";
+"Limit with care — other apps may depend on it" = "Ограничивайте осторожно — от него могут зависеть другие приложения";
+"Critical to macOS — AppWrangler won't limit it" = "Критично для macOS — AppWrangler не будет его ограничивать";
+"Menu bar or background app" = "Приложение в строке меню или фоновое";
+"Part of macOS's user interface" = "Часть интерфейса macOS";
+"Application" = "Приложение";
+"Part of macOS (background service)" = "Часть macOS (фоновая служба)";
+"Command-line tool (installed with Homebrew or similar)" = "Утилита командной строки (установлена через Homebrew и т.п.)";
+"Unix command-line tool that comes with macOS" = "Утилита командной строки Unix из состава macOS";
+"Background part of %@" = "Фоновая часть %@";
+"Background process" = "Фоновый процесс";
+"Draws web pages and tabs for its app" = "Отрисовывает веб-страницы и вкладки своего приложения";
+"Graphics work (GPU) for its app" = "Графика (GPU) для своего приложения";
+"Runs plug-ins or extensions for its app" = "Запускает плагины или расширения своего приложения";
+"Web page content (one per tab or web view)" = "Содержимое веб-страницы (по одному на вкладку)";
+"Network loading for web views" = "Сетевая загрузка для веб-страниц";
+"Graphics for web views" = "Графика для веб-страниц";
+"Helper process for its app" = "Вспомогательный процесс приложения";
+"XPC service — a background part of an app or macOS" = "XPC-служба — фоновая часть приложения или macOS";
+"App extension (widget, share or Finder extension)" = "Расширение приложения (виджет, «Поделиться» или Finder)";
+"Game" = "Игра";
+"Business" = "Бизнес";
+"Developer tool" = "Инструмент разработчика";
+"Education" = "Образование";
+"Entertainment" = "Развлечения";
+"Finance" = "Финансы";
+"Graphics & design" = "Графика и дизайн";
+"Health & fitness" = "Здоровье и фитнес";
+"Lifestyle" = "Образ жизни";
+"Medical" = "Медицина";
+"Music" = "Музыка";
+"News" = "Новости";
+"Photography" = "Фотография";
+"Productivity" = "Продуктивность";
+"Reference" = "Справочники";
+"Social networking" = "Социальные сети";
+"Sports" = "Спорт";
+"Travel" = "Путешествия";
+"Utility" = "Утилита";
+"Video" = "Видео";
+"Weather" = "Погода";
+
+/* Format helpers */
+"0 KB/s" = "0 КБ/с";
+"/s" = "/с";
+
+/* Status item & windows */
+"Resume All Limits" = "Возобновить все ограничения";
+"Pause All Limits" = "Приостановить все ограничения";
+"Quit AppWrangler" = "Завершить AppWrangler";
+"AppWrangler Settings" = "Настройки AppWrangler";
+
+/* Settings */
+"App Rules" = "Правила";
+"General" = "Основные";
+"Activity" = "Журнал";
+"About" = "О программе";
+"Enable rule for %@" = "Включить правило для %@";
+"Running apps" = "Запущенные приложения";
+"Choose Application…" = "Выбрать приложение…";
+"Add by Process Name" = "Добавить по имени процесса";
+"Add Name Pattern (e.g. *Helper*)" = "Добавить шаблон имени (например, *Helper*)";
+"Add rule" = "Добавить правило";
+"Remove rule" = "Удалить правило";
+"Import Rules…" = "Импортировать правила…";
+"Export Rules…" = "Экспортировать правила…";
+"Import or export rules" = "Импорт и экспорт правил";
+"No rules yet" = "Правил пока нет";
+"Select a rule" = "Выберите правило";
+"Add an app with + to give it CPU, efficiency-core and memory limits.\nRules apply immediately and whenever the app runs." = "Добавьте приложение кнопкой +, чтобы задать ограничения ЦП, E-ядер и памяти.\nПравила применяются сразу и при каждом запуске приложения.";
+"New process rule" = "Новое правило процесса";
+"All helpers" = "Все помощники";
+"Exported %d rules" = "Экспортировано правил: %d";
+"Imported %d rules" = "Импортировано правил: %d";
+"Couldn't import: %@" = "Не удалось импортировать: %@";
+"Match by" = "Сопоставлять по";
+"* matches anything, ? one character. Matched against app and process names and bundle IDs, ignoring case." = "* — любые символы, ? — один символ. Сравнивается с именами приложений и процессов и bundle ID без учёта регистра.";
+"Startup" = "Запуск";
+"Launch AppWrangler at login" = "Запускать AppWrangler при входе";
+"Monitoring" = "Наблюдение";
+"Refresh while window is open" = "Обновлять, пока окно открыто";
+"Check rules in background every" = "Проверять правила в фоне каждые";
+"With the window closed AppWrangler only measures apps that have rules (plus a light scan every 5 s for runaway apps), and stops sampling entirely when there's nothing to do." = "Когда окно закрыто, AppWrangler измеряет только приложения с правилами (и раз в 5 с делает лёгкую проверку на «прожорливые» приложения), а если делать нечего — не измеряет ничего.";
+"Include other users' processes (view only)" = "Показывать процессы других пользователей (только просмотр)";
+"Show CPU usage in the menu bar" = "Показывать загрузку ЦП в строке меню";
+"Runaway apps" = "Прожорливые приложения";
+"Tell me when an app keeps using a lot of CPU in the background" = "Сообщать, когда приложение долго сильно нагружает ЦП в фоне";
+"Above %d%% CPU" = "Выше %d%% ЦП";
+"For %d minutes" = "В течение %d мин";
+"Low memory" = "Нехватка памяти";
+"Treat the Mac as low on memory at" = "Считать, что памяти мало, при";
+"Warning pressure" = "Предупреждающей нагрузке";
+"Critical pressure" = "Критической нагрузке";
+"Apps whose rule says to freeze or quit when the Mac is low on memory are handled at this level, and frozen ones resume when memory frees up." = "Приложения, чьи правила требуют заморозки или завершения при нехватке памяти, обрабатываются на этом уровне; замороженные возобновляются, когда память освобождается.";
+"CPU limiter" = "Ограничитель ЦП";
+"Throttle cycle length" = "Длина цикла ограничения";
+"Throttle cycle length. Shorter feels smoother in limited apps; longer uses fewer wakeups." = "Длина цикла ограничения. Короче — плавнее работа ограниченных приложений; длиннее — меньше пробуждений.";
+"Pause all CPU limits" = "Приостановить все ограничения ЦП";
+"Pause/resume shortcut: %@" = "Сочетание клавиш для паузы: %@";
+"Notifications" = "Уведомления";
+"Notify me about memory limits, low memory and runaway apps" = "Уведомлять о лимитах памяти, нехватке памяти и прожорливых приложениях";
+"Command line" = "Командная строка";
+"Control AppWrangler from Terminal. Add it to your PATH once:" = "Управляйте AppWrangler из Терминала. Один раз добавьте его в PATH:";
+"No activity yet" = "Событий пока нет";
+"Time" = "Время";
+"Event" = "Событие";
+"Clear" = "Очистить";
+"Version %@" = "Версия %@";
+"Per-app CPU, efficiency-core and memory limits for Apple Silicon Macs.\nForked from AppPolice by Maksym Stefanchuk." = "Ограничения ЦП, E-ядер и памяти для каждого приложения на Mac с Apple Silicon.\nФорк AppPolice Максима Стефанчука.";
+
+/* About & help */
+"Documentation" = "Документация";
+"Source code" = "Исходный код";
+"Report a problem" = "Сообщить о проблеме";
+"Original AppPolice" = "Оригинальный AppPolice";
+"Free software under the GNU General Public License v2." = "Свободное ПО под лицензией GNU General Public License v2.";
+"Help & Documentation" = "Справка и документация";

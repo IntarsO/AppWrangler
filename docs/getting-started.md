@@ -1,0 +1,130 @@
+# Getting Started with AppWrangler
+
+This guide takes you from download to your first limit in about five minutes.
+
+**Requirements:** a Mac running macOS 13 Ventura or later. AppWrangler is built for Apple Silicon (M1 and later). An Intel build is possible (`./build.sh --universal`), but Intel Macs have no efficiency cores.
+
+---
+
+## 1. Install
+
+### Option A — download a release (when available)
+
+1. Go to [Releases](https://github.com/IntarsO/AppWrangler/releases) and download `AppWrangler-x.y.z.zip`, if a release has been published. Otherwise use Option B.
+2. Double-click the zip to unpack it, then drag **AppWrangler.app** into your **Applications** folder.
+3. **First launch:** release builds are signed but not notarized by Apple, so macOS asks for confirmation once.
+   - Right-click (or Control-click) **AppWrangler.app** → **Open** → **Open**.
+   - If macOS only offers *Move to Bin*: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the AppWrangler message.
+   - Alternatively, in Terminal: `xattr -dr com.apple.quarantine /Applications/AppWrangler.app`
+
+### Option B — build from source
+
+You only need Apple's free Command Line Tools; full Xcode is not required.
+
+```bash
+xcode-select --install                        # once; skip if already installed
+git clone https://github.com/IntarsO/AppWrangler.git
+cd AppWrangler
+./build.sh --install --cli --run              # build, copy to /Applications, add the `appwrangler` command, launch
+```
+
+Apps you build yourself open without any Gatekeeper prompt.
+
+---
+
+## 2. Find it in the menu bar
+
+AppWrangler has no Dock icon. Look for the **lasso** icon (a loop with a gauge needle inside) in the menu bar at the top right of the screen.
+
+- **Left-click** opens the main panel.
+- **Right-click** gives quick access to *Pause All Limits*, *Settings…*, *Help* and *Quit*.
+
+> Can't see it? On a crowded menu bar macOS may hide it behind the notch. Quit a few other menu bar apps, or hold ⌘ and drag icons to make room.
+
+---
+
+## 3. Take a look around
+
+The panel shows:
+
+- **At the top:** your Mac's chip (for example *Apple M1 · 4P + 4E · 8 GB*), total CPU use, and memory use with memory pressure.
+- **In the list:** everything that's running, in four sections:
+  - **Apps:** the apps you use, with a Dock icon.
+  - **Menu bar & background apps:** things like Dropbox or menu bar utilities.
+  - **macOS system services:** parts of macOS such as Wi-Fi or Control Center (collapsed by default).
+  - **Processes:** command-line tools and background daemons (collapsed by default).
+
+Each row shows:
+- the name, plus a **+N** count of helper processes that are counted together with the app;
+- a **one-line description of what it is**, such as "Web browser" or "Spotlight indexing your files";
+- its current **CPU** (100% = one full core) and **memory**.
+
+Click any row to open its details:
+- what it is and who makes it;
+- whether it's **safe to limit**;
+- a 10-minute CPU and memory chart;
+- its settings.
+
+---
+
+## 4. Set your first limit
+
+Say Slack is using more CPU than you'd like:
+
+1. Click **Slack** in the list.
+2. Turn on **Limit CPU** and pick **25%** (or drag the slider).
+3. Done. The limit is enforced within half a second. The row turns orange, and a gauge icon shows it's being throttled.
+
+From now on, the limit applies **every time Slack runs**, including after you restart your Mac.
+
+Some other things to try:
+- **Efficiency cores only** keeps the app on the low-power cores. It's great for apps you want running but not hogging the fast cores.
+- **Only while the app is in the background** throttles it while you're working in another app, and lets it run at full speed when you switch to it.
+- **Right-click a row** for one-click limits (10/25/50/100/200%), freezing, or quitting.
+
+To remove a limit, turn the toggle off or click **Remove Rule**.
+
+---
+
+## 5. Recommended settings
+
+Open **Settings…** (bottom of the panel, or right-click the menu bar icon):
+
+- **General → Launch AppWrangler at login.** Install the app in /Applications first.
+- **General → Runaway apps.** This is on by default: AppWrangler tells you when something burns CPU in the background for a few minutes.
+- **General → Notifications.** Allow notifications when macOS asks, so you see runaway and memory alerts.
+- **⌃⌥⌘P** pauses or resumes all CPU limits from anywhere.
+
+---
+
+## 6. Optional: the command line
+
+If you used `./build.sh --cli`, or linked it yourself (see Settings → General → Command line), you can do the same from Terminal:
+
+```bash
+appwrangler list                     # what's running, how much it uses, what it is
+appwrangler limit "Google Chrome" 50
+appwrangler ecores Slack on
+appwrangler help
+```
+
+See the [CLI reference](cli.md).
+
+---
+
+## Uninstall
+
+1. Right-click the menu bar icon → **Quit AppWrangler**. Every limited or frozen app is released immediately.
+2. If you enabled *Launch at login*, turn it off first in Settings → General, or later in **System Settings → General → Login Items**.
+3. Delete `/Applications/AppWrangler.app`.
+4. Optionally remove its data and preferences:
+
+```bash
+rm -rf ~/Library/Application\ Support/AppWrangler
+defaults delete io.github.intarso.AppWrangler
+rm -f /opt/homebrew/bin/appwrangler /usr/local/bin/appwrangler ~/.local/bin/appwrangler
+```
+
+---
+
+**Next:** the [User Guide](user-guide.md) explains every feature in detail. Something not working? See the [FAQ](faq.md).
