@@ -182,7 +182,7 @@ final class MCPServer {
 	private func cli(_ args: [String]) -> Outcome {
 		let s = store()
 		var lines: [String] = []
-		let code = CLI.run(args, store: s, apps: runningApps(), print: { lines.append($0) }, postToApp: postToApp)
+		let code = CLI.run(args, store: s, apps: runningApps(), print: { lines.append($0) }, postToApp: postToApp, source: "mcp")
 		s.saveNow()
 		let text = lines.joined(separator: "\n").replacingOccurrences(of: "  (AppWrangler isn't running — applies when it starts)", with: " (AppWrangler isn't running; applies when it starts)")
 		return Outcome(text: text.isEmpty ? (code == 0 ? "Done." : "Failed.") : text, isError: code != 0)
@@ -336,10 +336,34 @@ final class MCPServer {
 				 required: ["app", "frozen"], readOnly: false, destructive: true) { [unowned self] args in
 				self.cli([(args["frozen"] as? Bool ?? true) ? "freeze" : "unfreeze", args["app"] as? String ?? ""])
 			},
-			Tool(name: "set_auto_mode", title: "Auto mode on/off",
-				 description: "Auto mode keeps the focused app (and anything playing/recording audio) at full speed, moves other apps to efficiency cores after 30 s in the background, and shares the CPU fairly between background apps only when the Mac is busy. Apps with their own CPU/E-core rule are not affected.",
-				 properties: ["enabled": ["type": "boolean"]], required: ["enabled"], readOnly: false, destructive: false) { [unowned self] args in
-				self.cli(["auto", (args["enabled"] as? Bool ?? true) ? "on" : "off"])
+			Tool(name: "set_auto_mode", title: "Auto mode",
+				 description: "Auto mode keeps the focused app (and anything playing/recording audio) at full speed, moves other apps to efficiency cores after 30 s in the background, and shares the CPU fairly between background apps only when the Mac is busy. Apps with their own CPU/E-core rule are not affected. Optionally (freeze_idle_apps) it also freezes regular apps you haven't used for idle_minutes while the Mac is low on memory; they resume the moment you switch to them or memory frees up. Messaging, calls and audio apps are never frozen.",
+				 properties: ["enabled": ["type": "boolean", "description": "Auto mode on or off."],
+							  "freeze_idle_apps": ["type": "boolean", "description": "Freeze idle apps when the Mac is low on memory (opt-in)."],
+							  "idle_minutes": ["type": "integer", "minimum": 1, "maximum": 1440, "description": "How long an app must be unused before it may be frozen (default 10)."]],
+				 required: [], readOnly: false, destructive: false) { [unowned self] args in
+				var outcomes: [Outcome] = []
+				if let on = args["enabled"] as? Bool { outcomes.append(self.cli(["auto", on ? "on" : "off"])) }
+				if let freeze = args["freeze_idle_apps"] as? Bool {
+					var a = ["auto", "freeze-idle", freeze ? "on" : "off"]
+					if let m = args["idle_minutes"] as? Int { a.append(String(m)) }
+					outcomes.append(self.cli(a))
+				} else if let m = args["idle_minutes"] as? Int {
+					outcomes.append(self.cli(["auto", "freeze-idle", UserDefaults.standard.bool(forKey: Prefs.autoFreezeIdle) ? "on" : "off", String(m)]))
+				}
+				guard !outcomes.isEmpty else { return Outcome(text: "Give enabled, freeze_idle_apps and/or idle_minutes.", isError: true) }
+				return Outcome(text: outcomes.map(\.text).joined(separator: "\n"), isError: outcomes.contains { $0.isError })
+			},
+			Tool(name: "undo_last_change", title: "Undo last change",
+				 description: "Revert the most recent rule change made through this server, the command line or a suggestion (up to the last 50, one per call). Returns what was restored. Auto-mode on/off isn't covered: use set_auto_mode.",
+				 properties: [:], required: [], readOnly: false, destructive: false) { [unowned self] _ in
+				let s = self.store()
+				guard let (entry, message) = ChangeJournal.undo(store: s) else {
+					return Outcome(text: "Nothing to undo.", structured: ["undone": false])
+				}
+				return Outcome(text: message, structured: ["undone": true, "app": entry.app, "message": message,
+														   "settings": entry.before.map { AppSettings.settings($0) } ?? [:],
+														   "rule": entry.before?.summary ?? "none"])
 			},
 			Tool(name: "pause_limits", title: "Pause or resume all limits",
 				 description: "Pause all CPU limits (frozen apps stay frozen) or resume them. Needs AppWrangler running.",
@@ -388,17 +412,20 @@ final class MCPServer {
 		do { changes = try RuleChanges.parse(args, current: current) } catch { return Outcome(text: "\(error)", isError: true) }
 		let auto = UserDefaults.standard.bool(forKey: Prefs.autoEnabled)
 		let pending = AppState.read() == nil ? " (AppWrangler isn't running; applies when it starts)" : ""
-		switch AppSettings.configure(target, changes: changes, store: s, apps: apps) {
+		let previous = RuleTargets.resolve(target, store: s, apps: apps, create: false)
+		switch AppSettings.configure(target, changes: changes, store: s, apps: apps, source: "mcp") {
 		case .failed(let message):
 			return Outcome(text: message, isError: true)
 		case .removed(let rule):
 			let text = "\(rule.displayName): rule removed — " + (auto ? "Auto mode manages it now." : "no limits (Auto mode is off).") + pending
-			return Outcome(text: text, structured: ["app": rule.displayName, "rule": "none", "managedBy": auto ? "auto" : "nothing"])
+			return Outcome(text: text, structured: ["app": rule.displayName, "rule": "none", "managedBy": auto ? "auto" : "nothing",
+													"previous": AppSettings.settings(previous), "undo": "undo_last_change"])
 		case .saved(let rule, let before):
 			let managed = AppSettings.managedBy(nil, rule: rule, autoEnabled: auto)
 			return Outcome(text: "\(rule.displayName): \(rule.summary) (was: \(before))" + pending,
 						   structured: ["app": rule.displayName, "rule": rule.summary, "before": before,
-										"settings": AppSettings.settings(rule), "managedBy": managed])
+										"settings": AppSettings.settings(rule), "previous": AppSettings.settings(previous),
+										"hadRule": previous != nil, "managedBy": managed, "undo": "undo_last_change"])
 		}
 	}
 
@@ -432,6 +459,7 @@ final class MCPServer {
 			}
 			if let days = sched["weekdays"] as? [Int] { rule.conditions.schedule.weekdays = Set(days.filter { (1...7).contains($0) }) }
 		}
+		ChangeJournal.record(before: s.rules.first { $0.id == rule.id }, after: rule.sanitized(), source: "mcp", store: s)
 		s.upsert(rule)
 		s.saveNow()
 		return Outcome(text: "\(rule.displayName): \(rule.summary)", structured: ["rule": rule.displayName, "summary": rule.summary])
@@ -485,6 +513,7 @@ final class MCPServer {
 		Use get_status, list_apps, explain_app, list_rules and get_impact_stats to audit and analyse. \
 		When the user asks for advice, call suggest_settings; when they talk about a specific app, call get_app_settings for it \
 		and offer the matching configure_app changes (one call can change any of its settings). \
+		If the user wants to revert, call undo_last_change (once per change). \
 		CPU percentages are per core (100 = one full core). Savings in get_impact_stats are estimates. \
 		\(readOnly ? "This server is read-only." : "Changes apply immediately to the running app; ask the user before changing rules, and never limit apps marked protected.")
 		"""

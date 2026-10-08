@@ -123,6 +123,9 @@ enum Prefs {
 	static let autoUseEfficiency = "AWAutoUseEfficiency"
 	static let autoShareCPU = "AWAutoShareCPU"
 	static let autoBusyPercent = "AWAutoBusyPercent"
+	static let autoFreezeIdle = "AWAutoFreezeIdle"
+	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
+	static let dismissedAdvice = "AWDismissedAdvice"
 
 	static var autoSettings: AutoSettings {
 		let d = UserDefaults.standard
@@ -133,6 +136,8 @@ enum Prefs {
 		s.shareCPU = d.bool(forKey: autoShareCPU)
 		s.busyThreshold = min(max(d.double(forKey: autoBusyPercent), 5), 100) / 100
 		s.busyThresholdOnBattery = min(s.busyThreshold, 0.5)
+		s.freezeIdleWhenLowMemory = d.bool(forKey: autoFreezeIdle)
+		s.freezeIdleAfter = min(max(d.double(forKey: autoFreezeIdleMinutes), 1), 24 * 60) * 60
 		return s
 	}
 
@@ -157,6 +162,8 @@ enum Prefs {
 			autoUseEfficiency: true,
 			autoShareCPU: true,
 			autoBusyPercent: 75,
+			autoFreezeIdle: false,
+			autoFreezeIdleMinutes: 10,
 		])
 	}
 }

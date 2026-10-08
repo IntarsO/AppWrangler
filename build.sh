@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${VERSION:-1.0.0}"	# release CI passes the tag
+VERSION="${VERSION:-1.1.0}"	# release CI passes the tag
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
 ARCHS=(--arch arm64)
 CONFIG=release

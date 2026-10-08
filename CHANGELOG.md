@@ -2,9 +2,24 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] — 2026-10-08
 
 ### Added
+- **Auto mode can free up memory (opt-in).** When the Mac is low on memory, it freezes regular apps you haven't used for a while (10 min by default), biggest first.
+  - They resume the moment you switch to them, or when memory frees up.
+  - It never freezes the app in use, audio apps, messaging and calls apps, or menu bar apps.
+  - Turn it on in Settings → General → Auto mode, with `appwrangler auto freeze-idle on`, or with MCP `set_auto_mode`.
+- **Suggestions in the panel**, with one-click buttons to apply them and **×** to hide one for a week.
+- **Suggestions use recent averages.** The running app shares 10-minute per-app averages (`usage.json`), so a short CPU spike isn't flagged as a problem.
+- **Undo.**
+  - `appwrangler undo` and MCP `undo_last_change` revert the last rule change made from the CLI, an AI assistant or a suggestion (up to 50).
+  - `configure_app` results include the `previous` settings.
+- **`appwrangler mcp install | uninstall | status`** sets up Claude Desktop, Claude Code and OpenAI Codex in one step. It backs up each file first and refuses to edit Claude Desktop's settings while it's open, because Claude Desktop would overwrite them.
+- **Homebrew cask:**
+  - `brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler`
+  - `brew install --cask appwrangler`
+- **CI:** GitHub Actions builds the app and runs the unit tests on every push.
+- An app frozen because memory was low (by Auto or by its rule) now resumes as soon as you switch to it.
 - **Suggestions.**
   - `appwrangler suggest` and the MCP tool `suggest_settings` recommend settings for what's running:
     - memory hogs when the Mac is short of memory, with browser tab-sleeping tips;

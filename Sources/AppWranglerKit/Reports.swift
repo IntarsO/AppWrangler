@@ -110,6 +110,13 @@ enum Reports {
 			out["running"] = false
 			out["autoMode"] = UserDefaults.standard.bool(forKey: Prefs.autoEnabled) ? "on" : "off"
 		}
+		let d = UserDefaults.standard
+		out["autoFreezeIdleApps"] = ["enabled": d.bool(forKey: Prefs.autoFreezeIdle), "idleMinutes": d.integer(forKey: Prefs.autoFreezeIdleMinutes),
+									 "atMemoryPressure": d.integer(forKey: Prefs.pressureLevel) >= 4 ? "critical" : "warning"]
+		if let last = ChangeJournal.entries(directory: store.fileURL.deletingLastPathComponent()).last {
+			out["lastChange"] = ["app": last.app, "source": last.source, "date": ISO8601DateFormatter().string(from: last.date),
+								 "now": last.after?.summary ?? "rule removed"]
+		}
 		return out
 	}
 

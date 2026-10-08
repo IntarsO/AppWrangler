@@ -110,6 +110,7 @@ struct PopoverView: View {
 		VStack(spacing: 0) {
 			header
 			if !model.suggestions.isEmpty { suggestionsBanner }
+			if !model.advice.isEmpty { adviceSection }
 			Divider()
 			toolbar
 			Divider()
@@ -217,6 +218,72 @@ struct PopoverView: View {
 		.padding(.horizontal, 12)
 		.padding(.vertical, 8)
 		.background(Color.orange.opacity(0.1))
+	}
+
+	@AppStorage("AWAdviceExpanded") private var adviceExpanded = true
+
+	private var adviceSection: some View {
+		VStack(alignment: .leading, spacing: 6) {
+			HStack(spacing: 6) {
+				Button {
+					adviceExpanded.toggle()
+				} label: {
+					HStack(spacing: 5) {
+						Image(systemName: adviceExpanded ? "chevron.down" : "chevron.right").font(.caption2)
+						Label(L("Suggestions (%d)", model.advice.count), systemImage: "lightbulb")
+							.font(.caption.weight(.semibold))
+					}
+					.contentShape(Rectangle())
+				}
+				.buttonStyle(.plain)
+				if !adviceExpanded, let first = model.advice.first {
+					Text(first.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+				}
+				Spacer()
+				HelpButton(anchor: "suggestions-what-to-change").controlSize(.mini)
+			}
+			if adviceExpanded {
+				ScrollView {
+					VStack(alignment: .leading, spacing: 8) {
+						ForEach(model.advice, id: \.id) { s in adviceCard(s) }
+					}
+				}
+				.frame(maxHeight: 170)
+			}
+		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 8)
+		.background(Color.yellow.opacity(0.08))
+	}
+
+	private func adviceCard(_ s: Suggestion) -> some View {
+		HStack(alignment: .top, spacing: 8) {
+			Image(systemName: s.severity == .high ? "exclamationmark.triangle.fill" : s.severity == .medium ? "exclamationmark.circle" : "info.circle")
+				.foregroundStyle(s.severity == .high ? Color.red : s.severity == .medium ? Color.orange : Color.secondary)
+			VStack(alignment: .leading, spacing: 3) {
+				Text(s.title).font(.caption.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+				Text(s.reason).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+				if let tip = s.tip {
+					Text(tip).font(.caption2).foregroundStyle(.teal).lineLimit(2).textSelection(.enabled)
+				}
+				if !s.actions.isEmpty {
+					HStack(spacing: 6) {
+						ForEach(Array(s.actions.prefix(2).enumerated()), id: \.offset) { _, action in
+							Button(action.label) { model.applyAdvice(s, action) }
+								.help(s.benefit)
+						}
+					}
+					.controlSize(.small)
+					.padding(.top, 2)
+				}
+			}
+			Spacer(minLength: 0)
+			Button { model.dismissAdvice(s) } label: { Image(systemName: "xmark") }
+				.buttonStyle(.borderless)
+				.controlSize(.small)
+				.help(L("Hide this suggestion for a week"))
+				.accessibilityLabel(L("Dismiss"))
+		}
 	}
 
 	private func info(_ s: RunawaySuggestion) -> [String: String] {

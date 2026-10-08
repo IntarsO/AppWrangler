@@ -248,6 +248,8 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.autoEfficiencyAfter) private var autoEfficiencyAfter = 30.0
 	@AppStorage(Prefs.autoShareCPU) private var autoShareCPU = true
 	@AppStorage(Prefs.autoBusyPercent) private var autoBusyPercent = 75.0
+	@AppStorage(Prefs.autoFreezeIdle) private var autoFreezeIdle = false
+	@AppStorage(Prefs.autoFreezeIdleMinutes) private var autoFreezeIdleMinutes = 10
 	@Local private var launchAtLogin = LoginItem.isEnabled
 	@Local private var loginError: String?
 
@@ -286,6 +288,17 @@ struct GeneralSettings: View {
 						Text(L("Then background apps share what the foreground isn't using, each keeping a minimum, so nothing starves. On battery, the threshold is at most 50%."))
 							.font(.caption).foregroundStyle(.secondary)
 					}
+					Toggle(L("When the Mac is low on memory, freeze apps I haven't used for a while"), isOn: $autoFreezeIdle)
+					if autoFreezeIdle {
+						Picker(L("Unused for at least"), selection: $autoFreezeIdleMinutes) {
+							Text("5 min").tag(5)
+							Text("10 min").tag(10)
+							Text("30 min").tag(30)
+							Text("1 h").tag(60)
+						}
+					}
+					Text(L("A frozen app resumes the moment you switch to it, or when memory frees up. Messaging, calls and audio apps are never frozen, nor are menu bar apps. “Low on memory” is the level set under Low memory below."))
+						.font(.caption).foregroundStyle(.secondary)
 					Text(L("To exclude an app, give it a rule and turn on “Ignore this app”."))
 						.font(.caption).foregroundStyle(.secondary)
 				}

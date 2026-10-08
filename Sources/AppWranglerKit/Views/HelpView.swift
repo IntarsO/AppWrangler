@@ -161,7 +161,7 @@ final class HelpState: ObservableObject {
 
 /// Opens the Help window from anywhere in the app.
 enum HelpCenter {
-	private static var window: NSWindow?
+	private(set) static var window: NSWindow?
 	static let state = HelpState()
 
 	static func open(_ topic: HelpTopic = .manual, anchor: String? = nil) {
@@ -178,6 +178,12 @@ enum HelpCenter {
 			w.setFrameAutosaveName("AppWranglerHelp")
 			window = w
 		}
+		#if DEBUG
+		if UserDefaults.standard.string(forKey: "AWDebugSnapshotDir") != nil {
+			window?.orderFront(nil)	// snapshots: don't take keyboard focus
+			return
+		}
+		#endif
 		NSApp.activate(ignoringOtherApps: true)
 		window?.makeKeyAndOrderFront(nil)
 	}

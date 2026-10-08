@@ -8,16 +8,25 @@ This guide takes you from download to your first limit in about five minutes.
 
 ## 1. Install
 
-### Option A — download a release (when available)
+### Option A — Homebrew
 
-1. Go to [Releases](https://github.com/IntarsO/AppWrangler/releases) and download `AppWrangler-x.y.z.zip`, if a release has been published. Otherwise use Option B.
+```bash
+brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler
+brew install --cask appwrangler
+```
+
+This installs **AppWrangler.app** in Applications and the `appwrangler` command. `brew upgrade --cask appwrangler` updates it later. The first launch needs one confirmation, as described in step 3 of Option B.
+
+### Option B — download a release
+
+1. Go to [Releases](https://github.com/IntarsO/AppWrangler/releases) and download `AppWrangler-x.y.z.zip`.
 2. Double-click the zip to unpack it, then drag **AppWrangler.app** into your **Applications** folder.
 3. **First launch:** release builds are signed but not notarized by Apple, so macOS asks for confirmation once.
    - Right-click (or Control-click) **AppWrangler.app** → **Open** → **Open**.
    - If macOS only offers *Move to Bin*: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the AppWrangler message.
    - Alternatively, in Terminal: `xattr -dr com.apple.quarantine /Applications/AppWrangler.app`
 
-### Option B — build from source
+### Option C — build from source
 
 You only need Apple's free Command Line Tools; full Xcode is not required.
 

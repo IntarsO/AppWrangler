@@ -12,7 +12,8 @@ import ProcKit
 import Testing
 @testable import AppWranglerKit
 
-@Suite(.serialized) struct LimiterIntegrationTests {
+@Suite(.serialized, .disabled(if: ProcessInfo.processInfo.environment["CI"] != nil, "Measures real CPU time; shared CI machines are too noisy. Run locally with ./test.sh."))
+struct LimiterIntegrationTests {
 	@Test func cpuTimeIsReportedInNanosecondsOnAppleSilicon() {
 		let pid = spawnBurner()
 		defer { reap([pid]) }

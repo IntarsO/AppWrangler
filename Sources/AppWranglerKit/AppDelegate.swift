@@ -15,6 +15,9 @@ public enum AppWranglerMain {
 		// Defaults first, so the CLI and MCP report the same settings as the app.
 		Prefs.register()
 		if args.count > 1 && args[1] == "mcp" {
+			if args.count > 2, ["install", "uninstall", "status"].contains(args[2]) {
+				exit(MCPInstaller.run(Array(args.dropFirst(2)), print: { Swift.print($0) }))
+			}
 			MCPServer.serve(readOnly: args.contains("--read-only"))
 		}
 		if !DataDirectory.isOverridden { Migration.importAppPoliceRules() }
@@ -285,10 +288,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 			try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
 		}
 		write(popover.contentViewController?.view.window, "popover.png")
+		if UserDefaults.standard.bool(forKey: "AWDebugSnapshotHelp") {
+			HelpCenter.open(.manual, anchor: UserDefaults.standard.string(forKey: "AWDebugHelpAnchor"))
+			DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { write(HelpCenter.window, "help.png") }
+		}
 		guard UserDefaults.standard.bool(forKey: "AWDebugSnapshotSettings") else { return }
-		showSettings()
-		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-			write(self.settingsWindow, "settings.png")
+		DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+			self.showSettings()
+			DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+				write(self.settingsWindow, "settings.png")
+			}
 		}
 	}
 	#endif

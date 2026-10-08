@@ -70,7 +70,13 @@ The icons are drawn in code by `scripts/make-icons.swift`. Edit it and run `swif
 2. Update `CHANGELOG.md`, and build with `VERSION=1.1.0 ./build.sh --zip`.
 3. Tag the release (`git tag v1.1.0 && git push origin v1.1.0`), create a GitHub release for the tag, and attach `build/AppWrangler-1.1.0.zip`.
 
-There is no CI/CD automation yet; it will be added once the project's testing and release rules are settled.
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on every push and pull request, on Apple Silicon. Two kinds of test don't run there, because shared CI machines are too noisy for measurements of real CPU time:
+- the limiter's timing tests (they skip themselves when `CI` is set);
+- the end-to-end tests.
+
+Run `./test.sh` and `./Tests/e2e/run.sh` locally before sending a change that touches the limiter, the enforcer or Auto mode.
+
+Releases are built locally with `./build.sh --zip`. Uploading one with `gh release create` also needs an update to [`Casks/appwrangler.rb`](Casks/appwrangler.rb) (version and `sha256`).
 
 For a signed, notarized build, which requires an Apple Developer ID, see the comments at the top of `build.sh`.
 

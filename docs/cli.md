@@ -73,6 +73,15 @@ Shows whether AppWrangler is running, whether limits are paused, what's frozen, 
 ### `auto [on|off]`
 Turns [Auto mode](user-manual.md#auto-mode) on or off. Without an argument, shows whether it's on. `status` also shows what Auto is doing (apps managed, in use, on E-cores, capped).
 
+### `auto freeze-idle on|off [minutes]`
+When the Mac is low on memory, Auto mode freezes regular apps you haven't used for `minutes` (default 10). They resume the moment you switch to them, or when memory frees up. Messaging, calls and audio apps and menu bar apps are never frozen. Off by default. [More](user-manual.md#auto-mode).
+
+### `undo`
+Reverts the last rule change made from the command line, an AI assistant or a suggestion in the panel. Run it again to go further back (up to 50 changes).
+
+### `mcp install|uninstall|status [--read-only] [claude-desktop|claude-code|codex]`
+Adds AppWrangler's MCP server to Claude Desktop, Claude Code and OpenAI Codex, or removes it, or shows where it's configured. Each config file is backed up first. Quit Claude Desktop before installing. [More](mcp.md#the-quick-way).
+
 ### `stats [hour|today|week|month] [--json]`
 Shows what AppWrangler achieved and what it cost over the last clock hour, today, the last 7 days (default) or 30 days:
 - CPU time saved and estimated energy saved;

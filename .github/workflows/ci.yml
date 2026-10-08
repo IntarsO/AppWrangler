@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build & test (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Unit tests
+        # The limiter's real-CPU timing tests skip themselves when CI is set;
+        # run ./test.sh and ./Tests/e2e/run.sh locally for those.
+        run: ./test.sh
+      - name: Build the app
+        run: ./build.sh
+      - name: Smoke-test the app's CLI and MCP server
+        run: |
+          APP=build/AppWrangler.app/Contents/MacOS/AppWrangler
+          export APPWRANGLER_DATA_DIR="$RUNNER_TEMP/aw-data"
+          "$APP" help | head -3
+          "$APP" set ci-test efficiency_cores=on
+          "$APP" show ci-test --json | python3 -c 'import json,sys; assert json.load(sys.stdin)["settings"]["efficiency_cores"] is True'
+          "$APP" undo
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$APP" mcp --read-only \
+            | python3 -c 'import json,sys; n={t["name"] for t in json.loads(sys.stdin.readline())["result"]["tools"]}; assert "suggest_settings" in n and "configure_app" not in n, n'
+          test -f build/AppWrangler.app/Contents/Resources/Help/user-manual.md

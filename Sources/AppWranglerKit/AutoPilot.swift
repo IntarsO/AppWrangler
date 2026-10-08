@@ -21,6 +21,19 @@
 
 import Foundation
 
+enum AppTraits {
+	/// Apps where freezing means missed messages or calls.
+	static let messagingHints = ["slack", "whatsapp", "teams", "zoom", "discord", "telegram", "signal", "messages", "mail",
+								 "outlook", "skype", "facetime", "webex", "mattermost", "element", "wechat", "viber"]
+
+	static func isMessaging(name: String, bundleID: String?) -> Bool {
+		let n = (name + " " + (bundleID ?? "")).lowercased()
+		return messagingHints.contains { hint in
+			n.range(of: "\\b" + hint, options: .regularExpression) != nil
+		}
+	}
+}
+
 struct AutoSettings: Equatable {
 	var enabled = true
 	/// Seconds in the background before an app moves to the efficiency cores.
@@ -37,6 +50,10 @@ struct AutoSettings: Equatable {
 	var headroomCores = 1.0
 	/// No background app is capped below this many cores.
 	var floorCores = 0.15
+	/// Opt-in: when the Mac is low on memory, freeze regular apps you haven't
+	/// used for `freezeIdleAfter` seconds. They resume when you switch to them.
+	var freezeIdleWhenLowMemory = false
+	var freezeIdleAfter: TimeInterval = 600
 }
 
 struct AutoDecision: Equatable {
@@ -193,6 +210,23 @@ final class AutoPilot {
 	/// Max-min fair allocation: apps wanting less than an equal share keep what
 	/// they use; the rest split the remainder equally. Returns caps only for
 	/// apps that want more than they're given.
+	/// Apps Auto may freeze when the Mac is low on memory: regular apps (not
+	/// menu bar apps) you haven't used for `idleAfter`, using at least
+	/// `minimumBytes`, biggest first. Never the app in use, anything playing or
+	/// recording audio, or messaging and calls apps (you'd miss messages).
+	static func idleFreezeCandidates(_ groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date],
+									 audioPids: Set<pid_t>, idleAfter: TimeInterval, since: Date, now: Date = Date(),
+									 minimumBytes: UInt64 = 100 * 1_048_576) -> [String] {
+		groups.filter { g in
+			guard g.kind == .app, g.footprint >= minimumBytes, !g.pids.contains(frontmostPid),
+				  !g.pids.contains(where: audioPids.contains), !AppTraits.isMessaging(name: g.name, bundleID: g.bundleID) else { return false }
+			let lastUsed = g.pids.compactMap { lastActive[$0] }.max() ?? since
+			return now.timeIntervalSince(lastUsed) >= idleAfter
+		}
+		.sorted { $0.footprint > $1.footprint }
+		.map(\.id)
+	}
+
 	static func fairShare(_ wants: [(id: String, want: Double)], budget: Double, floor: Double) -> [String: Double] {
 		var remaining = budget
 		var pending = wants.sorted { $0.want < $1.want }

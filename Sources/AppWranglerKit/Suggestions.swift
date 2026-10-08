@@ -78,6 +78,10 @@ struct SuggestionInput {
 	var ncpu = 8
 	/// Impact over the last week, if any has been recorded.
 	var week: ImpactSummary?
+	/// Recent per-app averages from the running app (keyed by ImpactKey).
+	var averages: [String: UsageAverages.App] = [:]
+	/// Auto mode already freezes idle apps when memory is low.
+	var autoFreezeIdle = false
 	var fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
 
 	/// Read the live state of this Mac.
@@ -87,12 +91,15 @@ struct SuggestionInput {
 		let system = SystemState.read()
 		let stats = StatsStore(directory: store.fileURL.deletingLastPathComponent())
 		let week = stats.summary(days: 7)
+		let dir = store.fileURL.deletingLastPathComponent()
 		return SuggestionInput(groups: groups, rules: store.rules,
 							   autoEnabled: UserDefaults.standard.bool(forKey: Prefs.autoEnabled),
 							   frontmostPid: frontmostPid, memoryBytes: SystemInfo.info.memsize, memoryUsedBytes: mem.used,
 							   memoryPressure: system.memoryPressure, swapUsedBytes: Swap.usedBytes,
 							   onBattery: system.onBattery, ncpu: SystemInfo.ncpu,
-							   week: week.uptimeSeconds > 0 ? week : nil)
+							   week: week.uptimeSeconds > 0 ? week : nil,
+							   averages: UsageAverages.read(directory: dir)?.apps ?? [:],
+							   autoFreezeIdle: UserDefaults.standard.bool(forKey: Prefs.autoFreezeIdle))
 	}
 }
 
@@ -116,9 +123,6 @@ enum Suggestions {
 		"org.mozilla.firefox": "about:preferences → Performance (Firefox unloads tabs automatically when memory is low)",
 		"com.apple.Safari": "Safari frees background tabs on its own; close tabs you don't need",
 	]
-
-	/// Apps where freezing means missed calls or messages.
-	static let messagingHints = ["slack", "whatsapp", "teams", "zoom", "discord", "telegram", "signal", "messages", "mail", "outlook", "skype", "facetime"]
 
 	static func make(_ input: SuggestionInput, app: String? = nil) -> [Suggestion] {
 		var out: [Suggestion] = []
@@ -145,19 +149,18 @@ enum Suggestions {
 		func mbRoundedUp(_ bytes: Double, step: Double = 512) -> Int {
 			Int((bytes / 1_048_576 / step).rounded(.up) * step)
 		}
-		func isMessaging(_ g: AppGroup) -> Bool {
-			let n = (g.name + " " + (g.bundleID ?? "")).lowercased()
-			return messagingHints.contains { n.contains($0) }
-		}
+		func isMessaging(_ g: AppGroup) -> Bool { AppTraits.isMessaging(name: g.name, bundleID: g.bundleID) }
+		func browserTip(_ g: AppGroup) -> String? { g.bundleID.flatMap { browserMemorySettings[$0] } }
+		let freezeAction = L("Freeze it in the background when memory runs out")
 
 		// Auto mode off: the single biggest lever.
 		if !input.autoEnabled {
 			out.append(Suggestion(
 				id: "auto-off", severity: .medium, category: .auto, app: nil,
-				title: "Turn on Auto mode",
-				reason: "Auto mode is off, so only your own rules apply and background apps run on the performance cores.",
-				benefit: "The app you're using stays at full speed; background apps move to the efficiency cores (≈4–5× less energy for the same work) and share the CPU fairly when the Mac is busy.",
-				actions: [.init(label: "Turn Auto on", tool: "set_auto_mode", arguments: ["enabled": true], cli: "appwrangler auto on")]))
+				title: L("Turn on Auto mode"),
+				reason: L("Auto mode is off, so only your own rules apply and background apps run on the performance cores."),
+				benefit: L("The app you're using stays at full speed; background apps move to the efficiency cores (≈4–5× less energy for the same work) and share the CPU fairly when the Mac is busy."),
+				actions: [.init(label: L("Turn Auto on"), tool: "set_auto_mode", arguments: ["enabled": true], cli: "appwrangler auto on")]))
 		}
 
 		// Memory: big users when the Mac is short of memory.
@@ -167,59 +170,79 @@ enum Suggestions {
 			.sorted { $0.footprint > $1.footprint }
 		if shortOfMemory, !heavy.isEmpty {
 			let top = heavy.prefix(3).map { "\($0.name) \(Fmt.bytes($0.footprint))" }.joined(separator: ", ")
+			let inUse = swap > 0 ? L("%@ of %@ in use, %@ swapped to disk.", Fmt.bytes(UInt64(used)), Fmt.bytes(input.memoryBytes), Fmt.bytes(UInt64(swap)))
+				: L("%@ of %@ in use.", Fmt.bytes(UInt64(used)), Fmt.bytes(input.memoryBytes))
 			out.append(Suggestion(
 				id: "memory-short", severity: input.memoryPressure >= 4 ? .high : .medium, category: .memory, app: nil,
-				title: "Your Mac is short of memory",
-				reason: "\(Fmt.bytes(UInt64(used))) of \(Fmt.bytes(input.memoryBytes)) in use" + (swap > 0 ? ", \(Fmt.bytes(UInt64(swap))) swapped to disk" : "")
-					+ ". Biggest: \(top).",
-				benefit: "Swapping makes every app slower and wears the SSD; trimming the biggest users helps more than any CPU limit.",
-				tip: "Quit apps you aren't using; CPU limits don't free memory."))
+				title: L("Your Mac is short of memory"),
+				reason: inUse + " " + L("Biggest: %@.", top),
+				benefit: L("Swapping makes every app slower and wears the SSD; trimming the biggest users helps more than any CPU limit."),
+				tip: L("Quit apps you aren't using; CPU limits don't free memory.")))
+			// Auto mode can take care of the idle ones by itself.
+			if input.autoEnabled && !input.autoFreezeIdle {
+				out.append(Suggestion(
+					id: "auto-freeze-idle", severity: .medium, category: .memory, app: nil,
+					title: L("Let Auto mode freeze apps you aren't using when memory runs out"),
+					reason: L("Apps you haven't touched for a while still compete for memory with the one you're using."),
+					benefit: L("Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive. Each app resumes the moment you switch to it; messaging, calls and audio apps are never frozen."),
+					actions: [.init(label: L("Freeze idle apps when memory is low"), tool: "set_auto_mode",
+									arguments: ["freeze_idle_apps": true], cli: "appwrangler auto freeze-idle on")]))
+			}
 		}
 		for g in heavy where shortOfMemory || Double(g.footprint) > ram * 0.4 {
 			let existing = rule(for: g)
 			let share = Double(g.footprint) / ram
-			let tip = g.bundleID.flatMap { browserMemorySettings[$0] }.map { "Turn on the browser's tab sleeping: \($0)." }
+			let tip = browserTip(g).map { L("Turn on the browser's tab sleeping: %@.", $0) }
 			var actions: [Suggestion.Action] = []
 			if existing?.memoryLimitEnabled != true {
 				let mb = mbRoundedUp(Double(g.footprint) * 1.25)
-				actions.append(.configure("Warn me above \(Fmt.megabytes(Double(mb)))", app: target(g), ["memory_limit_mb": mb, "memory_action": "notify"]))
+				actions.append(.configure(L("Warn me above %@", Fmt.megabytes(Double(mb))), app: target(g), ["memory_limit_mb": mb, "memory_action": "notify"]))
 			}
 			if (existing?.pressureAction ?? PressureAction.none) == PressureAction.none, !isMessaging(g) {
-				actions.append(.configure("Freeze it in the background when memory runs out", app: target(g), ["low_memory_action": "freeze"]))
+				actions.append(.configure(freezeAction, app: target(g), ["low_memory_action": "freeze"]))
 			}
 			guard !actions.isEmpty || tip != nil else { continue }
 			out.append(Suggestion(
 				id: "memory-hog:" + ImpactKey.of(g), severity: share > 0.5 || input.memoryPressure >= 4 ? .high : .medium,
 				category: .memory, app: g.name,
-				title: share >= 1 ? "\(g.name) uses \(Fmt.bytes(g.footprint)) — more than this Mac's \(Fmt.bytes(input.memoryBytes)) of RAM"
-					: "\(g.name) uses \(Fmt.bytes(g.footprint)) (\(Int(share * 100))% of RAM)",
-				reason: shortOfMemory ? "Your Mac is short of memory and \(g.name) is one of the biggest users." : "\(g.name) alone uses a large share of this Mac's memory.",
-				benefit: "Less swapping, so the app you're using stays responsive.",
+				title: share >= 1 ? L("%@ uses %@ — more than this Mac's %@ of RAM", g.name, Fmt.bytes(g.footprint), Fmt.bytes(input.memoryBytes))
+					: L("%@ uses %@ (%d%% of RAM)", g.name, Fmt.bytes(g.footprint), Int(share * 100)),
+				reason: shortOfMemory ? L("Your Mac is short of memory and %@ is one of the biggest users.", g.name)
+					: L("%@ alone uses a large share of this Mac's memory.", g.name),
+				benefit: L("Less swapping, so the app you're using stays responsive."),
 				tip: tip, actions: actions))
 		}
 
-		// CPU: busy things in the background that nothing manages.
-		for g in input.groups where g.cpu >= 0.5 && !g.pids.contains(input.frontmostPid) && limitable(g) && !autoManages(g) {
+		// CPU: busy things in the background that nothing manages. Prefer the
+		// running app's averages over a one-second sample, so a spike isn't flagged.
+		for g in input.groups where !g.pids.contains(input.frontmostPid) && limitable(g) && !autoManages(g) {
+			let average = input.averages[ImpactKey.of(g)]
+			let cpu = average?.cpu ?? g.cpu
+			guard cpu >= 0.5 else { continue }
 			let existing = rule(for: g)
 			if let r = existing, r.isActive, r.cpuLimitEnabled || r.backgroundMode { continue }
 			let caution = ProcessCatalog.describe(g).safety == .caution
 			let isApp = g.kind == .app || g.kind == .background
 			var actions: [Suggestion.Action] = [
-				.configure("Run it on the efficiency cores", app: target(g), ["efficiency_cores": true, "background_only": isApp]),
+				.configure(L("Run it on the efficiency cores"), app: target(g), ["efficiency_cores": true, "background_only": isApp]),
 			]
-			let cap = max(25, Int((g.cpu * 100 / 2 / 25).rounded(.down) * 25))
-			actions.append(.configure("Cap it at \(cap)% CPU" + (isApp ? " while in the background" : ""), app: target(g), ["cpu_limit": cap, "background_only": isApp]))
+			let cap = max(25, Int((cpu * 100 / 2 / 25).rounded(.down) * 25))
+			actions.append(.configure(isApp ? L("Cap it at %d%% CPU while in the background", cap) : L("Cap it at %d%% CPU", cap),
+									  app: target(g), ["cpu_limit": cap, "background_only": isApp]))
 			if isApp && !input.autoEnabled {
-				actions.insert(.init(label: "Let Auto mode handle it", tool: "set_auto_mode", arguments: ["enabled": true],
+				actions.insert(.init(label: L("Let Auto mode handle it"), tool: "set_auto_mode", arguments: ["enabled": true],
 									 cli: "appwrangler auto on"), at: 0)
 			}
+			var reason = L("It isn't the app you're using and nothing limits it.")
+			if caution { reason += " " + L("Other apps may depend on it — limit gently.") }
+			reason += " " + (average.map { L("Average over the last %d min.", max(1, Int($0.minutes.rounded()))) }
+							 ?? L("Measured over about a second; check again if it's a short spike."))
 			out.append(Suggestion(
-				id: "background-cpu:" + ImpactKey.of(g), severity: g.cpu >= 1.5 ? .high : caution ? .low : .medium,
+				id: "background-cpu:" + ImpactKey.of(g), severity: cpu >= 1.5 ? .high : caution ? .low : .medium,
 				category: input.onBattery ? .battery : .cpu, app: g.name,
-				title: "\(g.name) uses \(Fmt.percent(g.cpu)) CPU in the background",
-				reason: "It isn't the app you're using and nothing limits it" + (caution ? ". Other apps may depend on it — limit gently." : ".")
-					+ " (Measured over about a second; check again if it's a short spike.)",
-				benefit: "Efficiency cores do the same work with ≈4–5× less energy and keep the performance cores free for you.",
+				title: L("%@ uses %@ CPU in the background", g.name, Fmt.percent(cpu)),
+				reason: reason,
+				benefit: L("Efficiency cores do the same work with ≈4–5× less energy and keep the performance cores free for you."),
 				actions: actions))
 		}
 
@@ -227,12 +250,12 @@ enum Suggestions {
 		for r in input.rules where r.isActive && (r.cpuLimitEnabled || r.backgroundMode) && !r.onlyWhenInactive {
 			out.append(Suggestion(
 				id: "applies-while-focused:" + r.id.uuidString, severity: .medium, category: .rules, app: r.displayName,
-				title: "\(r.displayName) is limited even while you use it",
-				reason: "Its rule (\(r.summary)) also applies when it's the frontmost app, which makes it feel slow and laggy.",
-				benefit: "Full speed while you use it, still efficient in the background.",
+				title: L("%@ is limited even while you use it", r.displayName),
+				reason: L("Its rule (%@) also applies when it's the frontmost app, which makes it feel slow and laggy.", r.summary),
+				benefit: L("Full speed while you use it, still efficient in the background."),
 				actions: [
-					.configure("Only limit it in the background", app: r.displayName, ["background_only": true]),
-				] + (input.autoEnabled ? [.configure("Hand it to Auto mode", app: r.displayName, ["use_auto": true])] : [])))
+					.configure(L("Only limit it in the background"), app: r.displayName, ["background_only": true]),
+				] + (input.autoEnabled ? [.configure(L("Hand it to Auto mode"), app: r.displayName, ["use_auto": true])] : [])))
 		}
 
 		// Rules: CPU limits that hold an app back most of the time.
@@ -246,16 +269,17 @@ enum Suggestions {
 				let raised = min(Int((a.averageWanted * 100 * 0.75 / 25).rounded(.up) * 25), input.ncpu * 100)
 				guard raised > Int(r.cpuLimit) else { continue }
 				var actions: [Suggestion.Action] = [
-					.configure("Raise the limit to \(raised)%", app: r.displayName, ["cpu_limit": raised]),
+					.configure(L("Raise the limit to %d%%", raised), app: r.displayName, ["cpu_limit": raised]),
 				]
 				if input.autoEnabled {
-					actions.append(.configure("Hand it to Auto mode", app: r.displayName, ["use_auto": true]))
+					actions.append(.configure(L("Hand it to Auto mode"), app: r.displayName, ["use_auto": true]))
 				}
 				out.append(Suggestion(
 					id: "limit-too-strict:" + r.id.uuidString, severity: .medium, category: .rules, app: r.displayName,
-					title: "\(r.displayName)'s CPU limit holds it back most of the time",
-					reason: "Over the last week it wanted \(Fmt.percent(a.averageWanted)) on average but was allowed \(Fmt.percent(a.averageAllowed)), and was held back \(Int(a.heldBackSeconds / a.limitedSeconds * 100))% of the time it was limited.",
-					benefit: "Fewer stalls and timeouts in that app; Auto mode would still keep it efficient in the background.",
+					title: L("%@'s CPU limit holds it back most of the time", r.displayName),
+					reason: L("Over the last week it wanted %@ on average but was allowed %@, and was held back %d%% of the time it was limited.",
+							  Fmt.percent(a.averageWanted), Fmt.percent(a.averageAllowed), Int(a.heldBackSeconds / a.limitedSeconds * 100)),
+					benefit: L("Fewer stalls and timeouts in that app; Auto mode would still keep it efficient in the background."),
 					actions: actions))
 			}
 		}
@@ -267,37 +291,39 @@ enum Suggestions {
 			let limit = r.memoryLimitMB * 1_048_576
 			guard footprint > limit * 1.1 else { continue }
 			let raised = mbRoundedUp(footprint * 1.25)
-			let browserTip = g.bundleID.flatMap { browserMemorySettings[$0] }
+			let title = L("%@ is over its %@ memory limit", r.displayName, Fmt.megabytes(r.memoryLimitMB))
 			// Raising a limit past most of the RAM would only hide the problem.
 			guard Double(raised) * 1_048_576 <= ram * 0.6 else {
 				out.append(Suggestion(
 					id: "memory-limit-exceeded:" + r.id.uuidString, severity: .low, category: .memory, app: r.displayName,
-					title: "\(r.displayName) is over its \(Fmt.megabytes(r.memoryLimitMB)) memory limit",
-					reason: "It's using \(Fmt.bytes(UInt64(footprint))). Raising the limit further would leave too little memory for everything else on this \(Fmt.bytes(input.memoryBytes)) Mac.",
-					benefit: "Getting the app itself to use less memory is what stops the swapping.",
-					tip: browserTip.map { "Make the browser sleep inactive tabs: \($0)." } ?? "Close windows or documents you don't need in it, or restart it.",
+					title: title,
+					reason: L("It's using %@. Raising the limit further would leave too little memory for everything else on this %@ Mac.",
+							  Fmt.bytes(UInt64(footprint)), Fmt.bytes(input.memoryBytes)),
+					benefit: L("Getting the app itself to use less memory is what stops the swapping."),
+					tip: browserTip(g).map { L("Make the browser sleep inactive tabs: %@.", $0) }
+						?? L("Close windows or documents you don't need in it, or restart it."),
 					actions: r.pressureAction == .none && !isMessaging(g) && !out.contains(where: { $0.id == "memory-hog:" + ImpactKey.of(g) })
-						? [.configure("Freeze it in the background when memory runs out", app: r.displayName, ["low_memory_action": "freeze"])] : []))
+						? [.configure(freezeAction, app: r.displayName, ["low_memory_action": "freeze"])] : []))
 				continue
 			}
 			out.append(Suggestion(
 				id: "memory-limit-exceeded:" + r.id.uuidString, severity: r.memoryAction == .notify ? .low : .medium,
 				category: .memory, app: r.displayName,
-				title: "\(r.displayName) is over its \(Fmt.megabytes(r.memoryLimitMB)) memory limit",
-				reason: "It's using \(Fmt.bytes(UInt64(footprint))), so the limit's action (\(r.memoryAction.rawValue)) keeps triggering.",
-				benefit: "A limit the app normally stays under only fires when something is really wrong.",
-				tip: browserTip.map { "Or make the browser use less: \($0)." },
-				actions: [.configure("Raise it to \(Fmt.megabytes(Double(raised)))", app: r.displayName, ["memory_limit_mb": raised])]))
+				title: title,
+				reason: L("It's using %@, so the limit's action (%@) keeps triggering.", Fmt.bytes(UInt64(footprint)), r.memoryAction.label),
+				benefit: L("A limit the app normally stays under only fires when something is really wrong."),
+				tip: browserTip(g).map { L("Or make the browser use less: %@.", $0) },
+				actions: [.configure(L("Raise it to %@", Fmt.megabytes(Double(raised))), app: r.displayName, ["memory_limit_mb": raised])]))
 		}
 
 		// Rules for apps that no longer exist.
 		for r in input.rules where r.matchKind == .path && r.matchValue.hasPrefix("/") && !input.fileExists(r.matchValue) {
 			out.append(Suggestion(
 				id: "stale-rule:" + r.id.uuidString, severity: .low, category: .rules, app: r.displayName,
-				title: "Rule for \(r.displayName) points to an app that's gone",
-				reason: "\(r.matchValue) doesn't exist any more.",
-				benefit: "A tidier rule list.",
-				actions: [.init(label: "Remove the rule", tool: "remove_rule", arguments: ["app": r.displayName],
+				title: L("Rule for %@ points to an app that's gone", r.displayName),
+				reason: L("%@ doesn't exist any more.", r.matchValue),
+				benefit: L("A tidier rule list."),
+				actions: [.init(label: L("Remove the rule"), tool: "remove_rule", arguments: ["app": r.displayName],
 								cli: "appwrangler unlimit \(Suggestions.quoted(r.displayName))")]))
 		}
 

@@ -49,7 +49,7 @@ enum CLI {
 	static let commands: Set<String> = [
 		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
-		"suggest", "show", "set",
+		"suggest", "show", "set", "undo",
 	]
 
 	static func isInvocation(_ args: [String]) -> Bool {
@@ -75,8 +75,9 @@ enum CLI {
 	}
 
 	/// Testable core: no globals, output via `print`.
+	/// - Parameter source: who made the change ("cli", "mcp"), for the undo journal.
 	static func run(_ args: [String], store: RuleStore, apps: [RunningApp],
-					print: (String) -> Void, postToApp: (String, String?) -> Bool) -> Int32 {
+					print: (String) -> Void, postToApp: (String, String?) -> Bool, source: String = "cli") -> Int32 {
 		guard let command = args.first else { print(usage); return 1 }
 		if let target = args.dropFirst().first, target.trimmingCharacters(in: .whitespaces).isEmpty {
 			print("error: the app name can't be empty")
@@ -92,6 +93,7 @@ enum CLI {
 		}
 
 		func save(_ rule: AppRule, _ message: String) -> Int32 {
+			ChangeJournal.record(before: store.rules.first { $0.id == rule.id }, after: rule.sanitized(), source: source, store: store)
 			store.upsert(rule)
 			store.saveNow()
 			print(message + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
@@ -154,9 +156,27 @@ enum CLI {
 			return 0
 
 		case "auto":
+			let d = UserDefaults.standard
+			if rest.first == "freeze-idle" {
+				guard rest.count >= 2, ["on", "off"].contains(rest[1]) else { return fail("usage: auto freeze-idle on|off [minutes]") }
+				if rest.count >= 3 {
+					guard let m = Int(rest[2]), (1...1440).contains(m) else { return fail("minutes must be 1–1440") }
+					d.set(m, forKey: Prefs.autoFreezeIdleMinutes)
+				}
+				d.set(rest[1] == "on", forKey: Prefs.autoFreezeIdle)
+				d.synchronize()
+				_ = postToApp("prefs", nil)
+				let minutes = d.integer(forKey: Prefs.autoFreezeIdleMinutes)
+				print(rest[1] == "on"
+					  ? "Auto mode will freeze apps you haven't used for \(minutes) min when the Mac is low on memory. They resume when you switch to them or memory frees up; messaging, calls and audio apps are never frozen."
+					  : "Auto mode won't freeze idle apps.")
+				return 0
+			}
 			guard let mode = rest.first, ["on", "off"].contains(mode) else {
-				let on = UserDefaults.standard.bool(forKey: Prefs.autoEnabled)
-				print("Auto mode is \(on ? "on" : "off"). Use: auto on|off")
+				let on = d.bool(forKey: Prefs.autoEnabled)
+				let freeze = d.bool(forKey: Prefs.autoFreezeIdle)
+				print("Auto mode is \(on ? "on" : "off"); freezing idle apps when memory is low is \(freeze ? "on (after \(d.integer(forKey: Prefs.autoFreezeIdleMinutes)) min)" : "off").")
+				print("Use: auto on|off, auto freeze-idle on|off [minutes]")
 				return 0
 			}
 			UserDefaults.standard.set(mode == "on", forKey: Prefs.autoEnabled)
@@ -234,7 +254,7 @@ enum CLI {
 			let current = ruleFor(rest[0], create: false)?.conditions.schedule ?? Schedule()
 			let changes: RuleChanges
 			do { changes = try RuleChanges.parse(cli: Array(rest.dropFirst()), current: current) } catch { return fail("\(error)") }
-			switch AppSettings.configure(rest[0], changes: changes, store: store, apps: apps) {
+			switch AppSettings.configure(rest[0], changes: changes, store: store, apps: apps, source: source) {
 			case .failed(let message):
 				return fail(message)
 			case .removed(let rule):
@@ -300,7 +320,16 @@ enum CLI {
 			guard rest.count >= 1, let rule = ruleFor(rest[0], create: false) else { return fail("no rule for \(rest.first ?? "?")") }
 			store.remove(id: rule.id)
 			store.saveNow()
+			ChangeJournal.record(before: rule, after: nil, source: source, store: store)
 			print("\(rule.displayName): rule removed")
+			return 0
+
+		case "undo":
+			guard let (_, message) = ChangeJournal.undo(store: store) else {
+				print("Nothing to undo.")
+				return 0
+			}
+			print(message + (AppState.read() == nil ? "  (AppWrangler isn't running — applies when it starts)" : ""))
 			return 0
 
 		case "freeze", "unfreeze":
@@ -390,11 +419,13 @@ enum CLI {
 	  rules                          show saved rules
 	  suggest [app] [--json]         recommended settings for what's running, with ready commands
 	  show <app> [--json]            what an app is, its usage, every setting, and suggestions
+	  undo                           revert the last rule change made here or by an AI assistant
 	  set <app> key=value …          change any setting, e.g. set Slack efficiency_cores=on
 	                                 background_only=true   (run `set` alone to list the keys)
 	  status                         running? paused? what's frozen or hogging the CPU
 	  stats [hour|today|week|month] [--json]  how much CPU/energy was saved, and what it cost
 	  auto [on|off]                  Auto mode: full speed for the app you use, efficiency for the rest
+	  auto freeze-idle on|off [min]  also freeze apps unused for [min] when memory runs low
 	  limit <app> <percent>          cap CPU (100 = one core). New rules apply only while
 	                                 the app isn't frontmost; --always to apply even then
 	  ecores <app> on|off            run the app on efficiency cores only
@@ -407,6 +438,8 @@ enum CLI {
 	  pause|resume                   pause or resume all CPU limits
 	  export [file] / import <file>  share rules as JSON
 	  mcp [--read-only]              run as an MCP server for Claude / OpenAI tools (docs/mcp.md)
+	  mcp install|uninstall|status [--read-only] [claude-desktop|claude-code|codex]
+	                                 add AppWrangler to your AI apps' MCP settings
 
 	<app> is an app name ("Google Chrome"), bundle id (com.google.Chrome),
 	process name (node), path (/usr/local/bin/x) or pattern ("*Helper*").

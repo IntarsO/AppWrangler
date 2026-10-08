@@ -212,7 +212,7 @@ enum AppSettings {
 
 	/// Apply `changes` to the app's rule (creating one if something is turned on).
 	/// A rule left with no limits that isn't ignored is removed, so Auto mode manages the app.
-	static func configure(_ target: String, changes: RuleChanges, store: RuleStore, apps: [RunningApp]) -> Outcome {
+	static func configure(_ target: String, changes: RuleChanges, store: RuleStore, apps: [RunningApp], source: String = "cli") -> Outcome {
 		guard !changes.isEmpty else { return .failed("nothing to change — give at least one setting: " + RuleChanges.keys.map(\.key).joined(separator: ", ")) }
 		if Protected.contains(name: target, bundleID: target, pid: 2) {
 			return .failed("\(target) is critical to macOS; AppWrangler won't limit it")
@@ -227,12 +227,16 @@ enum AppSettings {
 		let before = existing?.summary ?? "no rule"
 		changes.apply(to: &rule)
 		if !rule.hasLimits && !rule.ignored {
-			if existing != nil { store.remove(id: rule.id) }
+			if existing != nil {
+				store.remove(id: rule.id)
+				ChangeJournal.record(before: existing, after: nil, source: source, store: store)
+			}
 			store.saveNow()
 			return .removed(rule)
 		}
 		store.upsert(rule)
 		store.saveNow()
+		ChangeJournal.record(before: existing, after: rule, source: source, store: store)
 		return .saved(rule, before: before)
 	}
 
@@ -280,4 +284,63 @@ enum AppSettings {
 		"rule (memory only)": "Only memory settings apply; CPU is unmanaged (Auto mode is off or it's a plain process).",
 		"nothing": "Runs unmanaged.",
 	]
+}
+
+/// The last rule changes made from the CLI, the MCP server or a suggestion
+/// (`changes.json` next to the rules), so "undo that" works.
+enum ChangeJournal {
+	struct Entry: Codable {
+		var date: Date
+		var app: String
+		var source: String
+		/// The rule before the change (nil = there was none) and after (nil = removed).
+		var before: AppRule?
+		var after: AppRule?
+	}
+
+	static let capacity = 50
+
+	static func url(_ directory: URL) -> URL { directory.appendingPathComponent("changes.json") }
+
+	static func entries(directory: URL) -> [Entry] {
+		guard let data = try? Data(contentsOf: url(directory)) else { return [] }
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		return (try? decoder.decode([Entry].self, from: data)) ?? []
+	}
+
+	private static func save(_ entries: [Entry], directory: URL) {
+		let encoder = JSONEncoder()
+		encoder.dateEncodingStrategy = .iso8601
+		encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		if let data = try? encoder.encode(Array(entries.suffix(capacity))) { try? data.write(to: url(directory), options: .atomic) }
+	}
+
+	static func record(before: AppRule?, after: AppRule?, source: String, store: RuleStore) {
+		guard before != after, let app = (after ?? before)?.displayName else { return }
+		let dir = store.fileURL.deletingLastPathComponent()
+		save(entries(directory: dir) + [Entry(date: Date(), app: app, source: source, before: before, after: after)], directory: dir)
+	}
+
+	/// Reverts the most recent change. Returns what happened, or nil if there's nothing to undo.
+	@discardableResult
+	static func undo(store: RuleStore) -> (entry: Entry, message: String)? {
+		let dir = store.fileURL.deletingLastPathComponent()
+		var all = entries(directory: dir)
+		guard let last = all.popLast() else { return nil }
+		save(all, directory: dir)
+		let message: String
+		if let before = last.before {
+			store.upsert(before)
+			message = "\(before.displayName): restored — \(before.summary)"
+		} else if let after = last.after {
+			store.remove(id: after.id)
+			message = "\(after.displayName): rule removed (it didn't exist before)"
+		} else {
+			message = "\(last.app): nothing to restore"
+		}
+		store.saveNow()
+		return (last, message)
+	}
 }

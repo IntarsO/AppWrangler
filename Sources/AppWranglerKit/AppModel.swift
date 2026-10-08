@@ -34,6 +34,9 @@ final class AppModel: ObservableObject {
 	@Published private(set) var snapshot = Snapshot()
 	@Published private(set) var limiterStatus: [String: pk_lim_status] = [:]
 	@Published private(set) var suggestions: [RunawaySuggestion] = []
+	/// Recommended settings shown in the panel (same engine as `appwrangler suggest`).
+	@Published private(set) var advice: [Suggestion] = []
+	private var lastAdvice = Date.distantPast
 	@Published private(set) var systemState = SystemState()
 	@Published var paused = false {
 		didSet {
@@ -59,6 +62,9 @@ final class AppModel: ObservableObject {
 	private var cancellables: Set<AnyCancellable> = []
 	private var pendingTick: DispatchWorkItem?
 	private var started = false
+	/// Apps not used since AppWrangler started count as idle since then.
+	private let launchedAt = Date()
+	private var lastUsageWrite = Date.distantPast
 	private var runningAppsObservation: NSKeyValueObservation?
 
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
@@ -272,8 +278,21 @@ final class AppModel: ObservableObject {
 		var state = system.current
 		state.now = Date()
 		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
-		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids)
+		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
+					   autoFreeze: autoFreezeCandidates(lastSnapshot, state: state))
 		writeState()
+	}
+
+	/// Opt-in Auto memory: while the Mac is low on memory, apps you haven't used
+	/// for a while may be frozen (they resume when you switch to them).
+	private func autoFreezeCandidates(_ snapshot: Snapshot, state: SystemState) -> Set<String> {
+		let s = autoPilot.settings
+		guard s.enabled, s.freezeIdleWhenLowMemory, state.memoryPressure >= enforcer.pressureThreshold else { return [] }
+		let groups = autoEligible(snapshot).filter { g in
+			(rules.rule(for: g)?.pressureAction ?? PressureAction.none) == PressureAction.none	// the app's own rule decides otherwise
+		}
+		return Set(AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
+												  audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt))
 	}
 
 	/// Processes playing or recording audio (macOS 14.2+). Only queried when
@@ -358,9 +377,15 @@ final class AppModel: ObservableObject {
 		lastSnapshot = snapshot
 		refreshAudio()
 		let auto = decideAuto(snapshot, state: state, newSample: true)
-		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids)
+		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
+					   autoFreeze: autoFreezeCandidates(snapshot, state: state))
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
+		if Date().timeIntervalSince(lastUsageWrite) >= 60 {
+			lastUsageWrite = Date()
+			UsageAverages(updated: Date(), apps: UsageAverages.compute(groups: snapshot.groups, history: history))
+				.write(directory: rules.fileURL.deletingLastPathComponent())
+		}
 		if snapshot.full && runawayEnabled { detectRunaways(snapshot) }
 		let status = enforcer.limiterStatus()
 		recordImpact(snapshot, status: status, state: state)
@@ -368,6 +393,7 @@ final class AppModel: ObservableObject {
 		if snapshot.full && uiVisible {
 			self.snapshot = snapshot
 			limiterStatus = status
+			if Date().timeIntervalSince(lastAdvice) >= 30 { refreshAdvice() }
 		}
 		writeState()
 	}
@@ -417,6 +443,71 @@ final class AppModel: ObservableObject {
 		suggestions.removeAll { $0.groupID == groupID }
 		log.add(name, rule.summary)
 		writeState()
+	}
+
+	// MARK: Suggestions (advice)
+
+	func refreshAdvice() {
+		lastAdvice = Date()
+		guard lastSnapshot.full else { return }
+		var mem = pk_memory_stats()
+		pk_memory_stats_get(&mem)
+		let week = stats.summary(days: 7)
+		let d = UserDefaults.standard
+		let input = SuggestionInput(
+			groups: lastSnapshot.groups, rules: rules.rules, autoEnabled: autoPilot.settings.enabled,
+			frontmostPid: frontmostPid, memoryBytes: SystemInfo.info.memsize, memoryUsedBytes: mem.used,
+			memoryPressure: systemState.memoryPressure, swapUsedBytes: Swap.usedBytes, onBattery: systemState.onBattery,
+			ncpu: SystemInfo.ncpu, week: week.uptimeSeconds > 0 ? week : nil,
+			averages: UsageAverages.compute(groups: lastSnapshot.groups, history: history),
+			autoFreezeIdle: d.bool(forKey: Prefs.autoFreezeIdle))
+		let dismissed = d.dictionary(forKey: Prefs.dismissedAdvice) as? [String: Date] ?? [:]
+		advice = Suggestions.make(input).filter { s in
+			guard let when = dismissed[s.id] else { return true }
+			return Date().timeIntervalSince(when) > 7 * 86_400
+		}
+	}
+
+	/// Hide a suggestion for a week.
+	func dismissAdvice(_ s: Suggestion) {
+		var dismissed = UserDefaults.standard.dictionary(forKey: Prefs.dismissedAdvice) as? [String: Date] ?? [:]
+		dismissed = dismissed.filter { Date().timeIntervalSince($0.value) < 7 * 86_400 }
+		dismissed[s.id] = Date()
+		UserDefaults.standard.set(dismissed, forKey: Prefs.dismissedAdvice)
+		advice.removeAll { $0.id == s.id }
+	}
+
+	/// Apply one of a suggestion's actions, exactly as the CLI / MCP would.
+	func applyAdvice(_ s: Suggestion, _ action: Suggestion.Action) {
+		let d = UserDefaults.standard
+		switch action.tool {
+		case "configure_app":
+			let target = action.arguments["app"] as? String ?? ""
+			guard let changes = try? RuleChanges.parse(action.arguments) else { return }
+			switch AppSettings.configure(target, changes: changes, store: rules, apps: Array(apps.values), source: "suggestion") {
+			case .saved(let rule, _): log.add(rule.displayName, rule.summary)
+			case .removed(let rule): log.add(rule.displayName, L("Rule removed"))
+			case .failed(let message): log.add(target, message)
+			}
+		case "set_auto_mode":
+			if let on = action.arguments["enabled"] as? Bool { d.set(on, forKey: Prefs.autoEnabled) }
+			if let on = action.arguments["freeze_idle_apps"] as? Bool { d.set(on, forKey: Prefs.autoFreezeIdle) }
+			preferencesChanged()
+			reapply()
+		case "remove_rule":
+			let name = (action.arguments["app"] as? String ?? "").lowercased()
+			if let rule = rules.rules.first(where: { $0.displayName.lowercased() == name }) {
+				rules.remove(id: rule.id)
+				rules.saveNow()
+				ChangeJournal.record(before: rule, after: nil, source: "suggestion", store: rules)
+				log.add(rule.displayName, L("Rule removed"))
+			}
+		default:
+			return
+		}
+		advice.removeAll { $0.id == s.id }
+		lastAdvice = .distantPast	// recompute on the next sample
+		tickSoon(0.3)
 	}
 
 	func dismissSuggestion(_ s: RunawaySuggestion) {

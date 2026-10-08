@@ -20,11 +20,28 @@ It runs locally, speaks MCP over stdin/stdout, and never opens a network port. F
 | Mode | Command | Tools |
 |---|---|---|
 | **Read-only** (audit, analyse, advise) | `AppWrangler mcp --read-only` | `get_status`, `list_apps`, `explain_app`, `get_app_settings`, `suggest_settings`, `get_impact_stats`, `list_rules` |
-| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `pause_limits` |
+| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `undo_last_change`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `pause_limits` |
 
 In full mode, every tool that changes something is marked as such, so MCP clients ask you before running it. Tools that can freeze, quit or remove things are marked *destructive*. Start with `--read-only` if you only want insight.
 
 ## Setup
+
+### The quick way
+
+```bash
+appwrangler mcp install              # full access
+appwrangler mcp install --read-only  # audit and advice only
+appwrangler mcp status               # what's configured where
+appwrangler mcp uninstall
+```
+
+This adds AppWrangler to **Claude Desktop**, **Claude Code** and **OpenAI Codex**, whichever you have. Add a client name to do just that one: `claude-desktop`, `claude-code` or `codex`. Only the `appwrangler` entry is touched, and each file is backed up first as `<file>.appwrangler-backup`.
+
+**Quit Claude Desktop before installing.** It rewrites its settings file while it's open, which would drop the new entry, so AppWrangler refuses until it's closed. Restart each app afterwards to load the tools.
+
+(No `appwrangler` command yet? Use `/Applications/AppWrangler.app/Contents/MacOS/AppWrangler mcp install`.)
+
+The sections below show how to do the same by hand.
 
 ### Claude Desktop
 
@@ -97,7 +114,8 @@ ChatGPT connects to MCP servers through *Developer Mode* or workspace connectors
 | `suggest_settings` | Recommended settings (see [below](#suggestions-and-per-app-settings)). Optional `app` (only that app) and `focus` (`memory`, `cpu`, `battery`, `rules`, `auto`). Changes nothing |
 | `get_app_settings` | `app`: what it is, whether it's safe to limit, live usage, **every setting** (with the keys `configure_app` takes and what each means), who manages it (own rule / Auto / nothing), what Auto is doing to it, and suggestions for it |
 | `configure_app` | `app` plus any combination of `cpu_limit`, `efficiency_cores`, `background_only`, `memory_limit_mb`, `memory_action`, `low_memory_action`, `include_helpers`, `enabled`, `ignored`, `use_auto`, `power`, `low_power_mode_only`, `hot_only`, `schedule` (`"09:00-18:00"` / `"off"`), `weekdays`. Only what you pass changes ([all settings](user-manual.md#every-setting-of-an-app)) |
-| `set_auto_mode` | `enabled`: Auto mode on or off ([how it works](user-manual.md#auto-mode)) |
+| `set_auto_mode` | Any of `enabled` (Auto mode on or off), `freeze_idle_apps` (freeze unused apps when memory runs out) and `idle_minutes` ([how it works](user-manual.md#auto-mode)) |
+| `undo_last_change` | Reverts the most recent rule change made by this server, the CLI or a suggestion (one per call, up to 50). `configure_app` results also include the `previous` settings |
 | `set_cpu_limit` | `app`, `percent` (100 = one core), optional `background_only` |
 | `set_efficiency_cores` | `app`, `enabled` |
 | `set_memory_limit` | `app`, `megabytes`, `action` (`notify`/`freeze`/`quit`/`forcequit`); omit `megabytes` to remove the limit |
@@ -152,6 +170,8 @@ When you talk about a particular app, the assistant calls `get_app_settings` for
 - *"Make Slack run on efficiency cores only while it's in the background."*
 - *"Warn me when Brave goes over 6 GB, and freeze it in the background if memory runs out."*
 - *"Hand WhatsApp back to Auto mode."*
+- *"Undo that."*
+- *"My Mac only has 8 GB. Freeze the apps I'm not using when memory runs out."*
 
 ## Privacy & safety
 

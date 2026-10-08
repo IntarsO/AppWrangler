@@ -217,6 +217,11 @@ between "$v" 0.28 0.55 && ok "configure_app limit is enforced: $v cores" || bad 
 	&& ok "show reports the app, its settings and who manages it" || bad "show output wrong"
 "$APP_BIN" suggest --json | python3 -c 'import json,sys; l=json.load(sys.stdin); sys.exit(0 if isinstance(l,list) and all("actions" in x and "reason" in x for x in l) else 1)' \
 	&& ok "suggest returns structured suggestions" || bad "suggest output wrong"
+reply=$(mcp '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"undo_last_change","arguments":{}}}')
+echo "$reply" | grep '"id":5' | grep -q '"undone":true' && ok "MCP undo_last_change reverted the last change" || bad "undo failed: $reply"
+sleep 2.5
+v=$(cpu 2 "$B")
+between "$v" 0.55 0.85 && ok "the previous 70% limit is back in force: $v cores" || bad "after undo measured $v"
 
 # --- Removal, persistence, crash safety -----------------------------------------
 cli unlimit e2e-burner

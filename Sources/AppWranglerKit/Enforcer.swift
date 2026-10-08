@@ -153,8 +153,9 @@ final class Enforcer {
 	/// The CPU limit actually in force per group (manual or Auto), in cores.
 	private(set) var effectiveLimit: [String: Double] = [:]
 
+	/// - Parameter autoFreeze: apps Auto mode may freeze while the Mac is low on memory.
 	func apply(_ snapshot: Snapshot, rules: RuleStore, state: SystemState, frontmostPid: pid_t,
-			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = []) {
+			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = [], autoFreeze: Set<String> = []) {
 		autoDecisions = auto
 		var limits: [String: Double] = [:]
 		defer { effectiveLimit = limits }
@@ -184,6 +185,24 @@ final class Enforcer {
 			// A frozen app that quit and was relaunched (new main process) starts unfrozen.
 			if let owner = frozenOwner[group.id], owner != group.ownerPid, !controller.isAlive(owner) {
 				clearFrozen(group.id)
+			}
+
+			// Frozen because memory ran short, and now you've switched to it (or it
+			// plays audio): resume it right away rather than waiting for memory.
+			if frozen[group.id] == .memoryPressure,
+			   group.pids.contains(frontmostPid) || group.pids.contains(where: audioPids.contains) {
+				clearFrozen(group.id)
+				onEvent?(group.name, L("Resumed — you switched to it"), false)
+			}
+
+			// Auto mode: freeze an app you haven't used for a while when memory runs short.
+			if freshSample, lowMemory, autoFreeze.contains(group.id), frozen[group.id] == nil, !pressureActed.contains(group.id),
+			   !group.pids.contains(frontmostPid), !group.pids.contains(where: audioPids.contains),
+			   (auto[group.id].map { $0.reason == .background } ?? true) {
+				pressureActed.insert(group.id)
+				onImpact?(group, .lowMemoryAction)
+				onEvent?(group.name, L("Mac is low on memory — frozen by Auto mode until you switch to it"), true)
+				freeze(group, reason: .memoryPressure)
 			}
 
 			if let rule, freshSample {

@@ -19,6 +19,15 @@ Yes. Run `appwrangler suggest`, or ask your AI assistant for suggestions (see [A
 
 For everyday apps, the best setting is usually *none*: let [Auto mode](user-manual.md#auto-mode) manage them.
 
+### AppWrangler disappeared from Claude Desktop's tools
+Claude Desktop rewrites its settings file while it's open, so an entry added while it was running can be lost. Quit Claude Desktop, run `appwrangler mcp install claude-desktop`, and open it again. `appwrangler mcp status` shows where AppWrangler is configured.
+
+### My Mac has little memory and everything swaps. What helps most?
+Turn on **freezing idle apps** in Auto mode: Settings → General → Auto mode, or `appwrangler auto freeze-idle on`. When memory runs out, apps you haven't used for a while are frozen and resume the moment you switch to them. Messaging, calls and audio apps are never frozen. For browsers, also turn on their tab-sleeping feature; `appwrangler suggest` tells you where it is.
+
+### I applied a suggestion and want it back
+`appwrangler undo` reverts the last change (repeat for earlier ones), or ask your AI assistant to "undo that".
+
 ### Where's the manual?
 Inside the app: click the **?** in the panel's footer, or the **?** next to any setting to jump to its explanation. It's also on [GitHub](user-manual.md).
 

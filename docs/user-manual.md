@@ -53,6 +53,18 @@ This manual is also built into the app (no internet needed). Open it from the **
 | Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
 | The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
 
+**Optional: freeze idle apps when memory runs out.** Turn on *When the Mac is low on memory, freeze apps I haven't used for a while* in Settings → General → Auto mode (or run `appwrangler auto freeze-idle on`). It's off by default.
+
+- **What it freezes.** When the Mac reaches the low-memory level you chose (Settings → General → Low memory), Auto freezes regular apps you haven't used for 10 minutes (adjustable), biggest first.
+- **What it never freezes:**
+  - the app you're using;
+  - anything playing or recording audio;
+  - messaging and calls apps (Slack, WhatsApp, Teams, Zoom, Mail…);
+  - menu bar apps;
+  - apps whose own rule already has a low-memory action.
+- **Why it helps.** Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive.
+- **Getting them back.** An app **resumes the moment you switch to it**, and all of them resume when memory frees up. On a Mac with little RAM this does more than any CPU setting.
+
 So AppWrangler adapts to **how many apps you're running and how hard they work**. With little running, nothing is held back. With a lot going on, the apps in the background share fairly, and the one in front stays fast.
 
 The panel header shows what Auto is doing, e.g. *"Auto · 12 apps · 1 in use · 9 on E-cores · 0 capped · Mac not busy"*. Each row says how Auto is treating that app (*"Auto · efficiency cores (in background)"*).
@@ -81,7 +93,8 @@ Click the menu bar icon.
 | Area | What it shows |
 |---|---|
 | Header | Chip and core layout (e.g. *4P + 4E*), total CPU, memory used and memory pressure, and an **Active / Paused** switch. A line appears when you're on battery, in Low Power Mode, or the Mac is hot. |
-| Suggestions | Orange banner with [runaway alerts](#runaway-alerts), if any. |
+| Alerts | Orange banner with [runaway alerts](#runaway-alerts), if any. |
+| Suggestions | Yellow section with [recommended settings](#suggestions-what-to-change) for what's running. Each has one-click buttons to apply it, and **×** hides it for a week. Click the header to collapse it. |
 | Search | Matches names, bundle IDs and descriptions. Try "browser", "sync" or "Spotlight". |
 | Sort | By CPU, Memory, Energy or Name. Rows don't reorder while your pointer is over the list or a row is open, so they don't jump around. |
 | Sections | **Apps**, **Menu bar & background apps**, **macOS system services**, **Processes**. Click a header to collapse or expand it. Searching shows matches in every section. |
@@ -262,18 +275,28 @@ Statistics are kept for 35 days in `stats.json` next to your rules, and are writ
 
 ## Suggestions: what to change
 
-AppWrangler can look at your Mac and recommend settings:
+AppWrangler looks at your Mac and recommends settings. You'll find them:
 
-```bash
-appwrangler suggest            # everything
-appwrangler suggest Brave      # just one app
-```
+- in the **Suggestions** section of the panel, with buttons that apply them in one click;
+- in Terminal:
 
-The same suggestions are available to AI assistants through the [MCP server](mcp.md) (`suggest_settings`). They look at what's running right now, memory and swap, your rules, and the last week of [impact statistics](#impact):
+  ```bash
+  appwrangler suggest            # everything
+  appwrangler suggest Brave      # just one app
+  ```
+
+- for AI assistants, through the [MCP server](mcp.md) (`suggest_settings`).
+
+They look at:
+- what's running, using the **average over the last minutes** that the running app keeps, so a short spike isn't flagged;
+- memory and swap;
+- your rules;
+- the last week of [impact statistics](#impact).
 
 | It looks for | What it suggests |
 |---|---|
 | Auto mode is off | Turn it on |
+| The Mac is short of memory and Auto doesn't freeze idle apps yet | [Freezing idle apps](#auto-mode) when memory runs out |
 | The Mac is short of memory (memory pressure, swap or almost-full RAM) | The biggest users, a memory warning for them, and freezing them in the background if memory runs out. Messaging and call apps are never suggested for freezing. For browsers, where to turn on tab sleeping (e.g. Brave: `brave://settings/system` → Memory Saver) |
 | A process or unmanaged app using a lot of CPU in the background | Efficiency cores, or a background-only CPU cap; with Auto off, turning Auto on |
 | A rule whose CPU limit or efficiency cores also apply while you use the app | Make it background-only, or hand the app to Auto mode |
@@ -291,7 +314,9 @@ Each suggestion says **why**, the **expected benefit**, and gives ready commands
    → Freeze it in the background when memory runs out:  appwrangler set "Brave Browser" low_memory_action=freeze
 ```
 
-Nothing changes until you run one of the commands (or tell your AI assistant to apply it). CPU readings are taken over about a second, so check again if something looks like a short spike.
+Nothing changes until you click a button, run one of the commands, or tell your AI assistant to apply it. If AppWrangler isn't running, CPU readings come from a one-second sample, and the suggestion says so.
+
+**Changed your mind?** `appwrangler undo` reverts the last change made from a suggestion, the command line or an AI assistant. Run it again to go further back (up to 50 changes). AI assistants can do the same with `undo_last_change`.
 
 ---
 
@@ -331,6 +356,8 @@ appwrangler set Slack use_auto=true          # drop Slack's own CPU settings; Au
 | `schedule` | `09:00-18:00` or `off` | Only during these hours |
 | `weekdays` | e.g. `2,3,4,5,6` (1 = Sunday … 7 = Saturday) | The day buttons under the hours |
 
+Every change can be reverted with `appwrangler undo`.
+
 A rule is created when you turn something on. When nothing is left (no limits, not ignored), the rule is removed and Auto mode manages the app again. Critical macOS processes are refused.
 
 **Who manages an app:**
@@ -348,13 +375,20 @@ A rule is created when you turn something on. When nothing is left (no limits, n
 
 ## Asking an AI assistant
 
-Connect AppWrangler to Claude Desktop, Claude Code, OpenAI Codex or another MCP client ([setup](mcp.md)) and just talk about your Mac:
+Connect AppWrangler to your AI apps with one command:
+
+```bash
+appwrangler mcp install        # Claude Desktop, Claude Code and OpenAI Codex, whichever you have
+```
+
+Quit Claude Desktop first; it rewrites its settings while open. The [MCP page](mcp.md) has other clients and manual setup. Then just talk about your Mac:
 
 - *"What's slowing my Mac down?"* The assistant calls `suggest_settings` and explains each suggestion.
 - *"How is Slack set up?"* It calls `get_app_settings`: what Slack is, what it uses now, its settings, and who manages it.
 - *"Make Slack run on efficiency cores only while it's in the background."*
 - *"Warn me when Brave goes over 6 GB, and freeze it in the background if memory runs out."*
-- *"Hand Brave back to Auto mode."* / *"Undo that."*
+- *"Hand Brave back to Auto mode."* / *"Undo that."* (`undo_last_change`)
+- *"Freeze apps I'm not using when memory runs out."*
 - *"How much has AppWrangler saved this week?"*
 
 Changes go through `configure_app`, which takes the same settings as [`appwrangler set`](#every-setting-of-an-app). Assistants ask before changing anything (and your MCP client asks you to approve each change). Run the server with `--read-only` if you only want advice. The built-in prompts **Audit my Mac** (`audit_mac`) and **Tune an app** (`tune_app`) guide the conversation.

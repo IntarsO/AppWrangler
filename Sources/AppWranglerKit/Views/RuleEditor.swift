@@ -34,7 +34,8 @@ struct RuleEditor: View {
 			Text(rule.onlyWhenInactive
 				 ? L("CPU limit and efficiency cores apply only while you're not using the app — it runs at full speed when it's in front.")
 				 : L("CPU limit and efficiency cores apply even while you're using the app, which can make it feel slow."))
-				.font(.caption).foregroundStyle(rule.onlyWhenInactive ? Color.secondary : Color.orange)
+				.font(.caption)
+				.foregroundStyle(rule.onlyWhenInactive || !(rule.cpuLimitEnabled || rule.backgroundMode) ? Color.secondary : Color.orange)
 				.fixedSize(horizontal: false, vertical: true)
 			Divider()
 			cpuSection

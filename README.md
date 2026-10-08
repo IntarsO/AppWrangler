@@ -25,7 +25,7 @@ AppWrangler shows **every running app and process** with a plain-language explan
 
 | | |
 |---|---|
-| 🪄 **Auto mode** | On by default. The app you're using runs at full speed. Background apps move to efficiency cores, and only when your Mac is busy do they share the CPU fairly, so everything stays usable. |
+| 🪄 **Auto mode** | On by default. The app you're using runs at full speed. Background apps move to efficiency cores, and only when your Mac is busy do they share the CPU fairly, so everything stays usable. Optionally, when memory runs out, it freezes apps you haven't used for a while, and they resume the moment you switch back. |
 | 🎛 **CPU limit** | Cap an app *and all of its helper processes* (Chrome tabs, Electron helpers, Safari web content…) at any share of the CPU. Optionally limit it only while it's in the background. |
 | 🍃 **Efficiency cores only** | Move an app onto the Apple Silicon E-cores, with slower disk and network access. It stays usable while saving battery and heat. |
 | 🧠 **Memory limit** | When an app's memory stays above your limit, get notified, or freeze, quit or force-quit it. |
@@ -34,16 +34,27 @@ AppWrangler shows **every running app and process** with a plain-language explan
 | 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — with *Limit*, *E-cores* and *Ignore* buttons. |
 | ❄️ **Freeze, quit, force quit** | Suspend any app instantly and resume it later. |
 | 📊 **Impact & efficiency** | See how much CPU time and battery it saved — per app, per day — and what AppWrangler itself cost to run. |
-| 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, each with the reason, the benefit and a one-step fix. |
-| 🤖 **AI assistants (MCP)** | Talk to Claude, OpenAI Codex or your own agents about your Mac: they audit it, explain any app, suggest settings and, with your OK, configure each app for you. |
+| 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations for what's running, right in the panel, each with the reason, the benefit and a one-click fix. `appwrangler undo` takes any change back. |
+| 🤖 **AI assistants (MCP)** | Talk to Claude, OpenAI Codex or your own agents about your Mac: they audit it, explain any app, suggest settings and, with your OK, configure each app for you. Set up with one command: `appwrangler mcp install`. |
 | ⌨️ **Command line** | `appwrangler suggest`, `appwrangler show Slack`, `appwrangler set Slack efficiency_cores=on`, `appwrangler stats`, … |
 | 📖 **Built-in help** | The full manual inside the app, searchable and offline, with a **?** next to every setting. |
 
 It uses well under 1% of one core. It never connects to the network.
 
+<p align="center">
+  <img src="docs/images/panel.png" width="380" alt="The AppWrangler panel: CPU and memory meters, Auto mode status, suggestions for this Mac (Brave uses more than the Mac's 8 GB of RAM — turn on Memory Saver, or freeze it in the background when memory runs out), and running apps with their rules">
+  &nbsp;
+  <img src="docs/images/help.png" width="440" alt="The built-in Help window showing the User Manual's Auto mode chapter, with topics and search in the sidebar">
+</p>
+
 ## Get started
 
-1. **Install:** build it with Apple's free Command Line Tools: `./build.sh --install --run`. (Ready-made downloads will appear under [Releases](https://github.com/IntarsO/AppWrangler/releases) once published.)
+1. **Install** with [Homebrew](https://brew.sh):
+   ```bash
+   brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler
+   brew install --cask appwrangler
+   ```
+   Or download the zip from [Releases](https://github.com/IntarsO/AppWrangler/releases), or build it with Apple's free Command Line Tools: `./build.sh --install --run`.
 2. **Click the lasso icon** in the menu bar to see what's running and what each item is.
 3. **Click an app** and turn on **Limit CPU**, **Efficiency cores only** or **Memory limit**. That's it — the limit is active now and every time the app runs.
 
