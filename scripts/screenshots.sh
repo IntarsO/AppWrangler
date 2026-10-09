@@ -1,40 +1,41 @@
 #!/bin/bash
 #
-# Render the README/manual screenshots into docs/images/: panel.png, help.png
-# and the widget (widget-small.png, widget-medium.png).
-# Uses the debug build's capture hook (no Screen Recording permission needed) and a
-# throwaway data folder with sample rules.
+# Neutral screenshots for the README, the manual and the launch: the panel,
+# Help and Settings → Impact, showing made-up apps and numbers (debug-build
+# demo mode, scripts/demo/fixture.json) — never what's running on your Mac.
+# Nothing is measured or enforced, and your own AppWrangler keeps running.
 #
-# Note: AppWrangler's windows open on your screen for ~8 seconds and may take
-# keyboard focus — don't type in other apps while it runs.
+#   scripts/screenshots.sh [output-dir]     (default: launch/assets/screens)
+#
+# Windows appear on screen for ~15 s without taking keyboard focus.
+# The widget images come from scripts/render-widget.sh (no windows at all).
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
+OUT="${1:-launch/assets/screens}"
 ./build.sh --debug >/dev/null
 
 WORK="$(mktemp -d -t appwrangler-shots)"
 trap 'rm -rf "${WORK:?}"' EXIT
-mkdir -p "$WORK/data" docs/images
-cat > "$WORK/data/rules.json" <<'JSON'
-[
- {"matchKind":"bundleID","matchValue":"com.apple.Safari","displayName":"Safari","cpuLimitEnabled":true,"cpuLimit":150,"onlyWhenInactive":true,"memoryLimitEnabled":true,"memoryLimitMB":4096,"memoryAction":"notify"},
- {"matchKind":"pattern","matchValue":"*Helper*","displayName":"All helpers","backgroundMode":true,"conditions":{"power":"battery"}},
- {"matchKind":"name","matchValue":"photoanalysisd","displayName":"photoanalysisd","pressureAction":"freeze","cpuLimitEnabled":true,"cpuLimit":25}
-]
-JSON
+mkdir -p "$WORK/data" "$WORK/shots" "$OUT"
+cp scripts/demo/rules.json "$WORK/data/rules.json"
 
 APPWRANGLER_DATA_DIR="$WORK/data" build/AppWrangler.app/Contents/MacOS/AppWrangler \
-	-AWNotifications NO -AWRunawayEnabled NO -AWOpenOnLaunch popover \
-	-AWDebugSnapshotDir "$WORK" -AWDebugSnapshotHelp YES -AWDebugHelpAnchor auto-mode &
+	-AWDemoFixture "$PWD/scripts/demo/fixture.json" \
+	-AppleLocale en_US -AppleLanguages "(en)" \
+	-AWNotifications NO -AWRunawayEnabled NO -AWHotKeyEnabled NO \
+	-AWOpenOnLaunch popover -AWDebugSnapshotDir "$WORK/shots" \
+	-AWDebugSnapshotHelp YES -AWDebugHelpAnchor auto-mode \
+	-AWDebugSnapshotSettings YES -AWDebugSettingsTab 1 &
 APP=$!
-sleep 9
+sleep 15
 kill -TERM "$APP" 2>/dev/null || true
-sips -Z 760 "$WORK/popover.png" --out docs/images/panel.png >/dev/null
-sips -Z 1100 "$WORK/help.png" --out docs/images/help.png >/dev/null
+wait "$APP" 2>/dev/null || true
 
-# The widget, rendered from the views directly (uses the current widget.json, or sample data).
-scripts/render-widget.sh "$WORK/widget" >/dev/null
-cp "$WORK/widget/widget-small-dark.png" docs/images/widget-small.png
-cp "$WORK/widget/widget-medium-dark.png" docs/images/widget-medium.png
-ls -1 docs/images/panel.png docs/images/help.png docs/images/widget-small.png docs/images/widget-medium.png
+sips -Z 760 "$WORK/shots/popover.png" --out "$OUT/panel.png" >/dev/null
+sips -Z 1100 "$WORK/shots/help.png" --out "$OUT/help.png" >/dev/null
+sips -Z 1100 "$WORK/shots/settings.png" --out "$OUT/impact.png" >/dev/null
+scripts/render-widget.sh "$WORK/widget" scripts/demo/widget.json >/dev/null
+for f in widget-small widget-medium widget-large; do cp "$WORK/widget/$f-dark.png" "$OUT/$f.png"; done
+ls -1 "$OUT"
 echo "Rebuild the release app with ./build.sh before installing."

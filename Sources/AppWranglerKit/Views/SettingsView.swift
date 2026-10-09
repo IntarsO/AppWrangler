@@ -10,19 +10,21 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
 	@ObservedObject var model: AppModel
+	/// Debug builds: `-AWDebugSettingsTab 1` opens on Impact (screenshots).
+	@Local private var tab = UserDefaults.standard.integer(forKey: "AWDebugSettingsTab")
 
 	var body: some View {
-		TabView {
+		TabView(selection: $tab) {
 			RulesSettings(model: model, rules: model.rules)
-				.tabItem { Label(L("App Rules"), systemImage: "list.bullet.rectangle") }
+				.tabItem { Label(L("App Rules"), systemImage: "list.bullet.rectangle") }.tag(0)
 			ImpactView(stats: model.stats)
-				.tabItem { Label(L("Impact"), systemImage: "chart.bar.xaxis") }
+				.tabItem { Label(L("Impact"), systemImage: "chart.bar.xaxis") }.tag(1)
 			GeneralSettings(model: model)
-				.tabItem { Label(L("General"), systemImage: "gearshape") }
+				.tabItem { Label(L("General"), systemImage: "gearshape") }.tag(2)
 			ActivityView(log: model.log)
-				.tabItem { Label(L("Activity"), systemImage: "clock.arrow.circlepath") }
+				.tabItem { Label(L("Activity"), systemImage: "clock.arrow.circlepath") }.tag(3)
 			AboutView()
-				.tabItem { Label(L("About"), systemImage: "info.circle") }
+				.tabItem { Label(L("About"), systemImage: "info.circle") }.tag(4)
 		}
 		.frame(minWidth: 760, minHeight: 540)
 	}

@@ -530,6 +530,15 @@ final class Enforcer {
 	func isInBackgroundMode(_ group: AppGroup) -> Bool {
 		group.pids.contains { backgroundPids[$0] != nil }
 	}
+
+	#if DEBUG
+	/// Screenshots: show a made-up state without touching any process.
+	func setDemoState(decisions: [String: AutoDecision], frozen ids: [String], efficiency: [pid_t: String]) {
+		autoDecisions = decisions
+		for id in ids { frozen[id] = .idle; frozenSince[id] = Date() }
+		backgroundPids = efficiency
+	}
+	#endif
 }
 
 /// Processes that must never be stopped: doing so would hang the session.

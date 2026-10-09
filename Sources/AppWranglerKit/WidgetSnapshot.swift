@@ -58,7 +58,11 @@ struct WidgetSnapshot: Codable, Equatable {
 	}
 
 	static func read(directory: URL = defaultDirectory) -> WidgetSnapshot? {
-		guard let data = try? Data(contentsOf: url(directory)) else { return nil }
+		read(file: url(directory))
+	}
+
+	static func read(file: URL) -> WidgetSnapshot? {
+		guard let data = try? Data(contentsOf: file) else { return nil }
 		let decoder = JSONDecoder()
 		decoder.dateDecodingStrategy = .iso8601
 		return try? decoder.decode(WidgetSnapshot.self, from: data)

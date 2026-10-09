@@ -9,8 +9,19 @@ import SwiftUI
 @main
 struct RenderWidget {
 	@MainActor static func main() {
-		let out = CommandLine.arguments.dropFirst().first ?? "."
-		let snapshot = WidgetSnapshot.read() ?? .sample
+		// Positional arguments only (skip "-AppleLocale en_US"-style defaults overrides).
+		var args: [String] = []
+		var skip = false
+		for a in CommandLine.arguments.dropFirst() {
+			if skip { skip = false; continue }
+			if a.hasPrefix("-") { skip = true; continue }
+			args.append(a)
+		}
+		let out = args.first ?? "."
+		// Optional second argument: a widget.json to show (e.g. scripts/demo/widget.json), so
+		// images for the docs don't reveal anyone's real apps. Always shown as current.
+		var snapshot = (args.count > 1 ? WidgetSnapshot.read(file: URL(fileURLWithPath: args[1])) : WidgetSnapshot.read()) ?? .sample
+		snapshot.updated = Date()
 		func render<V: View>(_ view: V, _ size: CGSize, _ name: String, dark: Bool) {
 			let content = view
 				.padding(14)

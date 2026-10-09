@@ -1,0 +1,18 @@
+{
+  "systemCPU": 0.31,
+  "memoryUsedGB": 7.1,
+  "memoryTotalGB": 8,
+  "pressure": 2,
+  "swapUsedGB": 2.4,
+  "busy": false,
+  "apps": [
+    { "name": "Safari", "bundleID": "com.apple.Safari", "path": "/Applications/Safari.app", "kind": "app", "cpu": 0.42, "memoryMB": 1350, "helpers": 9, "state": "in-use" },
+    { "name": "Brave Browser", "bundleID": "com.brave.Browser", "path": "/Applications/Brave Browser.app", "kind": "app", "cpu": 0.18, "memoryMB": 3420, "helpers": 24, "state": "ecores" },
+    { "name": "Slack", "bundleID": "com.tinyspeck.slackmacgap", "path": "/Applications/Slack.app", "kind": "app", "cpu": 0.06, "memoryMB": 610, "helpers": 6, "state": "ecores" },
+    { "name": "Music", "bundleID": "com.apple.Music", "path": "/System/Applications/Music.app", "kind": "app", "cpu": 0.05, "memoryMB": 240, "helpers": 2, "state": "audio" },
+    { "name": "Mail", "bundleID": "com.apple.mail", "path": "/System/Applications/Mail.app", "kind": "app", "cpu": 0.02, "memoryMB": 310, "helpers": 3, "state": "ecores" },
+    { "name": "Photos", "bundleID": "com.apple.Photos", "path": "/System/Applications/Photos.app", "kind": "app", "cpu": 0.0, "memoryMB": 880, "helpers": 4, "state": "frozen" },
+    { "name": "Preview", "bundleID": "com.apple.Preview", "path": "/System/Applications/Preview.app", "kind": "app", "cpu": 0.01, "memoryMB": 190, "helpers": 1, "state": "ecores" },
+    { "name": "node", "path": "/opt/homebrew/bin/node", "kind": "process", "cpu": 0.5, "memoryMB": 420, "helpers": 0, "state": "none" }
+  ]
+}

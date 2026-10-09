@@ -1,0 +1,4 @@
+[
+ {"matchKind":"bundleID","matchValue":"com.brave.Browser","displayName":"Brave Browser","memoryLimitEnabled":true,"memoryLimitMB":6144,"memoryAction":"notify","pressureAction":"freeze"},
+ {"matchKind":"name","matchValue":"node","displayName":"node","cpuLimitEnabled":true,"cpuLimit":50,"onlyWhenInactive":true}
+]

@@ -2,6 +2,23 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **README:**
+  - a clearer pitch;
+  - Homebrew install first, with the notarization note up front;
+  - an honest comparison with App Tamer, AppPolice and Activity Monitor;
+  - download links go to the latest release.
+- In Impact, "Memory freed" shows "—" instead of "Zero KB" when nothing was freed.
+
+### Added (for contributors)
+- **Screenshots without your own apps:** debug builds have a demo mode (`-AWDemoFixture scripts/demo/fixture.json`) that shows made-up apps and numbers, with nothing measured or enforced. `scripts/screenshots.sh` uses it.
+- `scripts/render-social.sh` renders the 1280×640 social preview.
+- `scripts/record-demo.sh` records the README demo and turns it into an MP4 and a GIF with Apple's frameworks only.
+- `scripts/check-links.sh` checks every external link in the docs.
+- `scripts/render-widget.sh` takes an optional `widget.json` and renders in English by default.
+
 ## [1.4.0] — 2026-10-08
 
 ### Added

@@ -293,6 +293,9 @@ final class AppModel: ObservableObject {
 
 	/// Re-run the enforcer on the last sample (focus, condition or rule change).
 	private func reapply() {
+		#if DEBUG
+		if demoMode { return }	// screenshots: nothing is measured or enforced
+		#endif
 		var state = system.current
 		state.now = Date()
 		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
@@ -361,6 +364,9 @@ final class AppModel: ObservableObject {
 	}
 
 	func tick() {
+		#if DEBUG
+		if demoMode { return }	// screenshots: nothing is measured or enforced
+		#endif
 		if appsDirty {
 			appsDirty = false
 			apps = RunningApps.collect()
@@ -394,6 +400,9 @@ final class AppModel: ObservableObject {
 	}
 
 	private func didSample(_ snapshot: Snapshot, state: SystemState) {
+		#if DEBUG
+		if demoMode { return }	// screenshots: nothing is measured or enforced
+		#endif
 		lastSnapshot = snapshot
 		refreshAudio()
 		let auto = decideAuto(snapshot, state: state, newSample: true)
@@ -467,6 +476,21 @@ final class AppModel: ObservableObject {
 		log.add(name, rule.summary)
 		writeState()
 	}
+
+	#if DEBUG
+	/// Demo.swift: a made-up state is shown; never measure or enforce.
+	private(set) var demoMode = false
+
+	/// Demo.swift: publish a made-up state (screenshots).
+	func setDemo(snapshot: Snapshot, state: SystemState, summary: AutoSummary, advice: [Suggestion]) {
+		self.snapshot = snapshot
+		self.lastSnapshot = snapshot
+		self.systemState = state
+		self.autoSummary = summary
+		self.advice = advice
+		demoMode = true
+	}
+	#endif
 
 	// MARK: Suggestions (advice)
 
@@ -631,6 +655,9 @@ final class AppModel: ObservableObject {
 	}
 
 	private func handleCommand(_ info: [String: String]) {
+		#if DEBUG
+		if demoMode { return }	// screenshots: nothing is measured or enforced
+		#endif
 		let target = info["target"] ?? ""
 		switch info["command"] {
 		case "free-memory": freeMemoryNow()

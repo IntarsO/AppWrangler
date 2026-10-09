@@ -1,0 +1,21 @@
+{
+  "updated": "2026-10-09T09:00:00Z",
+  "chip": "Apple M2", "cores": 8,
+  "cpu": 0.31,
+  "memoryUsedBytes": 7623566950, "memoryTotalBytes": 8589934592,
+  "memoryPressure": 2, "swapUsedBytes": 2576980377,
+  "paused": false, "autoOn": true,
+  "autoManaged": 7, "autoOnEfficiency": 4, "autoCapped": 0,
+  "frozen": ["Photos"],
+  "savedCPUSecondsToday": 5400, "savedEnergyWhToday": 1.9,
+  "topApps": [
+    { "name": "Safari", "cpu": 0.42, "memoryBytes": 1415577600, "state": "auto-full" },
+    { "name": "Brave Browser", "cpu": 0.18, "memoryBytes": 3586129920, "state": "auto-ecores" },
+    { "name": "Slack", "cpu": 0.06, "memoryBytes": 639631360, "state": "auto-ecores" },
+    { "name": "Music", "cpu": 0.05, "memoryBytes": 251658240, "state": "auto-full" },
+    { "name": "Photos", "cpu": 0.0, "memoryBytes": 922746880, "state": "frozen" }
+  ],
+  "suggestionCount": 2,
+  "topSuggestion": "Brave Browser uses 3.4 GB (42% of RAM)",
+  "suggestionTitles": ["Brave Browser uses 3.4 GB (42% of RAM)", "Your Mac is short of memory"]
+}

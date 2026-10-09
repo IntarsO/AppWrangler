@@ -47,7 +47,7 @@ struct ImpactView: View {
 						(L("Apps held back"), Fmt.duration(s.total.heldBackSeconds), "gauge.with.dots.needle.33percent"),
 						(L("Apps frozen"), Fmt.duration(s.total.frozenSeconds), "snowflake"),
 						(L("On efficiency cores"), Fmt.duration(s.total.efficiencySeconds), "leaf"),
-						(L("Memory freed"), Fmt.bytes(UInt64(s.total.memoryFreedBytes)), "memorychip"),
+						(L("Memory freed"), s.total.memoryFreedBytes > 0 ? Fmt.bytes(UInt64(s.total.memoryFreedBytes)) : "—", "memorychip"),
 					])
 					Text(L("Actions: %d memory-limit, %d low-memory, %d runaway alerts.", s.total.memoryActions, s.total.lowMemoryActions, s.runawayAlerts))
 						.font(.caption).foregroundStyle(.secondary)

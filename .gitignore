@@ -9,3 +9,6 @@ xcuserdata/
 # The original AppPolice 1.x Objective-C sources, kept locally for reference.
 # Upstream: https://github.com/fuyu/AppPolice
 Legacy/
+
+# Launch drafts (kept local until published)
+launch/

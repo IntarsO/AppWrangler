@@ -90,7 +90,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		}
 
 		model.onSystemCPU = { [weak self] load in self?.updateStatusTitle(load) }
+		#if DEBUG
+		if let path = UserDefaults.standard.string(forKey: "AWDemoFixture"), let fixture = DemoFixture.load(path) {
+			model.startDemo(fixture)	// screenshots: made-up apps, nothing enforced
+		} else {
+			model.start()
+		}
+		#else
 		model.start()
+		#endif
 		applyPreferences()
 
 		NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in

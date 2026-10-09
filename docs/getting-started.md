@@ -19,7 +19,7 @@ This installs **AppWrangler.app** in Applications and the `appwrangler` command.
 
 ### Option B — download a release
 
-1. Go to [Releases](https://github.com/IntarsO/AppWrangler/releases) and download `AppWrangler-x.y.z.zip`.
+1. Go to [Releases](https://github.com/IntarsO/AppWrangler/releases/latest) and download `AppWrangler-x.y.z.zip`.
 2. Double-click the zip to unpack it, then drag **AppWrangler.app** into your **Applications** folder.
 3. **First launch:** release builds are signed but not notarized by Apple, so macOS asks for confirmation once.
    - Right-click (or Control-click) **AppWrangler.app** → **Open** → **Open**.
