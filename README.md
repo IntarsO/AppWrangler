@@ -38,7 +38,7 @@ Or download the zip from [Releases](https://github.com/IntarsO/AppWrangler/relea
 
 <!-- DEMO: once recorded (scripts/record-demo.sh), show docs/images/demo.gif here, 720 px wide, in place of the panel image. -->
 <p align="center">
-  <img src="docs/images/panel.png" width="380" alt="The AppWrangler panel: CPU and memory meters, Auto mode status, suggestions, and running apps with what Auto is doing to each">
+  <img src="docs/images/panel.png" width="380" alt="The AppWrangler panel: CPU and memory charts, the Auto line, a card about an app Auto just froze with OK, Set manually and Leave alone buttons, the busiest apps and recent activity">
 </p>
 
 ## What it does
