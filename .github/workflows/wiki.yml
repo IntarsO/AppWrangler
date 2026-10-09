@@ -1,0 +1,31 @@
+# Keeps the GitHub wiki in step with docs/. The wiki is generated, so edit the
+# docs in the repository, never the wiki. Publishing is opt-in:
+#   gh variable set WIKI_SYNC --body on -R IntarsO/AppWrangler
+# (The wiki repository exists once its first page has been created in the browser.)
+name: Wiki
+
+on:
+  pull_request:
+    paths: [docs/**, README.md, CHANGELOG.md, CONTRIBUTING.md, scripts/sync-wiki.py]
+  push:
+    branches: [main]
+    paths: [docs/**, README.md, CHANGELOG.md, CONTRIBUTING.md, scripts/sync-wiki.py]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the wiki and check its links
+        run: scripts/sync-wiki.py
+
+      - name: Publish to the wiki
+        if: github.event_name != 'pull_request' && vars.WIKI_SYNC == 'on'
+        env:
+          WIKI_TOKEN: ${{ github.token }}
+        run: scripts/sync-wiki.py --push

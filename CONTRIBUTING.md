@@ -86,6 +86,10 @@ To try the pipeline without publishing anything, run it by hand with *dry run*: 
 
 `scripts/build-mcpb.sh` builds `build/AppWrangler-mcp-X.Y.Z.mcpb` from [`Resources/mcpb-manifest.json`](Resources/mcpb-manifest.json): a release build of the `AppWrangler` binary, the icon and the manifest. It validates and packs it with `npx @anthropic-ai/mcpb` (Node needed), and writes `build/server.json` with the version and the bundle's SHA-256. The binary embeds an Info.plist (`Resources/AppWrangler-embedded.plist`), so it knows its bundle ID and version outside the app. The manifest runs `/Applications/AppWrangler.app` when it's installed, and the bundled binary otherwise.
 
+### The wiki
+
+The GitHub wiki is generated from `docs/`, `README.md`, `CHANGELOG.md` and `CONTRIBUTING.md` by `scripts/sync-wiki.py`, so edit those files, never the wiki itself (edits there are overwritten). The script rewrites links between pages, copies the images and checks that every link leads somewhere; `scripts/sync-wiki.py` alone builds a preview in `build/wiki`. [`.github/workflows/wiki.yml`](.github/workflows/wiki.yml) checks it on every change to the docs and, if the repo variable `WIKI_SYNC` is `on`, publishes it when they reach `main`. To publish by hand: `scripts/sync-wiki.py --push` (needs the `gh` login of IntarsO). A new wiki needs its first page created once in the browser.
+
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on every push and pull request, on Apple Silicon. Two kinds of test don't run there, because shared CI machines are too noisy for measurements of real CPU time:
 - the limiter's timing tests (they skip themselves when `CI` is set);
 - the end-to-end tests.
