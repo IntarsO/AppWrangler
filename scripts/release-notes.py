@@ -20,6 +20,8 @@ print(f"""{body}
 - **Homebrew:** `brew upgrade --cask appwrangler`. New installs: `brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler && brew install --cask appwrangler`.
 - **Download:** get **{zip_name}** below and replace the app in Applications. Your rules and statistics are kept. The first time, **right-click → Open**, because it's signed but not notarized.
 
+- **Claude Desktop:** download **AppWrangler-mcp-{version}.mcpb** below and double-click it to add AppWrangler's tools to Claude. It uses the installed app when there is one ([details](https://github.com/IntarsO/AppWrangler/blob/main/docs/mcp.md#claude-desktop-one-click-bundle)).
+
 **Requirements:** macOS 13 or later, on Apple Silicon (the widget needs macOS 14).
 
 **SHA-256** `{sha}  {zip_name}`
