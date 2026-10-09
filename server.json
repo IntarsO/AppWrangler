@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.IntarsO/appwrangler",
+  "title": "AppWrangler",
+  "description": "Per-app CPU, efficiency-core and memory control for Apple Silicon Macs, with suggestions and undo.",
+  "version": "__VERSION__",
+  "repository": { "url": "https://github.com/IntarsO/AppWrangler", "source": "github" },
+  "websiteUrl": "https://github.com/IntarsO/AppWrangler",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/IntarsO/AppWrangler/releases/download/v__VERSION__/AppWrangler-mcp-__VERSION__.mcpb",
+      "fileSha256": "__SHA256__",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

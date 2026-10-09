@@ -23,7 +23,11 @@ let package = Package(
 		.executableTarget(
 			name: "AppWrangler",
 			dependencies: ["AppWranglerKit"],
-			path: "Sources/AppWrangler"
+			path: "Sources/AppWrangler",
+			// Embed a small Info.plist so the binary keeps the app's identity (and
+			// preferences) when run on its own, e.g. as the MCP server in an .mcpb bundle.
+			linkerSettings: [.unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
+										   "-Xlinker", Context.packageDirectory + "/Resources/AppWrangler-embedded.plist"])]
 		),
 		// Restores frozen / efficiency-core apps if AppWrangler dies, even by
 		// `killall -9 AppWrangler` (it has its own name for that reason).

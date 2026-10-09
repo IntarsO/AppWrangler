@@ -22,6 +22,14 @@ grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no ## [Unr
 sed -i '' "s/^## \[Unreleased\]\$/## [$V] — $(date +%Y-%m-%d)/" CHANGELOG.md
 sed -i '' "s/^VERSION=\"\${VERSION:-[0-9.]*}\"/VERSION=\"\${VERSION:-$V}\"/" build.sh
 grep -q "VERSION:-$V}" build.sh || { echo "couldn't set VERSION in build.sh" >&2; exit 1; }
+# The version embedded in the binary (used when the MCP server runs outside the app).
+python3 - "$V" <<'PY'
+import re, sys
+p = "Resources/AppWrangler-embedded.plist"
+s = open(p).read()
+s = re.sub(r"(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*(</string>)", r"\g<1>" + sys.argv[1] + r"\g<2>", s)
+open(p, "w").write(s)
+PY
 
 git commit -qam "Release $V"
 git tag -a "v$V" -m "AppWrangler $V"

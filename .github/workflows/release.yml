@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # MCP Registry login (GitHub OIDC); only used when vars.MCP_REGISTRY == 'on'
 
 concurrency:
   group: release
@@ -43,8 +44,13 @@ jobs:
       - name: Build the zip
         run: ./build.sh --zip
 
+      - name: Build the MCP bundle (.mcpb)
+        run: scripts/build-mcpb.sh
+
       - name: Check the build
         run: |
+          test -f "build/AppWrangler-mcp-$VERSION.mcpb"
+          grep -q "\"version\": \"$VERSION\"" build/server.json
           APP=build/AppWrangler.app
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' $APP/Contents/Info.plist)" = "$VERSION"
           test -x $APP/Contents/MacOS/AppWranglerWatchdog
@@ -62,6 +68,8 @@ jobs:
           name: AppWrangler-${{ env.VERSION }}
           path: |
             build/AppWrangler-${{ env.VERSION }}.zip
+            build/AppWrangler-mcp-${{ env.VERSION }}.mcpb
+            build/server.json
             build/release-notes.md
 
       - name: Publish the release
@@ -69,8 +77,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$VERSION" "build/AppWrangler-$VERSION.zip" --verify-tag \
+          gh release create "v$VERSION" "build/AppWrangler-$VERSION.zip" "build/AppWrangler-mcp-$VERSION.mcpb" --verify-tag \
             --title "AppWrangler $VERSION" --notes-file build/release-notes.md --latest
+
+      # Publishing to the official MCP Registry is opt-in:
+      #   gh variable set MCP_REGISTRY --body on -R IntarsO/AppWrangler
+      - name: Publish to the MCP Registry
+        if: (github.event_name == 'push' || !inputs.dry_run) && vars.MCP_REGISTRY == 'on'
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_darwin_arm64.tar.gz" | tar xz mcp-publisher
+          mkdir -p build/registry && cp build/server.json build/registry/server.json
+          ./mcp-publisher login github-oidc
+          (cd build/registry && ../../mcp-publisher publish)
 
       - name: Update the Homebrew cask
         if: github.event_name == 'push' || !inputs.dry_run

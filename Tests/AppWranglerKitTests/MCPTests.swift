@@ -119,4 +119,29 @@ import Testing
 		#expect(text.contains("Focus on battery"))
 		#expect(text.contains("Don't apply any change until I confirm"))
 	}
+
+	/// The .mcpb manifest and server.json must describe the server as it really is.
+	@Test func bundleManifestMatchesTheServer() throws {
+		let root = LocalizationTests.root
+		func json(_ path: String) throws -> [String: Any] {
+			try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(path))) as! [String: Any]
+		}
+		let manifest = try json("Resources/mcpb-manifest.json")
+		let listed = (manifest["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+		let served = ((call(server(), 1, "tools/list")["result"] as! [String: Any])["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+		#expect(listed.sorted() == served.sorted())
+		#expect(manifest["version"] as? String == "__VERSION__")
+
+		let registry = try json("server.json")
+		#expect(registry["name"] as? String == "io.github.IntarsO/appwrangler")
+		#expect((registry["description"] as? String ?? "").count <= 100)
+		let package = (registry["packages"] as! [[String: Any]])[0]
+		#expect((package["identifier"] as? String ?? "").contains("/releases/download/v__VERSION__/AppWrangler-mcp-__VERSION__.mcpb"))
+
+		// The version embedded in the binary follows build.sh.
+		let build = try String(contentsOf: root.appendingPathComponent("build.sh"), encoding: .utf8)
+		let version = try #require(build.firstMatch(of: try Regex(#"VERSION="\$\{VERSION:-([0-9.]+)\}""#))?[1].substring)
+		let plist = try #require(NSDictionary(contentsOf: root.appendingPathComponent("Resources/AppWrangler-embedded.plist")))
+		#expect(plist["CFBundleShortVersionString"] as? String == String(version))
+	}
 }

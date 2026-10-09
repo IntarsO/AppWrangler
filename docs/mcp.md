@@ -43,7 +43,16 @@ This adds AppWrangler to **Claude Desktop**, **Claude Code** and **OpenAI Codex*
 
 The sections below show how to do the same by hand.
 
-### Claude Desktop
+### Claude Desktop: one-click bundle
+
+Each release also has an MCP bundle, `AppWrangler-mcp-X.Y.Z.mcpb`, on the [releases page](https://github.com/IntarsO/AppWrangler/releases/latest). Download it and double-click it (or drag it onto **Claude → Settings → Extensions**), then click **Install**.
+
+- **AppWrangler installed in /Applications?** The bundle runs that copy, so it uses your settings and always matches your app version.
+- **Not installed?** It runs its own copy of the server. That works for auditing and advice, but nothing is enforced until the app is running. macOS may also block the bundled copy, because it isn't notarized yet. Installing the app avoids both.
+
+The bundle always gives full access. For read-only access, use the config below instead.
+
+### Claude Desktop: by hand
 
 Open **Claude → Settings → Developer → Edit Config**. This edits `~/Library/Application Support/Claude/claude_desktop_config.json`. Add:
 

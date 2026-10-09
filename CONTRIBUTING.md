@@ -72,14 +72,19 @@ The icons are drawn in code by `scripts/make-icons.swift`. Edit it and run `swif
 
 1. Run `./test.sh` and `./Tests/e2e/run.sh` (the end-to-end tests don't run on CI).
 2. Make sure `CHANGELOG.md` has an `## [Unreleased]` section describing the release.
-3. Run `scripts/release.sh X.Y.Z`. It dates the CHANGELOG section, sets the version in `build.sh`, commits, tags `vX.Y.Z` and pushes.
+3. Run `scripts/release.sh X.Y.Z`. It dates the CHANGELOG section, sets the version in `build.sh` and `Resources/AppWrangler-embedded.plist`, commits, tags `vX.Y.Z` and pushes.
 4. [`.github/workflows/release.yml`](.github/workflows/release.yml) takes over:
-   - it runs the unit tests and builds and checks the zip;
-   - it publishes the GitHub release, with notes from that CHANGELOG section (`scripts/release-notes.py`);
+   - it runs the unit tests and builds and checks the zip and the MCP bundle (`scripts/build-mcpb.sh`);
+   - it publishes the GitHub release with both files, with notes from that CHANGELOG section (`scripts/release-notes.py`);
+   - if the repo variable `MCP_REGISTRY` is `on`, it publishes [`server.json`](server.json) to the [official MCP Registry](https://registry.modelcontextprotocol.io), signing in with GitHub OIDC (no secrets needed);
    - it commits the new version and SHA-256 to [`Casks/appwrangler.rb`](Casks/appwrangler.rb).
 5. Afterwards, `git pull` to get the cask commit.
 
-To try the pipeline without publishing anything, run it by hand with *dry run*: `gh workflow run release.yml -f version=X.Y.Z -f dry_run=true`. The zip and notes are attached to the run as an artifact. Builds are ad-hoc signed; with a Developer ID you'd set `SIGN_IDENTITY` and `NOTARY_PROFILE` (see `build.sh`).
+To try the pipeline without publishing anything, run it by hand with *dry run*: `gh workflow run release.yml -f version=X.Y.Z -f dry_run=true`. The zip, the `.mcpb`, `server.json` and the notes are attached to the run as an artifact. Builds are ad-hoc signed; with a Developer ID you'd set `SIGN_IDENTITY` and `NOTARY_PROFILE` (see `build.sh`).
+
+### The MCP bundle
+
+`scripts/build-mcpb.sh` builds `build/AppWrangler-mcp-X.Y.Z.mcpb` from [`Resources/mcpb-manifest.json`](Resources/mcpb-manifest.json): a release build of the `AppWrangler` binary, the icon and the manifest. It validates and packs it with `npx @anthropic-ai/mcpb` (Node needed), and writes `build/server.json` with the version and the bundle's SHA-256. The binary embeds an Info.plist (`Resources/AppWrangler-embedded.plist`), so it knows its bundle ID and version outside the app. The manifest runs `/Applications/AppWrangler.app` when it's installed, and the bundled binary otherwise.
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on every push and pull request, on Apple Silicon. Two kinds of test don't run there, because shared CI machines are too noisy for measurements of real CPU time:
 - the limiter's timing tests (they skip themselves when `CI` is set);

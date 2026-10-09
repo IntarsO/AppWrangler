@@ -1,0 +1,139 @@
+{
+  "manifest_version": "0.3",
+  "name": "appwrangler",
+  "display_name": "AppWrangler",
+  "version": "__VERSION__",
+  "description": "See what's slowing your Mac and fix it: per-app CPU, efficiency-core and memory control for Apple Silicon.",
+  "long_description": "AppWrangler's MCP server. Your assistant can list what's running and explain each app, suggest settings with the reason and benefit, change per-app CPU limits, efficiency cores and memory limits (with your approval), show CPU, energy and memory statistics, free memory by freezing apps you haven't used for a while, and undo changes.\n\nUses the installed AppWrangler app when there is one (recommended: it does the live enforcement and has already been approved by macOS), otherwise the server included here. Install the menu bar app with: brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler && brew install --cask appwrangler. Without it, the server can still explain apps and edit the rules the app applies when it starts.",
+  "author": {
+    "name": "IntarsO",
+    "url": "https://github.com/IntarsO"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IntarsO/AppWrangler"
+  },
+  "homepage": "https://github.com/IntarsO/AppWrangler",
+  "documentation": "https://github.com/IntarsO/AppWrangler/blob/main/docs/mcp.md",
+  "support": "https://github.com/IntarsO/AppWrangler/issues",
+  "license": "GPL-2.0-only",
+  "icon": "icon.png",
+  "keywords": [
+    "macos",
+    "apple-silicon",
+    "cpu",
+    "memory",
+    "efficiency-cores",
+    "performance",
+    "battery"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/AppWrangler",
+    "mcp_config": {
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "app=/Applications/AppWrangler.app/Contents/MacOS/AppWrangler; if [ -x \"$app\" ]; then exec \"$app\" mcp; else exec \"$0\" mcp; fi",
+        "${__dirname}/server/AppWrangler"
+      ],
+      "env": {}
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin"
+    ]
+  },
+  "tools": [
+    {
+      "name": "get_status",
+      "description": "Is AppWrangler running, paused, what's frozen; the Mac's chip, memory and pressure"
+    },
+    {
+      "name": "list_apps",
+      "description": "Running apps with CPU, memory, energy, what each one is and how safe it is to limit"
+    },
+    {
+      "name": "explain_app",
+      "description": "What an app or process is, who makes it, and its current usage and rule"
+    },
+    {
+      "name": "get_app_settings",
+      "description": "Everything about one app: usage, every setting, who manages it, suggestions"
+    },
+    {
+      "name": "suggest_settings",
+      "description": "Recommended settings for what's running, with reasons and ready-to-apply actions"
+    },
+    {
+      "name": "get_impact_stats",
+      "description": "CPU and energy saved, memory pressure and swap, what AppWrangler cost"
+    },
+    {
+      "name": "list_rules",
+      "description": "All saved per-app rules"
+    },
+    {
+      "name": "get_preferences",
+      "description": "App-wide settings: Auto mode, idle freezing, low-memory level, alerts"
+    },
+    {
+      "name": "configure_app",
+      "description": "Change any combination of an app's settings in one call"
+    },
+    {
+      "name": "set_preferences",
+      "description": "Change app-wide settings"
+    },
+    {
+      "name": "set_auto_mode",
+      "description": "Auto mode and idle-app freezing on or off"
+    },
+    {
+      "name": "set_cpu_limit",
+      "description": "Cap an app's CPU"
+    },
+    {
+      "name": "set_efficiency_cores",
+      "description": "Run an app on the efficiency cores"
+    },
+    {
+      "name": "set_memory_limit",
+      "description": "Notify, freeze or quit when an app stays over a memory limit"
+    },
+    {
+      "name": "set_low_memory_action",
+      "description": "What to do with an app when the Mac is low on memory"
+    },
+    {
+      "name": "set_rule_conditions",
+      "description": "Only on battery, in Low Power Mode, when hot, or on a schedule"
+    },
+    {
+      "name": "set_rule_enabled",
+      "description": "Turn a rule on or off"
+    },
+    {
+      "name": "remove_rule",
+      "description": "Delete an app's rule"
+    },
+    {
+      "name": "freeze_app",
+      "description": "Freeze or resume an app now"
+    },
+    {
+      "name": "free_memory",
+      "description": "Freeze apps the user hasn't used for a while; each resumes on switch"
+    },
+    {
+      "name": "pause_limits",
+      "description": "Pause or resume all CPU limits"
+    },
+    {
+      "name": "undo_last_change",
+      "description": "Revert the last rule change"
+    }
+  ],
+  "prompts_generated": true
+}
