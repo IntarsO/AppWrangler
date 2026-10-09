@@ -2,7 +2,7 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] — 2026-10-10
 
 ### Added
 - **Adaptive Auto** (on by default; `appwrangler prefs auto_adaptive=off` to switch it off). Auto now follows what the Mac needs right now:
