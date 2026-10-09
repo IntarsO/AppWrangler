@@ -2,7 +2,7 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.1] — 2026-10-09
 
 ### Added
 - **One-click install in Claude Desktop:** each release now includes an MCP bundle, `AppWrangler-mcp-X.Y.Z.mcpb`. Double-click it to add AppWrangler's tools to Claude Desktop. It uses your installed app when there is one. See [docs/mcp.md](docs/mcp.md#claude-desktop-one-click-bundle).
