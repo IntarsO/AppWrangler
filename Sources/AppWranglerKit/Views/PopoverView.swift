@@ -220,7 +220,7 @@ struct PopoverView: View {
 					Spacer()
 					if model.autoManages(s.groupID) {
 						Button(L("OK")) { model.dismissSuggestion(s) }
-							.help(L("Auto keeps it on the efficiency cores while it's in the background"))
+							.help(L("Auto looks after it: efficiency cores in the background, and a fair share of the CPU when the Mac is busy"))
 						Button(L("Set manually…")) { model.focusRequest = s.groupID }
 					} else {
 						if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
@@ -603,6 +603,7 @@ struct GroupRow: View {
 		guard let d = model.enforcer.autoDecisions[group.id] else { return nil }
 		switch (d.reason, d.cap, d.efficiency) {
 		case (.audio, _, _): return L("Auto · full speed (playing or recording audio)")
+		case (.background, _, _) where d.away: return L("Auto · running free (you're away)")
 		case (.background, _, _) where d.lifted: return L("Auto · running free (it's working and the Mac has room)")
 		case (.background, let cap?, _): return L("Auto · shared CPU %@ (Mac busy)", Fmt.percent(cap))
 		case (.background, nil, true): return L("Auto · efficiency cores (in background)")
@@ -673,6 +674,7 @@ struct GroupDetail: View {
 	@Local private var confirmForceQuit = false
 	/// "Custom rule" picked for an app that has no rule yet; the editor shows, and the first setting creates the rule.
 	@Local private var customPicked = false
+	@AppStorage(Prefs.autoLearn) private var autoLearn = true
 	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
 
 	private var ruleBinding: Binding<AppRule> {
@@ -773,8 +775,12 @@ struct GroupDetail: View {
 				 ? L("Low by default: this is maintenance work. It's paused while the Mac needs its resources. Set High to keep it running.")
 				 : effective == .low ? L("Slowed first, and paused if the Mac needs its resources for a while. It resumes when there's room.")
 				 : effective == .high ? L("Never slowed or paused, even in the background.")
-				 : L("Handled by Auto like most apps."))
+				: L("Handled by Auto like most apps."))
 				.font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+			if autoLearn, model.patterns.likelySoon(ImpactKey.of(group), at: Date()) >= 0.5 {
+				Label(L("You usually use this around now, so Auto keeps it at full speed longer and doesn't freeze it."), systemImage: "clock")
+					.font(.caption2).foregroundStyle(.secondary)
+			}
 		}
 	}
 

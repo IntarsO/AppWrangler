@@ -45,7 +45,7 @@ One `proc_pid_rusage` call per process returns CPU time, physical footprint, dis
 
 **Adaptive cadence** (`AppModel`):
 - Panel open: everything, every second.
-- Panel closed: apps with rules or freezes, plus every app (not plain processes) while Auto mode is on, every 2 s; plus a full scan every 5 s if runaway detection is on.
+- Panel closed: apps with rules or freezes, plus every app while Auto mode is on, every 2 s; plus the hot command-line processes Auto is following; plus a full scan every 5 s if runaway detection is on, and every 10 s to find hot processes while Auto manages processes.
 - Nothing to do: no timer at all.
 
 ## Enforcing

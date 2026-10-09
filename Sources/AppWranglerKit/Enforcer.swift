@@ -281,7 +281,8 @@ final class Enforcer {
 					limits[group.id] = cap
 				}
 				if d.efficiency {
-					for pid in appPids { wantBackground[pid] = group.id }
+					// A command-line process is never slowed while a terminal is waiting for it.
+					for pid in (group.kind == .process ? stoppable : appPids) { wantBackground[pid] = group.id }
 				}
 			}
 			guard let rule else { continue }

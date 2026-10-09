@@ -14,6 +14,12 @@
 //      the foreground isn't using is shared fairly between them (max-min
 //      fairness), with a floor so none of them starves. When the Mac isn't
 //      busy, nothing is capped at all.
+//    • Command-line processes that run hot are moved to the efficiency cores too, but
+//      only while the Mac needs its resources (busy, on battery, hot): never capped or
+//      frozen, never build tools, system processes or what a terminal is waiting for.
+//    • You're away (no input for a few minutes, plugged in): nothing is held back, so
+//      background work finishes at full speed. It's all restored the moment you're back.
+//    • Learned routine: apps you usually use around now stay at full speed longer.
 //    • Adaptive (on by default): Auto follows what the Mac needs right now. When
 //      you're plugged in, the Mac is calm and cool, a background app that is
 //      doing real work runs free instead of being held on the efficiency cores,
@@ -83,6 +89,19 @@ struct AutoSettings: Equatable {
 	var freezeIdleWhenLowMemory = false
 	var freezeIdleAfter: TimeInterval = 600
 
+	/// Also manage command-line processes (hot ones, and only while the Mac needs its resources).
+	var processes = true
+	/// A process counts as hot above this many cores…
+	var processCPU = 0.15
+	/// …for this long before it's moved to the efficiency cores.
+	var processHotFor: TimeInterval = 20
+	/// When you're away (no input for `awayAfter`, plugged in, cool), nothing is held back.
+	var away = true
+	var awayAfter: TimeInterval = 300
+	/// Learn which apps you use when, and keep the ones you usually use now at full speed longer.
+	var learn = true
+	/// An app you usually use around now stays at full speed this long after you leave it.
+	var likelyGrace: TimeInterval = 300
 	/// Pause low priority work (updaters, indexing, anything you marked Low) while the Mac needs
 	/// its resources for what you're doing; see Priority.swift.
 	var shed = true
@@ -114,6 +133,7 @@ struct AutoDecision: Equatable {
 		case .priority: return "high priority — full speed"
 		case .recent: return "just used — full speed for a few seconds"
 		case .background:
+			if away { return "background — running free while you're away" }
 			if lifted { return "background — running free: it's working and the Mac has room" }
 			if let cap { return String(format: "background — efficiency cores, shared CPU %.0f%% (Mac busy)", cap * 100) }
 			return efficiency ? "background — efficiency cores" : "background — moves to efficiency cores shortly"
@@ -125,6 +145,8 @@ struct AutoDecision: Equatable {
 	var cap: Double?
 	/// A background app doing real work while the Mac has room: not held on the efficiency cores.
 	var lifted = false
+	/// Running free because you're away.
+	var away = false
 }
 
 struct AutoSummary: Equatable {
@@ -134,6 +156,10 @@ struct AutoSummary: Equatable {
 	var capped = 0
 	/// Background apps running free because they're working and the Mac has room.
 	var runningFree = 0
+	/// Command-line processes held on the efficiency cores because the Mac needs its resources.
+	var processes = 0
+	/// You're away: nothing is held back.
+	var away = false
 	var busy = false
 }
 
@@ -149,6 +175,11 @@ final class AutoPilot {
 	private var workingSince: [String: Date] = [:]
 	private var quietSince: [String: Date] = [:]
 	private var runningFree: Set<String> = []
+	/// Processes that have been hot (since when), and those currently held.
+	private var hotSince: [String: Date] = [:]
+	private var heldProcesses: Set<String> = []
+	/// Hot processes Auto is following, so the app keeps measuring them between full scans.
+	var watchedProcessIDs: Set<String> { Set(hotSince.keys) }
 	private(set) var decisions: [String: AutoDecision] = [:]
 	private var owners: [String: pid_t] = [:]
 	/// Every pid of each managed app, so switching to any of its windows counts.
@@ -165,7 +196,8 @@ final class AutoPilot {
 	@discardableResult
 	func decide(groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date], audioPids: Set<pid_t>,
 				systemCPU: Double, onBattery: Bool, ncpu: Int, lowPower: Bool = false, hot: Bool = false,
-				demand: [String: Double] = [:], priorities: [String: AppPriority] = [:], now: Date = Date()) -> [String: AutoDecision] {
+				demand: [String: Double] = [:], priorities: [String: AppPriority] = [:], away: Bool = false,
+				likely: Set<String> = [], now: Date = Date()) -> [String: AutoDecision] {
 		guard settings.enabled else {
 			reset()
 			return [:]
@@ -194,6 +226,7 @@ final class AutoPilot {
 
 		var result: [String: AutoDecision] = [:]
 		var background: [AppGroup] = []
+		var processIDs = Set<String>()
 		var present = Set<String>()
 		owners = [:]
 		groupPids = [:]
@@ -201,6 +234,14 @@ final class AutoPilot {
 			present.insert(g.id)
 			owners[g.id] = g.ownerPid
 			groupPids[g.id] = Set(g.pids)
+			if g.kind == .process {
+				// Only while the Mac needs its resources, and never anything but the efficiency cores.
+				if let d = processDecision(g, needsResources: !away && (busy || strained), now: now) {
+					result[g.id] = d
+					processIDs.insert(g.id)
+				}
+				continue
+			}
 			let reason: AutoDecision.Reason
 			if g.pids.contains(frontmostPid) {
 				reason = .foreground
@@ -224,9 +265,19 @@ final class AutoPilot {
 			let since = backgroundSince[g.id] ?? g.pids.compactMap({ lastActive[$0] }).max() ?? now
 			backgroundSince[g.id] = since
 			var d = AutoDecision(reason: .background)
+			if away {
+				// You're not here: nothing is held back, so background work finishes at full speed.
+				d.lifted = true
+				d.away = true
+				result[g.id] = d
+				forgetFree(g.id)
+				continue
+			}
 			let low = priorities[g.id] == .low
+			// An app you usually use around now stays at full speed a while longer (unless the Mac is strained).
+			let appGrace = !strained && likely.contains(g.id) ? max(grace, settings.likelyGrace) : grace
 			// Low priority work goes to the efficiency cores at once; it never runs free.
-			d.efficiency = settings.useEfficiencyCores && (low || now.timeIntervalSince(since) >= grace)
+			d.efficiency = settings.useEfficiencyCores && (low || now.timeIntervalSince(since) >= appGrace)
 			if d.efficiency && !low && shouldRunFree(g, roomToRunFree: roomToRunFree, now: now) {
 				d.efficiency = false
 				d.lifted = true
@@ -236,9 +287,13 @@ final class AutoPilot {
 		}
 		for id in backgroundSince.keys where !present.contains(id) { backgroundSince[id] = nil }
 		for id in Set(workingSince.keys).union(quietSince.keys).union(runningFree) where !present.contains(id) { forgetFree(id) }
+		for id in Set(hotSince.keys).union(heldProcesses) where !present.contains(id) {
+			hotSince[id] = nil
+			heldProcesses.remove(id)
+		}
 
 		// Fair share of what the foreground and everything else leave free.
-		if busy && settings.shareCPU && !background.isEmpty {
+		if busy && !away && settings.shareCPU && !background.isEmpty {
 			let backgroundUsage = background.reduce(0) { $0 + $1.cpu }
 			let othersUsage = max(0, systemCPU * Double(ncpu) - backgroundUsage)
 			let minimumBudget = max(Double(ncpu) * 0.25, settings.floorCores * Double(background.count))
@@ -250,13 +305,44 @@ final class AutoPilot {
 		}
 
 		decisions = result
-		summary = AutoSummary(managed: result.count,
+		summary = AutoSummary(managed: result.count - processIDs.count,
 							  inUse: result.values.filter { $0.reason != .background }.count,
 							  onEfficiency: result.values.filter(\.efficiency).count,
 							  capped: result.values.filter { $0.cap != nil }.count,
 							  runningFree: result.values.filter(\.lifted).count,
+							  processes: result.filter { processIDs.contains($0.key) && $0.value.efficiency }.count,
+							  away: away && !groups.isEmpty,
 							  busy: busy)
 		return result
+	}
+
+	/// A hot command-line process while the Mac needs its resources goes to the efficiency cores;
+	/// otherwise it's left alone (and an idle one isn't listed at all).
+	private func processDecision(_ g: AppGroup, needsResources: Bool, now: Date) -> AutoDecision? {
+		let hot = g.cpu >= settings.processCPU
+		if hot {
+			hotSince[g.id] = hotSince[g.id] ?? now
+		} else if !(heldProcesses.contains(g.id) && needsResources) {
+			hotSince[g.id] = nil	// a quiet process, unless it's quiet because it's being held
+		}
+		guard let since = hotSince[g.id], settings.processes else {
+			heldProcesses.remove(g.id)
+			return nil
+		}
+		let engage = settings.useEfficiencyCores && needsResources && now.timeIntervalSince(since) >= settings.processHotFor
+		if engage { heldProcesses.insert(g.id) } else { heldProcesses.remove(g.id) }
+		var d = AutoDecision(reason: .background)
+		d.efficiency = engage
+		return d
+	}
+
+	/// Command-line processes Auto may manage: yours, not build tools, dev tools or system software.
+	static func processEligible(_ g: AppGroup) -> Bool {
+		guard g.kind == .process, !Protected.contains(g), !AppTraits.isBuildTool(g.name),
+			  !AppTraits.neverIdleFreeze(name: g.name, bundleID: g.bundleID) else { return false }
+		let system = ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/bin/", "/Library/Apple/"]
+		if system.contains(where: { g.path.hasPrefix($0) }) { return false }
+		return ProcessCatalog.describe(g).safety == .safe
 	}
 
 	private func forgetFree(_ id: String) {
@@ -307,6 +393,8 @@ final class AutoPilot {
 		workingSince = [:]
 		quietSince = [:]
 		runningFree = []
+		hotSince = [:]
+		heldProcesses = []
 		lastBusy = nil
 		summary = AutoSummary()
 		busy = false

@@ -83,6 +83,8 @@ struct SuggestionInput {
 	/// Only suggest a CPU limit for something with minutes of history behind it, so a short spike
 	/// (a command that runs for a second) isn't flagged. The app sets this; the CLI keeps its one-second fallback.
 	var requireHistory = false
+	/// Auto mode also looks after hot command-line processes.
+	var autoProcesses = false
 	/// Auto mode already freezes idle apps when memory is low.
 	var autoFreezeIdle = false
 	var fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
@@ -102,6 +104,7 @@ struct SuggestionInput {
 							   onBattery: system.onBattery, ncpu: SystemInfo.ncpu,
 							   week: week.uptimeSeconds > 0 ? week : nil,
 							   averages: UsageAverages.read(directory: dir)?.apps ?? [:],
+							   autoProcesses: UserDefaults.standard.bool(forKey: Prefs.autoProcesses),
 							   autoFreezeIdle: UserDefaults.standard.bool(forKey: Prefs.autoFreezeIdle))
 	}
 }
@@ -149,7 +152,7 @@ enum Suggestions {
 			input.rules.filter { $0.matches(g) }.min { $0.matchKind.precedence < $1.matchKind.precedence }
 		}
 		func autoManages(_ g: AppGroup) -> Bool {
-			guard input.autoEnabled, g.kind == .app || g.kind == .background else { return false }
+			guard input.autoEnabled, g.kind == .app || g.kind == .background || (input.autoProcesses && AutoPilot.processEligible(g)) else { return false }
 			guard let r = rule(for: g) else { return true }
 			return !r.ignored && !(r.enabled && (r.cpuLimitEnabled || r.backgroundMode))
 		}
@@ -249,7 +252,7 @@ enum Suggestions {
 									 cli: "appwrangler auto on"), at: 0)
 			}
 			var reason = L("It isn't the app you're using and nothing limits it.")
-			if !isApp { reason += " " + L("Auto mode looks after apps, not command-line processes like this one.") }
+			if !isApp { reason += " " + L("Auto mode doesn't manage this kind of process (system software, a build tool or something a terminal needs).") }
 			if caution { reason += " " + L("Other apps may depend on it — limit gently.") }
 			reason += " " + (average.map { L("Average over the last %d min.", max(1, Int($0.minutes.rounded()))) }
 							 ?? L("Measured over about a second; check again if it's a short spike."))

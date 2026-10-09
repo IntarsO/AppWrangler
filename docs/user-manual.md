@@ -70,6 +70,24 @@ This manual is also built into the app (no internet needed). Open it from the **
 
 Switch it off with *Adapt to what the Mac needs right now* in Settings → General → Auto mode, or `appwrangler prefs auto_adaptive=off`; Auto then keeps its fixed timings. Apps running free show as *"Auto · running free"*, and each change is in Settings → Activity.
 
+**Command-line processes.** Auto also looks after processes that aren't apps (a `node` server, `ffmpeg`, a sync tool), with the strictest rules of anything it does:
+- **Only hot ones:** at least 0.15 of a core for 20 s. Idle processes aren't touched or even listed.
+- **Only while the Mac needs its resources:** busy, on battery, in Low Power Mode, or hot. On a calm Mac, plugged in, they run as usual.
+- **Only the efficiency cores.** Never a CPU cap and never frozen, because that can break servers and connections.
+- **Never:** build tools, compilers, terminals and editors, containers and virtual machines, macOS and other system software (`/System`, `/usr/libexec`…), protected processes, and **anything a terminal is waiting for** (a shell's foreground job).
+- Processes show in the main window under *Processes* with *"Auto · efficiency cores"* while held, and in the panel's Auto line (*"N processes held"*).
+- Switch off: *Also manage command-line processes* in Settings → General → Auto mode, or `appwrangler prefs auto_processes=off`. A process with its own rule follows the rule.
+
+**When you're away.** With no keyboard or mouse input for 5 minutes (adjustable: 2, 5, 10 or 30), while you're plugged in, not in Low Power Mode and the Mac isn't hot, you count as **away**. Auto then holds **nothing** back: background apps and processes run at full speed, nothing is capped, low-priority work resumes, so exports, syncs and updates finish sooner. The panel says *"You're away · background apps run at full speed"*. The moment you touch the Mac, Auto is back in charge (within about two seconds). Switch off, or change the time, in Settings → General → Auto mode, or `appwrangler prefs auto_away=off` / `auto_away_minutes=10`.
+
+**Learning your routine.** Auto remembers which app is in front, by **weekday and hour**, so it can act on your habits:
+- an app you **usually use around now** stays at full speed for 5 minutes after you leave it (instead of 30 s), and idle freezing skips it;
+- when apps are frozen for memory, the ones you're **least likely to need soon** go first;
+- if memory is fine and you usually use a frozen app around now, it's **resumed early**, before you switch to it;
+- the app's details say *"You usually use this around now"* when that's the case.
+
+An app counts as part of your routine after about 45 minutes in a weekday-hour (for example, two Mondays of 20-25 minutes), and what it learned fades by a tenth each week, so a changing routine is followed. **It stays on this Mac:** only app identifiers and minutes per weekday-hour are kept, in `patterns.json` next to your rules, and nothing is sent anywhere. Nothing is recorded while you're away or idle. Switch it off with *Learn my routine* in Settings → General → Auto mode (or `appwrangler prefs auto_learn=off`), and wipe it with **Forget what it learned**.
+
 **Optional: freeze idle apps when memory runs out.** Turn on *When the Mac is low on memory, freeze apps I haven't used for a while* in Settings → General → Auto mode (or run `appwrangler auto freeze-idle on`). It's off by default.
 
 - **What it freezes.** With [adaptive Auto](#auto-mode) on, Auto steps in at the first sign of memory pressure (*warning*) and freezes regular apps you haven't used for 10 minutes (adjustable), **one app at a time, biggest first**, every 15 s while memory is still short, so it freezes only as much as needed. With adaptive off, it waits for the low-memory level you chose (Settings → General → Low memory, *critical* by default) and freezes every candidate at once.
@@ -97,7 +115,7 @@ The panel header shows what Auto is doing, e.g. *"Auto · 12 apps · 1 in use ·
 - An app with its own **CPU limit** or **Efficiency cores** setting follows that rule; Auto leaves it alone.
 - A rule with only memory or low-memory settings still lets Auto handle the app's CPU.
 - To keep Auto away from an app completely, give it a rule and turn on **Ignore this app**.
-- Plain processes (command-line tools, builds) and macOS services aren't managed by Auto.
+- Command-line processes are managed only as described above (hot, only when the Mac needs its resources, efficiency cores only); macOS services aren't managed by Auto.
 
 Settings → General → **Auto mode** lets you change:
 - the 30 s delay;
@@ -666,6 +684,7 @@ The **?** next to a section in Settings → General opens the matching part of t
 | Recent per-app averages (for suggestions) | `~/Library/Application Support/AppWrangler/usage.json` (rewritten every minute) |
 | What the widget shows | `~/Library/Application Support/AppWrangler/widget.json` (rewritten every minute) |
 | Undo history | `~/Library/Application Support/AppWrangler/changes.json` (last 50 changes) |
+| Your routine (which app you use in which weekday-hour) | `~/Library/Application Support/AppWrangler/patterns.json` (only if *Learn my routine* is on; delete the file or use *Forget what it learned* to wipe it) |
 | Locks | `.lock` (one AppWrangler at a time), `.rules.lock` and `.changes.lock` (safe concurrent edits) in the same folder |
 | Preferences | `defaults read io.github.intarso.AppWrangler` |
 

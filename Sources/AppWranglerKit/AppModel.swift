@@ -36,6 +36,14 @@ final class AppModel: ObservableObject {
 	let stats = StatsStore()
 	let autoPilot = AutoPilot()
 	let shedder = Shedder()
+	/// Which apps you use when; private to this Mac (see Routine.swift).
+	let patterns: UsagePatterns
+	/// You're away (no input, plugged in): Auto holds nothing back.
+	private(set) var away = false
+	private var userIdle: TimeInterval = 0
+	private var lastRoutineRecord = Date()
+	private var lastPatternSave = Date()
+	private var lastEarlyThaw = Date.distantPast
 	@Published private(set) var autoSummary = AutoSummary()
 	/// When each app pid was last frontmost (Auto's grace period).
 	private var lastActive: [pid_t: Date] = [:]
@@ -82,6 +90,7 @@ final class AppModel: ObservableObject {
 
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
 		self.rules = rules
+		self.patterns = UsagePatterns(url: rules.fileURL.deletingLastPathComponent().appendingPathComponent("patterns.json"))
 		self.enforcer = Enforcer(controller: controller)
 		enforcer.onEvent = { [weak self] app, message, notify in self?.log.add(app, message, notify: notify) }
 		enforcer.onImpact = { [weak self] group, event in
@@ -407,8 +416,15 @@ final class AppModel: ObservableObject {
 			(rules.rule(for: g)?.pressureAction ?? PressureAction.none) == PressureAction.none	// the app's own rule decides otherwise
 				&& Priorities.of(g, rule: rules.rule(for: g)) != .high
 		}
-		let ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
+		var ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
 												 audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt)
+		if s.learn && !patterns.isEmpty {
+			// Apps you usually use around now are skipped; the ones you're least likely to need soon go first.
+			let keys = Dictionary(groups.map { ($0.id, ImpactKey.of($0)) }, uniquingKeysWith: { a, _ in a })
+			let soon = Dictionary(ids.map { ($0, patterns.likelySoon(keys[$0] ?? "", at: now)) }, uniquingKeysWith: { a, _ in a })
+			ids = ids.enumerated().filter { (soon[$0.element] ?? 0) < 0.5 }
+				.sorted { (soon[$0.element] ?? 0, $0.offset) < (soon[$1.element] ?? 0, $1.offset) }.map(\.element)
+		}
 		// Adaptive: one app at a time, biggest first, then look again, so only as much is frozen as memory needs.
 		guard paced && s.adaptive else { return Set(ids) }
 		guard let first = ids.first, now.timeIntervalSince(lastAutoFreezeStep) >= Self.autoFreezeStepGap else { return [] }
@@ -443,8 +459,13 @@ final class AppModel: ObservableObject {
 		// Test-only: `-AWAutoScope <bundle-id prefix>` keeps a test copy's Auto
 		// mode away from the user's real apps.
 		let scope = UserDefaults.standard.string(forKey: "AWAutoScope")
+		let processes = autoPilot.settings.processes
+		let watched = autoPilot.watchedProcessIDs
+		let hot = autoPilot.settings.processCPU * 0.5
 		return snapshot.groups.filter { g in
-			guard g.kind == .app || g.kind == .background, g.ownerPid != me, !Protected.contains(g),
+			// Command-line processes: only the ones that are running hot (or already followed), and only safe ones.
+			let managedProcess = processes && g.kind == .process && (g.cpu >= hot || watched.contains(g.id)) && AutoPilot.processEligible(g)
+			guard g.kind == .app || g.kind == .background || managedProcess, g.ownerPid != me, !Protected.contains(g),
 				  !enforcer.isFrozen(g.id) else { return false }
 			if let scope, !(g.bundleID ?? "").hasPrefix(scope) { return false }
 			guard let rule = rules.rule(for: g) else { return true }
@@ -468,15 +489,62 @@ final class AppModel: ObservableObject {
 			let p = Priorities.of(g, rule: rules.rule(for: g))
 			return p == .normal ? nil : (g.id, p)
 		}, uniquingKeysWith: { a, _ in a })
+		let now = Date()
+		let likely: Set<String> = autoPilot.settings.learn && !patterns.isEmpty
+			? Set(eligible.filter { patterns.expected(ImpactKey.of($0), at: now) >= 0.6 }.map(\.id)) : []
 		let decisions = autoPilot.decide(groups: eligible, frontmostPid: frontmostPid, lastActive: lastActive,
 										 audioPids: audioPids, systemCPU: snapshot.systemCPU,
 										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu,
-										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand, priorities: priorities)
+										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand, priorities: priorities,
+										 away: away, likely: likely, now: now)
 		logRunningFree(decisions, groups: snapshot.groups)
 		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
 		// Forget focus times of apps that have quit.
 		if lastActive.count > 200 { lastActive = lastActive.filter { kill($0.key, 0) == 0 } }
 		return decisions
+	}
+
+	// MARK: Away and routine
+
+	/// You're away: no input for a few minutes, plugged in and cool. Auto then holds nothing back.
+	private func updateAway(_ state: SystemState) {
+		let s = autoPilot.settings
+		userIdle = AwayMode.idleSeconds()
+		let now = AwayMode.isAway(idle: userIdle, after: s.awayAfter, enabled: s.enabled && s.away,
+								  onBattery: state.onBattery, lowPower: state.lowPowerMode, hot: state.isHot)
+		guard now != away else { return }
+		away = now
+		log.add("AppWrangler", now ? L("You're away: background apps run at full speed")
+				: L("You're back: Auto is in charge again"))
+	}
+
+	/// Learn what you use when, and use it: resume early what you usually use around now.
+	private func runRoutine(_ snapshot: Snapshot, state: SystemState, now: Date = Date()) {
+		let s = autoPilot.settings
+		guard s.enabled, s.learn else { return }
+		patterns.decayIfDue(now: now)
+		let elapsed = min(now.timeIntervalSince(lastRoutineRecord), 10)
+		lastRoutineRecord = now
+		if !away, userIdle < 120, elapsed > 0,
+		   let g = snapshot.groups.first(where: { $0.kind == .app && $0.pids.contains(frontmostPid) }) {
+			patterns.record(ImpactKey.of(g), minutes: elapsed / 60, at: now)
+		}
+		if now.timeIntervalSince(lastPatternSave) >= 300 {
+			lastPatternSave = now
+			patterns.save(now: now)
+		}
+		// Memory is fine and you usually use this app around now: bring it back before you ask for it.
+		guard state.memoryPressure < 2, now.timeIntervalSince(lastEarlyThaw) >= 10, !patterns.isEmpty else { return }
+		for (id, reason) in enforcer.frozen where reason == .idle || reason == .memoryPressure {
+			guard let g = snapshot.groups.first(where: { $0.id == id }),
+				  let since = enforcer.frozenSince[id], now.timeIntervalSince(since) >= 120,
+				  patterns.expected(ImpactKey.of(g), at: now) >= 0.6 else { continue }
+			enforcer.unfreeze(id)
+			lastEarlyThaw = now
+			log.add(g.name, L("Resumed early: you usually use it around now"))
+			reapply()
+			break
+		}
 	}
 
 	// MARK: Priorities
@@ -491,7 +559,7 @@ final class AppModel: ObservableObject {
 		}
 		let me = getpid()
 		let foregroundCPU = snapshot.groups.first { $0.pids.contains(frontmostPid) }?.cpu ?? 0
-		let need: Shedder.Need = state.memoryPressure >= 2 ? .memory
+		let need: Shedder.Need = away ? .none : state.memoryPressure >= 2 ? .memory
 			: autoPilot.busy && foregroundCPU >= 0.5 ? .cpu : .none
 		let candidates: [Shedder.Candidate] = snapshot.groups.compactMap { g in
 			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid),
@@ -597,9 +665,12 @@ final class AppModel: ObservableObject {
 		var state = system.refresh()
 		state.now = Date()
 		// Full scans: UI open, or periodically for runaway detection.
+		let processesOn = autoPilot.settings.enabled && autoPilot.settings.processes
 		let full = uiVisible || (runawayEnabled && Date().timeIntervalSince(lastFullScan) >= 5)
+			|| (processesOn && Date().timeIntervalSince(lastFullScan) >= 10)
 		var matcher = rules.matcher(for: state)
 		matcher.groupIDs.formUnion(enforcer.trackedGroupIDs)
+		matcher.groupIDs.formUnion(autoPilot.watchedProcessIDs)
 		if autoPilot.settings.enabled && autoPilot.settings.shed { matcher.patterns.append(contentsOf: Priorities.measuredNames) }
 		if !full && matcher.isEmpty && !needsBackgroundSampling {
 			// Nothing to watch: just make sure limits from removed rules are lifted.
@@ -628,11 +699,13 @@ final class AppModel: ObservableObject {
 		#endif
 		lastSnapshot = snapshot
 		refreshAudio()
+		updateAway(state)
 		let auto = decideAuto(snapshot, state: state, newSample: true)
 		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
 					   autoFreeze: autoFreezeCandidates(snapshot, state: state, paced: true), autoFreezeActive: autoFreezeActive,
 					   autoLowMemory: autoFreezeActive ? autoMemoryIsShort(state) : nil)
 		runShedding(snapshot, state: state)
+		runRoutine(snapshot, state: state)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		let efficiency = snapshot.groups.reduce(0.0) { $0 + (enforcer.isInBackgroundMode($1) ? $1.cpu : 0) }
@@ -750,6 +823,7 @@ final class AppModel: ObservableObject {
 			memoryPressure: systemState.memoryPressure, swapUsedBytes: Swap.usedBytes, onBattery: systemState.onBattery,
 			ncpu: SystemInfo.ncpu, week: week.uptimeSeconds > 0 ? week : nil,
 			averages: UsageAverages.compute(groups: lastSnapshot.groups, history: history), requireHistory: true,
+			autoProcesses: autoPilot.settings.processes,
 			autoFreezeIdle: d.bool(forKey: Prefs.autoFreezeIdle))
 		let dismissed = d.dictionary(forKey: Prefs.dismissedAdvice) as? [String: Date] ?? [:]
 		return Suggestions.make(input).filter { s in
@@ -1008,6 +1082,7 @@ final class AppModel: ObservableObject {
 	func isFrozen(_ group: AppGroup) -> Bool { enforcer.isFrozen(group.id) }
 
 	func shutdown() {
+		patterns.save()
 		stats.flush()
 		enforcer.releaseAll()
 		rules.saveNow()

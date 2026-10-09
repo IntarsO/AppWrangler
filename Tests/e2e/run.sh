@@ -73,7 +73,7 @@ cli()  { "$APP_BIN" "$@" >/dev/null; }
 
 start_app() {
 	# Argument-domain defaults keep the test from prompting for notifications.
-	"$APP_BIN" -AWHeadless YES -AWNotifications NO -AWRunawayEnabled NO -AWStatsFlushSeconds 1 -AWAutoEfficiencyAfter 2 -AWAutoScope io.github.intarso.AppWrangler.e2e >>"$WORK/app.log" 2>&1 &
+	"$APP_BIN" -AWHeadless YES -AWNotifications NO -AWRunawayEnabled NO -AWStatsFlushSeconds 1 -AWAutoEfficiencyAfter 2 -AWAutoAway NO -AWAutoLearn NO -AWAutoProcesses NO -AWAutoScope io.github.intarso.AppWrangler.e2e >>"$WORK/app.log" 2>&1 &
 	APP=$!
 	for _ in $(seq 50); do [ -f "$APPWRANGLER_DATA_DIR/state.json" ] && return 0; sleep 0.1; done
 	return 1

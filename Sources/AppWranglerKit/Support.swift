@@ -131,6 +131,10 @@ enum Prefs {
 	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
 	static let autoAdaptive = "AWAutoAdaptive"
 	static let autoShed = "AWAutoShed"
+	static let autoProcesses = "AWAutoProcesses"
+	static let autoAway = "AWAutoAway"
+	static let autoAwayMinutes = "AWAutoAwayMinutes"
+	static let autoLearn = "AWAutoLearn"
 	static let dismissedAdvice = "AWDismissedAdvice"
 	static let mainWindowOpen = "AWMainWindowOpen"
 	static let showPanelOnAction = "AWShowPanelOnAction"
@@ -148,6 +152,10 @@ enum Prefs {
 		s.freezeIdleAfter = min(max(d.double(forKey: autoFreezeIdleMinutes), 1), 24 * 60) * 60
 		s.adaptive = d.bool(forKey: autoAdaptive)
 		s.shed = d.bool(forKey: autoShed)
+		s.processes = d.bool(forKey: autoProcesses)
+		s.away = d.bool(forKey: autoAway)
+		s.awayAfter = min(max(d.double(forKey: autoAwayMinutes), 1), 120) * 60
+		s.learn = d.bool(forKey: autoLearn)
 		return s
 	}
 
@@ -176,6 +184,10 @@ enum Prefs {
 			autoFreezeIdleMinutes: 10,
 			autoAdaptive: true,
 			autoShed: true,
+			autoProcesses: true,
+			autoAway: true,
+			autoAwayMinutes: 5,
+			autoLearn: true,
 			showPanelOnAction: true,
 		])
 	}

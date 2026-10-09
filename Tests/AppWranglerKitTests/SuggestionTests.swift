@@ -84,10 +84,10 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 	@Test func aProcessSuggestionSaysWhyAutoIsntHandlingIt() {
 		let node = makeGroup(name: "node", bundleID: nil, pid: 10, cpu: 1.2, kind: .process)
 		let reason = Suggestions.make(input([node])).first?.reason ?? ""
-		#expect(reason.contains("Auto mode looks after apps, not command-line processes"))
+		#expect(reason.contains("Auto mode doesn't manage this kind of process"))
 		let app = makeGroup(name: "Busy App", bundleID: "com.example.busy", pid: 13, cpu: 2)
 		let appReason = Suggestions.make(input([app], auto: false)).first { $0.app == "Busy App" }?.reason ?? ""
-		#expect(!appReason.contains("command-line processes"))
+		#expect(!appReason.contains("kind of process"))
 	}
 
 	@Test func appWithItsOwnLimitIsNotSuggestedAgain() {

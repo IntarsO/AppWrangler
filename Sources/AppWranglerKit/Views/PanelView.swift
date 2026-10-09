@@ -86,7 +86,9 @@ struct PanelView: View {
 		guard autoEnabled else { return L("Off — only your rules apply") }
 		let s = model.autoSummary
 		var text = L("%d apps · %d in use · %d on E-cores", s.managed, s.inUse, s.onEfficiency)
+		if s.away { return L("You're away · background apps run at full speed") }
 		if s.runningFree > 0 { text += " · " + L("%d running free", s.runningFree) }
+		if s.processes > 0 { text += " · " + L("%d processes held", s.processes) }
 		let frozen = model.enforcer.frozen.count
 		if frozen > 0 { text += " · " + L("%d frozen", frozen) }
 		if s.busy { text += " · " + L("Mac busy") }
