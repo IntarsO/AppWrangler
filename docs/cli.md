@@ -94,7 +94,7 @@ appwrangler prefs freeze_idle=on freeze_idle_minutes=30 low_memory_level=warning
 appwrangler prefs auto_efficiency_after=60 runaway_alerts=off
 ```
 
-Keys: `auto`, `auto_efficiency_cores`, `auto_efficiency_after` (s), `auto_share_cpu`, `auto_busy_percent`, `freeze_idle`, `freeze_idle_minutes`, `low_memory_level` (`warning`/`critical`), `runaway_alerts`, `runaway_percent`, `runaway_minutes`, `notifications`, `menu_bar_cpu`, `pause_shortcut`. Values are checked first: nothing changes if one is invalid. `--json` prints the current values as JSON.
+Keys: `auto`, `auto_efficiency_cores`, `auto_efficiency_after` (s), `auto_share_cpu`, `auto_busy_percent`, `freeze_idle`, `freeze_idle_minutes`, `low_memory_level` (`warning`/`critical`), `runaway_alerts`, `runaway_percent`, `runaway_minutes`, `notifications`, `menu_bar_cpu`, `show_panel_on_action`, `pause_shortcut`. Values are checked first: nothing changes if one is invalid. `--json` prints the current values as JSON.
 
 ### `free-memory`
 Freezes the apps you haven't used for a while, right now, whatever the memory pressure. Each app resumes the moment you switch to it. It never freezes the app in use, audio, busy apps, messaging and calls apps, terminals, IDEs, virtual machines or menu bar apps. [More](user-manual.md#free-memory-now).

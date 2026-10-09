@@ -239,6 +239,7 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.limiterPeriodMs) private var limiterPeriod = 50
 	@AppStorage(Prefs.showOtherUsers) private var showOtherUsers = false
 	@AppStorage(Prefs.notifications) private var notifications = true
+	@AppStorage(Prefs.showPanelOnAction) private var showPanelOnAction = true
 	@AppStorage(Prefs.menuBarCPU) private var menuBarCPU = false
 	@AppStorage(Prefs.runawayEnabled) private var runawayEnabled = true
 	@AppStorage(Prefs.runawayPercent) private var runawayPercent = 80.0
@@ -356,6 +357,9 @@ struct GeneralSettings: View {
 
 			Section(L("Notifications")) {
 				Toggle(L("Notify me about memory limits, low memory and runaway apps"), isOn: $notifications)
+				Toggle(L("Open the panel when AppWrangler freezes or flags an app"), isOn: $showPanelOnAction)
+				Text(L("The panel appears by itself for 30 seconds without taking keyboard focus, with the option to set the app up by hand."))
+					.font(.caption).foregroundStyle(.secondary)
 			}
 
 			Section(header: helpHeader(L("Command line"), nil, topic: .cli)) {

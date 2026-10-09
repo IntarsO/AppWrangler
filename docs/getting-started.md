@@ -54,7 +54,9 @@ AppWrangler has no Dock icon (except while its window is open). Look for the **l
 
 ## 3. Take a look around
 
-The panel is a quick overview:
+The panel is a quick overview. It also opens by itself, for 30 seconds and without taking keyboard focus, when AppWrangler has just frozen or flagged an app.
+
+What you see:
 
 - **At the top:** your Mac's chip (for example *Apple M1 · 4P + 4E · 8 GB*), the **Auto** switch with what Auto is doing right now, and an **Active / Paused** switch.
 - **Two charts** of the last 10 minutes: CPU (with a dashed green line for the part that runs on efficiency cores) and memory (shaded while the Mac was short of memory).
@@ -99,8 +101,8 @@ The yellow **Suggestions** section of the main window, when it appears, points o
 
 For most everyday apps, Auto mode is the better choice: a fixed limit can make an app feel slow. Use your own rule for things Auto doesn't manage, such as a build tool or a background process, or to set a memory limit. Say a sync app keeps using too much CPU:
 
-1. Click it in the main window's list (or in **Busiest apps** in the panel).
-2. Turn on **Limit CPU** and pick **25%** (or drag the slider). New rules apply only while the app is in the background.
+1. Click it in the main window's list (or in **Busiest apps** in the panel). Its details open with **Auto (recommended)** selected.
+2. Choose **Custom rule**, turn on **Limit CPU** and pick **25%** (or drag the slider). New rules apply only while the app is in the background.
 3. Done. The limit is enforced within half a second. The row turns orange, and a gauge icon shows it's being throttled.
 
 From now on, the limit applies **every time the app runs**, including after you restart your Mac.

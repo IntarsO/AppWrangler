@@ -218,8 +218,15 @@ struct PopoverView: View {
 							.font(.caption2).foregroundStyle(.secondary)
 					}
 					Spacer()
-					Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: info(s)) }
-					Button(L("E-cores")) { model.applySuggestion(.ecores, info: info(s)) }
+					if model.autoManages(s.groupID) {
+						Button(L("OK")) { model.dismissSuggestion(s) }
+							.help(L("Auto keeps it on the efficiency cores while it's in the background"))
+						Button(L("Set manually…")) { model.focusRequest = s.groupID }
+					} else {
+						if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
+						Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: info(s)) }
+						Button(L("E-cores")) { model.applySuggestion(.ecores, info: info(s)) }
+					}
 					Button { model.dismissSuggestion(s) } label: { Image(systemName: "xmark") }
 						.buttonStyle(.borderless)
 						.accessibilityLabel(L("Dismiss"))
@@ -449,7 +456,14 @@ struct RowMenu: View {
 		if Protected.contains(group) {
 			Text(L("Critical to macOS — AppWrangler won't limit it"))
 		} else {
-			Menu(L("Limit CPU")) {
+			if Handling.of(rules.rule(for: group)) != .auto {
+				Button(L("Let Auto handle it")) { model.setHandling(group, .auto) }
+			}
+			if Handling.of(rules.rule(for: group)) != .leaveAlone {
+				Button(L("Leave alone")) { model.setHandling(group, .leaveAlone) }
+			}
+			Divider()
+			Menu(L("Custom limit")) {
 				ForEach([10.0, 25, 50, 100, 200], id: \.self) { v in
 					Button("\(Int(v))%") { model.quickLimit(group, cpu: v) }
 				}
@@ -648,6 +662,9 @@ struct GroupDetail: View {
 	@ObservedObject var rules: RuleStore
 	@Local private var showProcesses = false
 	@Local private var confirmForceQuit = false
+	/// "Custom rule" picked for an app that has no rule yet; the editor shows, and the first setting creates the rule.
+	@Local private var customPicked = false
+	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
 
 	private var ruleBinding: Binding<AppRule> {
 		let draft = AppRule.forGroup(group)
@@ -666,8 +683,7 @@ struct GroupDetail: View {
 				Label(L("Critical to macOS — AppWrangler won't limit it"), systemImage: "lock.fill")
 					.font(.caption).foregroundStyle(.secondary)
 			} else {
-				Text(L("Changes apply immediately.")).font(.caption2).foregroundStyle(.secondary)
-				RuleEditor(rule: ruleBinding)
+				handling
 				actions
 			}
 			if group.processes.count > 1 {
@@ -691,6 +707,45 @@ struct GroupDetail: View {
 			}
 		}
 		.padding(.top, 6)
+	}
+
+	private var mode: Handling { customPicked ? .custom : Handling.of(rules.rule(for: group)) }
+
+	/// Auto is the first choice; the manual editor only shows for a custom rule.
+	private var handling: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			Text(L("How AppWrangler handles %@", group.name)).font(.caption.weight(.semibold))
+			Picker(L("How AppWrangler handles %@", group.name), selection: Binding(get: { mode }, set: { choose($0) })) {
+				ForEach(Handling.allCases) { Text($0.title).tag($0) }
+			}
+			.pickerStyle(.segmented)
+			.labelsHidden()
+			switch mode {
+			case .auto:
+				Label(autoEnabled
+					  ? L("Runs at full speed while you use it, moves to the efficiency cores in the background, and shares the CPU fairly when the Mac is busy. Nothing to set.")
+					  : L("Auto mode is off, so nothing is done for this app."), systemImage: "wand.and.stars")
+					.font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+				if !autoEnabled {
+					Button(L("Turn on Auto")) { model.turnOnAuto() }.controlSize(.small)
+				}
+				DisclosureGroup(L("Memory limit")) {
+					RuleEditor(rule: ruleBinding, memoryOnly: true).padding(.top, 4)
+				}
+				.font(.caption)
+			case .custom:
+				Text(L("Your own limits for %@. Changes apply immediately.", group.name)).font(.caption2).foregroundStyle(.secondary)
+				RuleEditor(rule: ruleBinding)
+			case .leaveAlone:
+				Label(L("No suggestions and no automatic actions for this app."), systemImage: "hand.raised")
+					.font(.caption).foregroundStyle(.secondary)
+			}
+		}
+	}
+
+	private func choose(_ new: Handling) {
+		customPicked = new == .custom
+		model.setHandling(group, new)
 	}
 
 	private var about: some View {

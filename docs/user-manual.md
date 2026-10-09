@@ -131,7 +131,9 @@ The buttons:
 - **Leave *app* alone** (for Auto's own actions) keeps the app out of Auto mode, as [ignoring it](#ignoring-an-app) does. If the app was frozen, it's resumed. `appwrangler undo` reverts it.
 - For a runaway app that Auto doesn't manage, **Limit 50%** and **E-cores** create a rule right away.
 
-By default, nothing needs a click: everything is handled by Auto mode.
+When a card appears, the panel **opens by itself**, without taking keyboard focus, so you see what happened. It closes again after the 30 seconds unless you're using it, and it won't open more than once every two minutes. Turn this off with *Open the panel when AppWrangler freezes or flags an app* in Settings → General → Notifications, or `appwrangler prefs show_panel_on_action=off`.
+
+By default, nothing needs a click: everything is handled by Auto mode. **Limit 50%** and **E-cores** only appear on a runaway card when Auto can't handle that app (Auto mode is off, or it isn't an app); the card then also offers **Turn on Auto**.
 
 ---
 
@@ -174,11 +176,17 @@ The window is resizable and stays open, like Activity Monitor.
 - **Live stats:** CPU, memory, energy (watts), disk read/write per second, threads.
 - **Chart:** CPU and memory over the last 10 minutes, with peaks. History is collected while AppWrangler is measuring the app: apps with rules, every app while Auto mode is on, and everything while the panel or window is open.
 - **Throttling status**, e.g. *"Throttling: using 25%, allowed to run 12% of the time"*.
-- **The rule editor** (described below) and buttons for **Freeze**, **Quit**, **Force Quit** and **Remove Rule**.
+- **How AppWrangler handles it**, with **Auto (recommended)** first:
+  - **Auto** is the default. It needs nothing from you; a *Memory limit* section is available if you want one.
+  - **Custom rule** shows the [rule editor](#rules) (CPU limit, efficiency cores, memory, conditions).
+  - **Leave alone** keeps the app out of suggestions and Auto mode, as [ignoring it](#ignoring-an-app) does.
+  Choosing Auto removes the app's CPU limit and efficiency-core setting (`appwrangler undo` brings them back).
+- Buttons for **Freeze**, **Quit**, **Force Quit** and **Remove Rule**.
 - **Processes (N):** every process in the group, with its own CPU and memory.
 
 **Right-click a row** for quick actions:
-- *Limit CPU → 10/25/50/100/200%*, or *No CPU limit*;
+- *Let Auto handle it* and *Leave alone*;
+- *Custom limit → 10/25/50/100/200%*, or *No CPU limit*;
 - *Efficiency cores only*;
 - *Freeze/Unfreeze*, *Quit*, *Force Quit*;
 - *Remove Rule*;
@@ -578,6 +586,7 @@ For example: `open -g appwrangler://pause` (the `-g` keeps your current app in f
 | Pause all CPU limits | — | Same as the header switch |
 | Pause/resume shortcut ⌃⌥⌘P | on | Global shortcut |
 | Notifications | on | Memory, low-memory and runaway alerts |
+| Open the panel when AppWrangler acts | on | The panel opens by itself, without taking focus, when it freezes or flags an app |
 | Command line | — | How to add the `appwrangler` command (Homebrew does it for you) |
 
 Every setting above, except the window refresh, background check, other users' processes and throttle cycle, can also be changed with `appwrangler prefs key=value …`. Run `appwrangler prefs` to list them.

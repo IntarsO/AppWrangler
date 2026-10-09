@@ -108,4 +108,116 @@ import Testing
 		#expect(info["groupID"] == "app:Photos" && info["name"] == "Photos" && info["path"] == "/Applications/Photos.app")
 		#expect(info["bundleID"] == "")
 	}
+
+	// MARK: Auto first
+
+	private func rule() -> AppRule { AppRule(matchKind: .bundleID, matchValue: "com.example.app", displayName: "Example") }
+
+	@Test func anAppWithoutARuleIsHandledByAuto() {
+		#expect(Handling.of(nil) == .auto)
+		#expect(Handling.of(rule()) == .auto)	// a rule with nothing in it
+	}
+
+	@Test func aMemoryOnlyRuleStillMeansAuto() {
+		var r = rule()
+		r.memoryLimitEnabled = true
+		#expect(Handling.of(r) == .auto)
+	}
+
+	@Test func cpuLimitsAndEfficiencyCoresMeanACustomRule() {
+		var r = rule()
+		r.cpuLimitEnabled = true
+		#expect(Handling.of(r) == .custom)
+		r.cpuLimitEnabled = false
+		r.backgroundMode = true
+		#expect(Handling.of(r) == .custom)
+		r.enabled = false	// switched off: Auto looks after it again
+		#expect(Handling.of(r) == .auto)
+	}
+
+	@Test func ignoredMeansLeaveAlone() {
+		var r = rule()
+		r.ignored = true
+		#expect(Handling.of(r) == .leaveAlone)
+	}
+
+	@Test func choosingAutoClearsTheLimitsButKeepsTheMemoryLimit() {
+		var r = rule()
+		r.cpuLimitEnabled = true
+		r.backgroundMode = true
+		r.memoryLimitEnabled = true
+		r.ignored = false
+		Handling.auto.apply(to: &r)
+		#expect(!r.cpuLimitEnabled && !r.backgroundMode && !r.ignored)
+		#expect(r.memoryLimitEnabled)
+		#expect(Handling.of(r) == .auto)
+	}
+
+	@Test func choosingAutoOnAnIgnoredAppStopsIgnoringIt() {
+		var r = rule()
+		r.ignored = true
+		Handling.auto.apply(to: &r)
+		#expect(Handling.of(r) == .auto)
+		#expect(!r.hasLimits && !r.ignored)	// nothing left: the caller removes the rule
+	}
+
+	@Test func choosingLeaveAloneAndCustomSwitchBack() {
+		var r = rule()
+		Handling.leaveAlone.apply(to: &r)
+		#expect(Handling.of(r) == .leaveAlone)
+		Handling.custom.apply(to: &r)
+		#expect(!r.ignored && r.enabled)
+	}
+
+	// MARK: The panel opens by itself
+
+	private func opens(_ opening: inout PanelOpening, _ actions: PanelActions, at seconds: TimeInterval,
+					   enabled: Bool = true, shown: Bool = false, inUse: Bool = false) -> Bool {
+		opening.shouldOpen(cards: actions.items, now: t0.addingTimeInterval(seconds), enabled: enabled, panelShown: shown, windowInUse: inUse)
+	}
+
+	@Test func aNewCardOpensThePanelOnce() {
+		var opening = PanelOpening()
+		var actions = PanelActions()
+		actions.add(action("Photos"), shown: false)
+		let first = opens(&opening, actions, at: 5)
+		let again = opens(&opening, actions, at: 6)	// the same card doesn't open it again
+		#expect(first)
+		#expect(!again)
+	}
+
+	@Test func theSettingTheOpenPanelAndTheWindowAllHoldItBack() {
+		for (enabled, shown, inUse) in [(false, false, false), (true, true, false), (true, false, true)] {
+			var opening = PanelOpening()
+			var actions = PanelActions()
+			actions.add(action("Photos"), shown: false)
+			let held = opens(&opening, actions, at: 5, enabled: enabled, shown: shown, inUse: inUse)
+			// ...and it's never reconsidered, so turning the setting on later doesn't replay old cards.
+			let later = opens(&opening, actions, at: 10)
+			#expect(!held)
+			#expect(!later)
+		}
+	}
+
+	@Test func itWaitsTwoMinutesBeforeOpeningAgain() {
+		var opening = PanelOpening()
+		var actions = PanelActions()
+		actions.add(action("Photos", at: 0), shown: false)
+		let first = opens(&opening, actions, at: 0)
+		actions.add(action("Preview", at: 30), shown: false)
+		let tooSoon = opens(&opening, actions, at: 30)
+		actions.add(action("Mail", at: 130), shown: false)
+		let later = opens(&opening, actions, at: 130)
+		#expect(first)
+		#expect(!tooSoon)
+		#expect(later)
+	}
+
+	@Test func cardsAlreadyShownDontOpenIt() {
+		var opening = PanelOpening()
+		var actions = PanelActions()
+		actions.add(action("Photos"), shown: true)	// the panel was open when it happened
+		let result = opens(&opening, actions, at: 0)
+		#expect(!result)
+	}
 }

@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import Combine
 import ProcKit
 import SwiftUI
 
@@ -55,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	/// The panel's contents in a standalone, resizable window (like Activity Monitor).
 	private var mainWindow: NSWindow?
 	private var lastLoad: Double = 0
+	private var panelOpening = PanelOpening()
+	private var panelAutoOpened = false
+	private var panelCards: AnyCancellable?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		// `-AWHeadless YES`: enforce rules without a menu bar icon (used by the
@@ -81,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 								openWindow: { [weak self] in self?.showMainWindow() }))
 		panel.sizingOptions = [.preferredContentSize]	// grows and shrinks as cards come and go
 		popover.contentViewController = panel
+
+		// When AppWrangler does something, show the panel (without taking focus) so the card is seen.
+		panelCards = model.$panelActions.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.openPanelForNewCards() }
 
 		Notifier.shared.setUp()
 		Notifier.shared.onAction = { [weak self] action, info in self?.model.applySuggestion(action, info: info) }
@@ -194,10 +201,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		if NSApp.currentEvent?.type == .rightMouseUp {
 			showContextMenu()
 		} else if popover.isShown {
+			panelAutoOpened = false
 			popover.performClose(nil)
 		} else {
+			panelAutoOpened = false
 			showPopover(activate: true)
 		}
+	}
+
+	/// A new card appeared: open the panel by itself, without taking keyboard focus, and close it again
+	/// once the cards have gone, unless you're using it.
+	private func openPanelForNewCards() {
+		guard statusItem != nil else { return }
+		let open = panelOpening.shouldOpen(
+			cards: model.panelActions.items, now: Date(),
+			enabled: UserDefaults.standard.bool(forKey: Prefs.showPanelOnAction),
+			panelShown: popover.isShown, windowInUse: mainWindow?.isKeyWindow == true || settingsWindow?.isKeyWindow == true)
+		guard open else { return }
+		panelAutoOpened = true
+		showPopover(activate: false)
+		DispatchQueue.main.asyncAfter(deadline: .now() + PanelAction.shownFor + 2) { [weak self] in self?.closeAutoOpenedPanel() }
+	}
+
+	private func closeAutoOpenedPanel() {
+		guard panelAutoOpened, popover.isShown else { return }
+		if let window = popover.contentViewController?.view.window, window.frame.contains(NSEvent.mouseLocation) {
+			// You're using it: keep it open until you move away.
+			DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.closeAutoOpenedPanel() }
+			return
+		}
+		popover.performClose(nil)
 	}
 
 	private func showPopover(activate: Bool) {
@@ -327,6 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	}
 
 	func popoverDidClose(_ notification: Notification) {
+		panelAutoOpened = false
 		model.surfaceDidDisappear()
 		model.panelDidDisappear()
 	}
