@@ -224,9 +224,10 @@ struct PopoverView: View {
 						Button(L("Set manually…")) { model.focusRequest = s.groupID }
 					} else {
 						if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
-						Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: info(s)) }
 						Button(L("E-cores")) { model.applySuggestion(.ecores, info: info(s)) }
-					}
+							.help(L("Auto mode looks after apps, not command-line processes like this one. Move it to the efficiency cores."))
+						Button(L("Set manually…")) { model.focusRequest = s.groupID }
+						}
 					Button { model.dismissSuggestion(s) } label: { Image(systemName: "xmark") }
 						.buttonStyle(.borderless)
 						.accessibilityLabel(L("Dismiss"))
@@ -275,6 +276,8 @@ struct PopoverView: View {
 		.background(Color.yellow.opacity(0.08))
 	}
 
+	private func isCPUHog(_ s: Suggestion) -> Bool { s.id.hasPrefix("background-cpu:") }
+
 	private func adviceCard(_ s: Suggestion) -> some View {
 		HStack(alignment: .top, spacing: 8) {
 			Image(systemName: s.severity == .high ? "exclamationmark.triangle.fill" : s.severity == .medium ? "exclamationmark.circle" : "info.circle")
@@ -287,9 +290,14 @@ struct PopoverView: View {
 				}
 				if !s.actions.isEmpty {
 					HStack(spacing: 6) {
-						ForEach(Array(s.actions.prefix(2).enumerated()), id: \.offset) { _, action in
+						// A CPU suggestion leads with its one gentle action; the cap and the rest are under "Set manually…".
+						ForEach(Array(s.actions.prefix(isCPUHog(s) ? 1 : 2).enumerated()), id: \.offset) { _, action in
 							Button(action.label) { model.applyAdvice(s, action) }
 								.help(s.benefit)
+						}
+						if isCPUHog(s), let group = model.snapshot.groups.first(where: { $0.name == s.app }) {
+							Button(L("Set manually…")) { model.focusRequest = group.id }
+								.help(L("Open %@'s settings: Auto, a custom limit, or leave it alone", group.name))
 						}
 					}
 					.controlSize(.small)

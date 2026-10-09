@@ -129,11 +129,11 @@ The buttons:
 - **OK** leaves things as they are. Auto stays in charge.
 - **Set manually…** opens the app in the main window with its settings ready to edit.
 - **Leave *app* alone** (for Auto's own actions) keeps the app out of Auto mode, as [ignoring it](#ignoring-an-app) does. If the app was frozen, it's resumed. `appwrangler undo` reverts it.
-- For a runaway app that Auto doesn't manage, **Limit 50%** and **E-cores** create a rule right away.
+- For a runaway process that Auto doesn't manage (Auto looks after apps, not command-line processes), **E-cores** moves it to the efficiency cores right away. If Auto mode is off, the card also offers **Turn on Auto**. Other limits, such as a CPU cap, are under **Set manually…**, then *Custom rule*.
 
 When a card appears, the panel **opens by itself**, without taking keyboard focus, so you see what happened. It closes again after the 30 seconds unless you're using it, and it won't open more than once every two minutes. Turn this off with *Open the panel when AppWrangler freezes or flags an app* in Settings → General → Notifications, or `appwrangler prefs show_panel_on_action=off`.
 
-By default, nothing needs a click: everything is handled by Auto mode. **Limit 50%** and **E-cores** only appear on a runaway card when Auto can't handle that app (Auto mode is off, or it isn't an app); the card then also offers **Turn on Auto**.
+By default, nothing needs a click: everything is handled by Auto mode. **E-cores** only appears on a runaway card when Auto can't handle that app (Auto mode is off, or it isn't an app).
 
 ---
 
@@ -310,7 +310,7 @@ Use the **Active/Paused** switch in the header, *Pause All Limits* in the right-
 
 ## Runaway alerts
 
-When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a card in the panel and an orange alert at the top of the main window, with **Limit 50%**, **E-cores** and **×** (dismiss for an hour). If Auto already manages the app, the card offers **Set manually…** and **Leave *app* alone** instead. It also sends a notification with three buttons:
+When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a card in the panel and an orange alert at the top of the main window. If Auto already manages the app, they offer **OK** and **Set manually…** (the card also **Leave *app* alone**). If it doesn't (a command-line process, or Auto is off), they offer **E-cores**, **Set manually…** and **×** (dismiss for an hour). It also sends a notification with three buttons:
 
 - **Limit to 50%** creates a CPU-limit rule.
 - **Use efficiency cores** creates an efficiency-cores rule.
@@ -404,7 +404,7 @@ The widget updates within a few seconds of a button press. Click anywhere else o
 
 AppWrangler looks at your Mac and recommends settings. You'll find them:
 
-- in the **Suggestions** section of the main window (the panel links to it), with buttons that apply them in one click;
+- in the **Suggestions** section of the main window (the panel links to it), with a button that applies the main one in one click and, for CPU suggestions, **Set manually…** for the rest. A busy command-line process is only suggested after a few minutes of history, so a short spike isn't flagged, and the suggestion says that Auto mode looks after apps, not processes;
 - in Terminal:
 
   ```bash

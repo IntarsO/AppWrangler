@@ -288,8 +288,8 @@ struct ActionCard: View {
 				if action.kind == .runaway && !autoManaged {
 					// Auto can't handle this one (Auto is off, or it isn't an app): offer what does.
 					if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
-					Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: action.info) }
 					Button(L("E-cores")) { model.applySuggestion(.ecores, info: action.info) }
+						.help(L("Move it to the efficiency cores while it's in the background"))
 				}
 				Button(L("Set manually…")) {
 					model.showInWindow(action)

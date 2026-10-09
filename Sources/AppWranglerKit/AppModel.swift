@@ -612,7 +612,7 @@ final class AppModel: ObservableObject {
 			frontmostPid: frontmostPid, memoryBytes: SystemInfo.info.memsize, memoryUsedBytes: mem.used,
 			memoryPressure: systemState.memoryPressure, swapUsedBytes: Swap.usedBytes, onBattery: systemState.onBattery,
 			ncpu: SystemInfo.ncpu, week: week.uptimeSeconds > 0 ? week : nil,
-			averages: UsageAverages.compute(groups: lastSnapshot.groups, history: history),
+			averages: UsageAverages.compute(groups: lastSnapshot.groups, history: history), requireHistory: true,
 			autoFreezeIdle: d.bool(forKey: Prefs.autoFreezeIdle))
 		let dismissed = d.dictionary(forKey: Prefs.dismissedAdvice) as? [String: Date] ?? [:]
 		return Suggestions.make(input).filter { s in

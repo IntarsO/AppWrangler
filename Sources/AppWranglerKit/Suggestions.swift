@@ -80,6 +80,9 @@ struct SuggestionInput {
 	var week: ImpactSummary?
 	/// Recent per-app averages from the running app (keyed by ImpactKey).
 	var averages: [String: UsageAverages.App] = [:]
+	/// Only suggest a CPU limit for something with minutes of history behind it, so a short spike
+	/// (a command that runs for a second) isn't flagged. The app sets this; the CLI keeps its one-second fallback.
+	var requireHistory = false
 	/// Auto mode already freezes idle apps when memory is low.
 	var autoFreezeIdle = false
 	var fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
@@ -228,6 +231,7 @@ enum Suggestions {
 		for g in input.groups where !g.pids.contains(input.frontmostPid) && limitable(g) && !autoManages(g)
 			&& !AppTraits.isBuildTool(g.name) {
 			let average = input.averages[ImpactKey.of(g)]
+			if input.requireHistory && average == nil { continue }
 			let cpu = average?.cpu ?? g.cpu
 			guard cpu >= 0.5 else { continue }
 			let existing = rule(for: g)
@@ -245,6 +249,7 @@ enum Suggestions {
 									 cli: "appwrangler auto on"), at: 0)
 			}
 			var reason = L("It isn't the app you're using and nothing limits it.")
+			if !isApp { reason += " " + L("Auto mode looks after apps, not command-line processes like this one.") }
 			if caution { reason += " " + L("Other apps may depend on it — limit gently.") }
 			reason += " " + (average.map { L("Average over the last %d min.", max(1, Int($0.minutes.rounded()))) }
 							 ?? L("Measured over about a second; check again if it's a short spike."))
