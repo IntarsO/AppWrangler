@@ -71,6 +71,25 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 		#expect(off?.severity == .high)
 	}
 
+	@Test func aShortSpikeIsNotSuggestedInTheAppButStillByTheCommandLine() {
+		let blip = makeGroup(name: "env", bundleID: nil, pid: 10, cpu: 0.53, kind: .process)
+		var live = input([blip])
+		#expect(Suggestions.make(live).map(\.app) == ["env"], "the CLI has only a one-second sample to go on")
+		live.requireHistory = true
+		#expect(Suggestions.make(live).isEmpty, "the app waits for minutes of history")
+		live.averages[ImpactKey.of(blip)] = UsageAverages.App(name: "env", cpu: 0.9, memoryMB: 10, minutes: 4)
+		#expect(Suggestions.make(live).map(\.app) == ["env"])
+	}
+
+	@Test func aProcessSuggestionSaysWhyAutoIsntHandlingIt() {
+		let node = makeGroup(name: "node", bundleID: nil, pid: 10, cpu: 1.2, kind: .process)
+		let reason = Suggestions.make(input([node])).first?.reason ?? ""
+		#expect(reason.contains("Auto mode doesn't manage this kind of process"))
+		let app = makeGroup(name: "Busy App", bundleID: "com.example.busy", pid: 13, cpu: 2)
+		let appReason = Suggestions.make(input([app], auto: false)).first { $0.app == "Busy App" }?.reason ?? ""
+		#expect(!appReason.contains("kind of process"))
+	}
+
 	@Test func appWithItsOwnLimitIsNotSuggestedAgain() {
 		let node = makeGroup(name: "node", bundleID: nil, pid: 10, cpu: 1.2, kind: .process)
 		var r = AppRule(matchKind: .name, matchValue: "node", displayName: "node")

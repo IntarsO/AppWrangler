@@ -91,7 +91,7 @@ You don't have to set anything up. **Auto mode** is on from the start:
 - Other apps move to the efficiency cores 30 s after you leave them.
 - When the Mac is busy, background apps share the CPU fairly.
 
-The *Auto* line at the top of the panel shows what it's doing.
+The *Auto* line at the top of the panel shows what it's doing. Auto also adapts: it lets background work run free when the Mac has room (and while you're away), holds apps sooner on battery, pauses low-priority work such as updaters when the Mac needs its resources, and learns which apps you usually use around now. Each part has a switch in Settings → General → Auto mode; see [Auto mode](user-manual.md#auto-mode) and [Priorities](user-manual.md#priorities).
 
 The yellow **Suggestions** section of the main window, when it appears, points out anything worth changing (the panel shows a **Suggestions** line that opens it), such as an app using more memory than your Mac has. Each suggestion has a one-click button. If your Mac is short of memory, consider turning on *freeze apps I haven't used for a while* in Settings → General → Auto mode. See the [User Manual](user-manual.md#auto-mode).
 

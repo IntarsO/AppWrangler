@@ -176,7 +176,10 @@ struct AppRule: Codable, Identifiable, Equatable {
 	/// Never suggest limits for this app and leave it out of automatic actions.
 	var ignored = false
 
-	var hasLimits: Bool { cpuLimitEnabled || backgroundMode || memoryLimitEnabled || pressureAction != .none }
+	/// How much the app matters when the Mac needs its resources (see Priority.swift).
+	var priority: AppPriority = .normal
+
+	var hasLimits: Bool { cpuLimitEnabled || backgroundMode || memoryLimitEnabled || pressureAction != .none || priority != .normal }
 	var isActive: Bool { enabled && !ignored && hasLimits }
 
 	func isInEffect(_ state: SystemState) -> Bool { isActive && conditions.applies(state) }
@@ -203,6 +206,7 @@ struct AppRule: Codable, Identifiable, Equatable {
 		if onlyWhenInactive && (cpuLimitEnabled || backgroundMode) { parts.append(L("background only")) }
 		if memoryLimitEnabled { parts.append(L("RAM %@", Fmt.megabytes(memoryLimitMB))) }
 		if pressureAction != .none { parts.append(L("low-memory: %@", pressureAction == .freeze ? L("freeze") : L("quit"))) }
+		if priority != .normal { parts.append(L("%@ priority", priority.title)) }
 		if parts.isEmpty { return L("No limits") }
 		let conditions = conditions.summary
 		return parts.joined(separator: " · ") + (conditions.isEmpty ? "" : " — " + conditions)
@@ -258,6 +262,7 @@ struct AppRule: Codable, Identifiable, Equatable {
 		pressureAction = try c.decodeIfPresent(PressureAction.self, forKey: .pressureAction) ?? .none
 		conditions = try c.decodeIfPresent(RuleConditions.self, forKey: .conditions) ?? RuleConditions()
 		ignored = try c.decodeIfPresent(Bool.self, forKey: .ignored) ?? false
+		priority = (try? c.decodeIfPresent(AppPriority.self, forKey: .priority)) ?? .normal
 		self = sanitized()
 	}
 }

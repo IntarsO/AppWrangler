@@ -4,6 +4,18 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
 
 ## [Unreleased]
 
+### Added
+- **Adaptive Auto** (on by default; `appwrangler prefs auto_adaptive=off` to switch it off). Auto now follows what the Mac needs right now:
+  - when you're plugged in and the Mac is calm and cool, a background app that's doing real work **runs free** instead of staying on the efficiency cores, so the job finishes sooner. It goes back when the Mac gets busy or the app goes quiet, and nothing runs free for two minutes after a busy spell;
+  - on battery, in Low Power Mode or when the Mac is hot, background apps move to the efficiency cores after 10 s instead of 30 s;
+  - idle freezing steps in at the first memory warning, one app at a time (biggest first, every 15 s) instead of waiting for critical and freezing everything at once, and holds while memory is short;
+  - frozen apps resume one at a time (every 10 s) once memory has been fine for a minute;
+  - apps running free show in the panel's Auto line, in the app's row, and in the activity log.
+- **Priorities.** Each app or process is *High*, *Normal* or *Low* priority. When the Mac needs its resources for what you're doing (it's saturated while the app in front works, or memory is short), low priority work is moved to the efficiency cores at once and, if the need lasts, **paused**; it resumes when the Mac has had room for 30 s, and is never paused for more than 10 minutes at a stretch. The built-in Low list is short and conservative: Spotlight and photo analysis helpers, and third-party updaters (Google Software Update, Microsoft AutoUpdate…). High priority apps are never capped, held or frozen. Pick a priority in an app's details, with `appwrangler set <app> priority=low`, or through `configure_app`. A card in the panel says what was paused, with **Resume now**. Switch it off with `appwrangler prefs auto_shed=off`.
+- **Auto manages command-line processes** (`auto_processes`, on by default): the ones that run hot, only while the Mac needs its resources (busy, on battery, in Low Power Mode or hot), and only on the efficiency cores. Never a cap, never frozen; never build tools, dev tools, containers, system software, protected processes or what a terminal is waiting for.
+- **Away mode** (`auto_away`, `auto_away_minutes`, on by default): with no input for 5 minutes while you're plugged in, nothing is held back, so background work finishes at full speed. It's all restored within about two seconds of you being back.
+- **Learning your routine** (`auto_learn`, on by default, **stays on this Mac**): which app you use in which weekday-hour. Apps you usually use around now stay at full speed 5 minutes after you leave them, aren't frozen for memory, and come back early if they were; the apps you're least likely to need soon are frozen first. Only identifiers and minutes are kept, in `patterns.json`; switch it off or forget it in Settings → General → Auto mode.
+
 ### Changed
 - **The menu bar panel is now an overview.** It shows:
   - CPU and memory charts for the last 10 minutes (a dashed line for the share on efficiency cores; shading while the Mac was short of memory);
@@ -13,12 +25,13 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   The full list of apps moved to the main window: click **All apps**. The window is unchanged.
 - **Cards for what AppWrangler just did.** When Auto freezes an idle app, a memory rule acts, or a background app runs away, the panel shows a card for 30 seconds from when you see it. **OK** leaves it to Auto, **Set manually…** opens that app's settings in the main window, and **Leave *app* alone** keeps it out of Auto. Nothing needs a click: Auto handles it by default.
 - **The panel opens by itself** (for 30 seconds, without taking keyboard focus, at most once every two minutes) when a card appears. Turn it off in Settings → General → Notifications or with `appwrangler prefs show_panel_on_action=off`.
-- **Auto comes first for every app.** An app's details in the main window start with *Auto (recommended)*, *Custom rule* or *Leave alone*, and the manual editor only shows for a custom rule. The right-click menu and the runaway banner lead with Auto too; *Limit 50%* and *E-cores* are offered only when Auto can't handle the app.
+- **Auto comes first for every app.** An app's details in the main window start with *Auto (recommended)*, *Custom rule* or *Leave alone*, and the manual editor only shows for a custom rule. The right-click menu and the runaway banner lead with Auto too. When Auto can't handle something (a command-line process, or Auto is off), cards and suggestions offer the gentle option, efficiency cores, and *Set manually…*; the 25% or 50% cap is under *Custom rule*.
+- In the app, a CPU suggestion needs a few minutes of history, so a one-second spike from a short-lived process isn't flagged. The command line and MCP are unchanged.
 - Clicking an app under *Busiest apps* opens it, expanded, in the main window.
 - Russian is no longer kept complete: new text shows in English.
 
 ### Added (for contributors)
-- Tests for the chart history and the cards.
+- Tests for the chart history and the cards, and for adaptive Auto (running free, battery, cooldown, early and gradual memory handling).
 - **The GitHub wiki is generated from the docs.** `scripts/sync-wiki.py` builds it (and checks every link); a workflow publishes it when `WIKI_SYNC` is `on`.
 
 ## [1.4.1] — 2026-10-09

@@ -50,6 +50,8 @@ struct PanelAction: Identifiable, Equatable {
 		case lowMemoryRule
 		/// A background app used a lot of CPU for a while.
 		case runaway
+		/// Low priority work was paused while the Mac needs its resources.
+		case shed
 	}
 
 	let id = UUID()
@@ -104,6 +106,8 @@ struct PanelActions {
 	}
 
 	mutating func dismiss(_ id: UUID) { items.removeAll { $0.id == id } }
+
+	mutating func remove(kind: PanelAction.Kind) { items.removeAll { $0.kind == kind } }
 
 	mutating func prune(at now: Date) { items.removeAll { !$0.isVisible(at: now) } }
 

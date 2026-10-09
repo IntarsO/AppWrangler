@@ -18,6 +18,7 @@ This manual is also built into the app (no internet needed). Open it from the **
   - [Helper processes](#helper-processes)
   - [Ignoring an app](#ignoring-an-app)
   - [How rules are matched](#how-rules-are-matched)
+- [Priorities](#priorities)
 - [Freeze, quit and force quit](#freeze-quit-and-force-quit)
 - [Free memory now](#free-memory-now)
 - [Pausing all limits](#pausing-all-limits)
@@ -59,9 +60,37 @@ This manual is also built into the app (no internet needed). Open it from the **
 | Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
 | The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
 
+**Adaptive Auto (on by default).** Auto also follows what the Mac needs right now:
+
+| Situation | What Auto does |
+|---|---|
+| You're plugged in, the Mac is calm and cool, and a background app is doing real work (at least 0.3 of a core for 10 s) | The app **runs free** instead of staying on the efficiency cores, so the job (an export, a sync, a build you started elsewhere) finishes sooner. It goes back to the efficiency cores when the Mac gets busy, or when the app has been quiet for 30 s. After a busy spell nothing runs free for 2 minutes, so it can't flip back and forth. |
+| You're on battery, in Low Power Mode, or the Mac is hot | Background apps move to the efficiency cores after **10 s** instead of 30 s, and nothing runs free. |
+| Memory is short (see below) | Auto steps in at the first warning, one app at a time, and resumes apps one by one. |
+
+Switch it off with *Adapt to what the Mac needs right now* in Settings → General → Auto mode, or `appwrangler prefs auto_adaptive=off`; Auto then keeps its fixed timings. Apps running free show as *"Auto · running free"*, and each change is in Settings → Activity.
+
+**Command-line processes.** Auto also looks after processes that aren't apps (a `node` server, `ffmpeg`, a sync tool), with the strictest rules of anything it does:
+- **Only hot ones:** at least 0.15 of a core for 20 s. Idle processes aren't touched or even listed.
+- **Only while the Mac needs its resources:** busy, on battery, in Low Power Mode, or hot. On a calm Mac, plugged in, they run as usual.
+- **Only the efficiency cores.** Never a CPU cap and never frozen, because that can break servers and connections.
+- **Never:** build tools, compilers, terminals and editors, containers and virtual machines, macOS and other system software (`/System`, `/usr/libexec`…), protected processes, and **anything a terminal is waiting for** (a shell's foreground job).
+- Processes show in the main window under *Processes* with *"Auto · efficiency cores"* while held, and in the panel's Auto line (*"N processes held"*).
+- Switch off: *Also manage command-line processes* in Settings → General → Auto mode, or `appwrangler prefs auto_processes=off`. A process with its own rule follows the rule.
+
+**When you're away.** With no keyboard or mouse input for 5 minutes (adjustable: 2, 5, 10 or 30), while you're plugged in, not in Low Power Mode and the Mac isn't hot, you count as **away**. Auto then holds **nothing** back: background apps and processes run at full speed, nothing is capped, low-priority work resumes, so exports, syncs and updates finish sooner. The panel says *"You're away · background apps run at full speed"*. The moment you touch the Mac, Auto is back in charge (within about two seconds). Switch off, or change the time, in Settings → General → Auto mode, or `appwrangler prefs auto_away=off` / `auto_away_minutes=10`.
+
+**Learning your routine.** Auto remembers which app is in front, by **weekday and hour**, so it can act on your habits:
+- an app you **usually use around now** stays at full speed for 5 minutes after you leave it (instead of 30 s), and idle freezing skips it;
+- when apps are frozen for memory, the ones you're **least likely to need soon** go first;
+- if memory is fine and you usually use a frozen app around now, it's **resumed early**, before you switch to it;
+- the app's details say *"You usually use this around now"* when that's the case.
+
+An app counts as part of your routine after about 45 minutes in a weekday-hour (for example, two Mondays of 20-25 minutes), and what it learned fades by a tenth each week, so a changing routine is followed. **It stays on this Mac:** only app identifiers and minutes per weekday-hour are kept, in `patterns.json` next to your rules, and nothing is sent anywhere. Nothing is recorded while you're away or idle. Switch it off with *Learn my routine* in Settings → General → Auto mode (or `appwrangler prefs auto_learn=off`), and wipe it with **Forget what it learned**.
+
 **Optional: freeze idle apps when memory runs out.** Turn on *When the Mac is low on memory, freeze apps I haven't used for a while* in Settings → General → Auto mode (or run `appwrangler auto freeze-idle on`). It's off by default.
 
-- **What it freezes.** When the Mac reaches the low-memory level you chose (Settings → General → Low memory), Auto freezes regular apps you haven't used for 10 minutes (adjustable), biggest first.
+- **What it freezes.** With [adaptive Auto](#auto-mode) on, Auto steps in at the first sign of memory pressure (*warning*) and freezes regular apps you haven't used for 10 minutes (adjustable), **one app at a time, biggest first**, every 15 s while memory is still short, so it freezes only as much as needed. With adaptive off, it waits for the low-memory level you chose (Settings → General → Low memory, *critical* by default) and freezes every candidate at once.
 - **What it never freezes:**
   - the app you're using;
   - anything playing or recording audio;
@@ -74,7 +103,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 - **Why it helps.** Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive.
 - **Getting them back:**
   - An app **resumes the moment you switch to it**.
-  - All of them resume once memory has been fine for a minute. The delay stops them from freezing and thawing over and over when memory hovers at the limit.
+  - They resume once memory has been fine for a minute, **one every 10 s** with adaptive Auto (all at once without it), so they don't all wake together and squeeze memory again. The delay stops them from freezing and thawing over and over when memory hovers at the limit.
   - They also resume as soon as you turn this setting (or Auto mode) off.
 - **Effect.** On a Mac with little RAM this does more than any CPU setting. To free memory right away, whatever the pressure, use [Free memory now](#free-memory-now).
 
@@ -86,7 +115,7 @@ The panel header shows what Auto is doing, e.g. *"Auto · 12 apps · 1 in use ·
 - An app with its own **CPU limit** or **Efficiency cores** setting follows that rule; Auto leaves it alone.
 - A rule with only memory or low-memory settings still lets Auto handle the app's CPU.
 - To keep Auto away from an app completely, give it a rule and turn on **Ignore this app**.
-- Plain processes (command-line tools, builds) and macOS services aren't managed by Auto.
+- Command-line processes are managed only as described above (hot, only when the Mac needs its resources, efficiency cores only); macOS services aren't managed by Auto.
 
 Settings → General → **Auto mode** lets you change:
 - the 30 s delay;
@@ -129,11 +158,11 @@ The buttons:
 - **OK** leaves things as they are. Auto stays in charge.
 - **Set manually…** opens the app in the main window with its settings ready to edit.
 - **Leave *app* alone** (for Auto's own actions) keeps the app out of Auto mode, as [ignoring it](#ignoring-an-app) does. If the app was frozen, it's resumed. `appwrangler undo` reverts it.
-- For a runaway app that Auto doesn't manage, **Limit 50%** and **E-cores** create a rule right away.
+- For a runaway process that Auto doesn't manage (Auto looks after apps, not command-line processes), **E-cores** moves it to the efficiency cores right away. If Auto mode is off, the card also offers **Turn on Auto**. Other limits, such as a CPU cap, are under **Set manually…**, then *Custom rule*.
 
 When a card appears, the panel **opens by itself**, without taking keyboard focus, so you see what happened. It closes again after the 30 seconds unless you're using it, and it won't open more than once every two minutes. Turn this off with *Open the panel when AppWrangler freezes or flags an app* in Settings → General → Notifications, or `appwrangler prefs show_panel_on_action=off`.
 
-By default, nothing needs a click: everything is handled by Auto mode. **Limit 50%** and **E-cores** only appear on a runaway card when Auto can't handle that app (Auto mode is off, or it isn't an app); the card then also offers **Turn on Auto**.
+By default, nothing needs a click: everything is handled by Auto mode. **E-cores** only appears on a runaway card when Auto can't handle that app (Auto mode is off, or it isn't an app).
 
 ---
 
@@ -271,6 +300,39 @@ When more than one rule could apply, the most specific wins: **bundle ID → pat
 
 ---
 
+## Priorities
+
+Some work can wait. When the Mac needs its resources for what you're doing, **low priority work is slowed first and, if the need lasts, paused**, so what matters keeps running at full speed. Everything resumes as soon as the Mac has room again.
+
+| Priority | What it means |
+|---|---|
+| **High** | Never capped, never held on the efficiency cores, never frozen: runs at full speed even in the background. For something you depend on, such as a local server or a sync you're waiting for. |
+| **Normal** | The default. [Auto mode](#auto-mode) handles the app as described above. |
+| **Low** | Work that can wait. It goes to the efficiency cores at once (no 30 s wait) and never runs free. |
+
+**What's Low by default.** The built-in list is short on purpose:
+- Spotlight indexing helpers (`mdworker`) and photo and media analysis (`photoanalysisd`, `mediaanalysisd`);
+- updaters from other companies, such as Google Software Update, Microsoft AutoUpdate or an app's own *Updater* helper, but only background apps and processes inside an app or Library folder.
+
+It never includes an app you use, Apple's own updaters, command-line tools from Homebrew or your projects, build tools, or anything critical to macOS.
+
+**When low priority work is paused.** Auto looks at what the Mac needs:
+- **The Mac is busy with what you're doing.** The Mac has been saturated (see *busy* above) for 15 s while the app in front is using at least half a core: low priority work that is using CPU is paused.
+- **Memory is short** (pressure at *warning* or worse) for 5 s: low priority work using 100 MB or more is paused, biggest first.
+- **Never for long.** Nothing is paused for more than 10 minutes at a stretch, and then it runs undisturbed for 5 minutes, so an update can always finish.
+
+**Getting it back.**
+- It resumes once the Mac has had room for 30 s.
+- A card in the panel says what was paused, with **Resume now**, which also stops it being paused again for 10 minutes.
+- Switching to a paused app resumes it at once, and so does turning the setting off.
+- A shell's foreground job is never paused (it would look suspended to the shell).
+
+**Set a priority.** Open an app's details in the main window and pick **High**, **Normal** or **Low** under *Priority*. From the command line: `appwrangler set Backup priority=low`; assistants use `configure_app` with `priority`. For something that is Low by default, set **High** to keep it running, or [ignore it](#ignoring-an-app) to leave it entirely alone.
+
+**Turn it off.** Settings → General → Auto mode → *Pause low-priority work when the Mac needs the resources*, or `appwrangler prefs auto_shed=off`. Low priority apps are still moved to the efficiency cores.
+
+---
+
 ## Freeze, quit and force quit
 
 - **Freeze** suspends the app and all its helpers immediately. It uses no CPU while frozen; its memory stays allocated, and macOS can compress it. **Unfreeze** resumes it exactly where it was. A frozen app shows a spinning cursor if you click its windows; that's expected.
@@ -310,7 +372,7 @@ Use the **Active/Paused** switch in the header, *Pause All Limits* in the right-
 
 ## Runaway alerts
 
-When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a card in the panel and an orange alert at the top of the main window, with **Limit 50%**, **E-cores** and **×** (dismiss for an hour). If Auto already manages the app, the card offers **Set manually…** and **Leave *app* alone** instead. It also sends a notification with three buttons:
+When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a card in the panel and an orange alert at the top of the main window. If Auto already manages the app, they offer **OK** and **Set manually…** (the card also **Leave *app* alone**). If it doesn't (a command-line process, or Auto is off), they offer **E-cores**, **Set manually…** and **×** (dismiss for an hour). It also sends a notification with three buttons:
 
 - **Limit to 50%** creates a CPU-limit rule.
 - **Use efficiency cores** creates an efficiency-cores rule.
@@ -404,7 +466,7 @@ The widget updates within a few seconds of a button press. Click anywhere else o
 
 AppWrangler looks at your Mac and recommends settings. You'll find them:
 
-- in the **Suggestions** section of the main window (the panel links to it), with buttons that apply them in one click;
+- in the **Suggestions** section of the main window (the panel links to it), with a button that applies the main one in one click and, for CPU suggestions, **Set manually…** for the rest. A busy command-line process is only suggested after a few minutes of history, so a short spike isn't flagged, and the suggestion says that Auto mode looks after apps, not processes;
 - in Terminal:
 
   ```bash
@@ -477,6 +539,7 @@ appwrangler set Slack use_auto=true          # drop Slack's own CPU settings; Au
 | `enabled` | `true` / `false` | *Rule enabled* |
 | `ignored` | `true` / `false` | [Ignore this app](#ignoring-an-app) |
 | `use_auto` | `true` | Turns off the CPU cap and efficiency cores, so [Auto mode](#auto-mode) manages the app |
+| `priority` | `high`, `normal`, `low` | [Priorities](#priorities): low work is paused first when the Mac needs its resources |
 | `power` | `any`, `battery`, `charger` | [When to apply](#when-to-apply-conditions) → Power |
 | `low_power_mode_only` | `true` / `false` | Only in Low Power Mode |
 | `hot_only` | `true` / `false` | Only when the Mac is hot |
@@ -621,6 +684,7 @@ The **?** next to a section in Settings → General opens the matching part of t
 | Recent per-app averages (for suggestions) | `~/Library/Application Support/AppWrangler/usage.json` (rewritten every minute) |
 | What the widget shows | `~/Library/Application Support/AppWrangler/widget.json` (rewritten every minute) |
 | Undo history | `~/Library/Application Support/AppWrangler/changes.json` (last 50 changes) |
+| Your routine (which app you use in which weekday-hour) | `~/Library/Application Support/AppWrangler/patterns.json` (only if *Learn my routine* is on; delete the file or use *Forget what it learned* to wipe it) |
 | Locks | `.lock` (one AppWrangler at a time), `.rules.lock` and `.changes.lock` (safe concurrent edits) in the same folder |
 | Preferences | `defaults read io.github.intarso.AppWrangler` |
 

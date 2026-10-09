@@ -45,7 +45,7 @@ Or download the zip from [Releases](https://github.com/IntarsO/AppWrangler/relea
 
 | | |
 |---|---|
-| 🪄 **Auto mode** | On by default. The app you're using runs at full speed. Background apps move to efficiency cores, and only when your Mac is busy do they share the CPU fairly, so everything stays usable. Optionally, when memory runs out, it freezes apps you haven't used for a while, and they resume the moment you switch back. |
+| 🪄 **Auto mode** | On by default. The app you're using runs at full speed. Background apps move to efficiency cores, and only when your Mac is busy do they share the CPU fairly, so everything stays usable. Optionally, when memory runs out, it freezes apps you haven't used for a while, and they resume the moment you switch back. It adapts to what the Mac needs: background work runs free when there's room or you're away, apps are held sooner on battery or when hot, low-priority work like updaters is paused while you need the resources, and it learns which apps you usually use around now (kept on your Mac). |
 | 🎛 **CPU limit** | Cap an app *and all of its helper processes* (Chrome tabs, Electron helpers, Safari web content…) at any share of the CPU. Optionally limit it only while it's in the background. |
 | 🍃 **Efficiency cores only** | Move an app onto the Apple Silicon E-cores, with slower disk and network access. It stays usable while saving battery and heat. |
 | 🧠 **Memory limit** | When an app's memory stays above your limit, get notified, or freeze, quit or force-quit it. (macOS doesn't let one app hard-cap another's memory, so AppWrangler watches and acts.) |

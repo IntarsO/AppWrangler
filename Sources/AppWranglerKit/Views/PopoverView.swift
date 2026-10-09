@@ -220,13 +220,14 @@ struct PopoverView: View {
 					Spacer()
 					if model.autoManages(s.groupID) {
 						Button(L("OK")) { model.dismissSuggestion(s) }
-							.help(L("Auto keeps it on the efficiency cores while it's in the background"))
+							.help(L("Auto looks after it: efficiency cores in the background, and a fair share of the CPU when the Mac is busy"))
 						Button(L("Set manually…")) { model.focusRequest = s.groupID }
 					} else {
 						if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
-						Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: info(s)) }
 						Button(L("E-cores")) { model.applySuggestion(.ecores, info: info(s)) }
-					}
+							.help(L("Auto mode looks after apps, not command-line processes like this one. Move it to the efficiency cores."))
+						Button(L("Set manually…")) { model.focusRequest = s.groupID }
+						}
 					Button { model.dismissSuggestion(s) } label: { Image(systemName: "xmark") }
 						.buttonStyle(.borderless)
 						.accessibilityLabel(L("Dismiss"))
@@ -275,6 +276,8 @@ struct PopoverView: View {
 		.background(Color.yellow.opacity(0.08))
 	}
 
+	private func isCPUHog(_ s: Suggestion) -> Bool { s.id.hasPrefix("background-cpu:") }
+
 	private func adviceCard(_ s: Suggestion) -> some View {
 		HStack(alignment: .top, spacing: 8) {
 			Image(systemName: s.severity == .high ? "exclamationmark.triangle.fill" : s.severity == .medium ? "exclamationmark.circle" : "info.circle")
@@ -287,9 +290,14 @@ struct PopoverView: View {
 				}
 				if !s.actions.isEmpty {
 					HStack(spacing: 6) {
-						ForEach(Array(s.actions.prefix(2).enumerated()), id: \.offset) { _, action in
+						// A CPU suggestion leads with its one gentle action; the cap and the rest are under "Set manually…".
+						ForEach(Array(s.actions.prefix(isCPUHog(s) ? 1 : 2).enumerated()), id: \.offset) { _, action in
 							Button(action.label) { model.applyAdvice(s, action) }
 								.help(s.benefit)
+						}
+						if isCPUHog(s), let group = model.snapshot.groups.first(where: { $0.name == s.app }) {
+							Button(L("Set manually…")) { model.focusRequest = group.id }
+								.help(L("Open %@'s settings: Auto, a custom limit, or leave it alone", group.name))
 						}
 					}
 					.controlSize(.small)
@@ -595,6 +603,8 @@ struct GroupRow: View {
 		guard let d = model.enforcer.autoDecisions[group.id] else { return nil }
 		switch (d.reason, d.cap, d.efficiency) {
 		case (.audio, _, _): return L("Auto · full speed (playing or recording audio)")
+		case (.background, _, _) where d.away: return L("Auto · running free (you're away)")
+		case (.background, _, _) where d.lifted: return L("Auto · running free (it's working and the Mac has room)")
 		case (.background, let cap?, _): return L("Auto · shared CPU %@ (Mac busy)", Fmt.percent(cap))
 		case (.background, nil, true): return L("Auto · efficiency cores (in background)")
 		default: return nil
@@ -664,6 +674,7 @@ struct GroupDetail: View {
 	@Local private var confirmForceQuit = false
 	/// "Custom rule" picked for an app that has no rule yet; the editor shows, and the first setting creates the rule.
 	@Local private var customPicked = false
+	@AppStorage(Prefs.autoLearn) private var autoLearn = true
 	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
 
 	private var ruleBinding: Binding<AppRule> {
@@ -684,6 +695,7 @@ struct GroupDetail: View {
 					.font(.caption).foregroundStyle(.secondary)
 			} else {
 				handling
+				priorityPicker
 				actions
 			}
 			if group.processes.count > 1 {
@@ -739,6 +751,35 @@ struct GroupDetail: View {
 			case .leaveAlone:
 				Label(L("No suggestions and no automatic actions for this app."), systemImage: "hand.raised")
 					.font(.caption).foregroundStyle(.secondary)
+			}
+		}
+	}
+
+	/// What matters when the Mac needs its resources: low priority work is paused first.
+	private var priorityPicker: some View {
+		let rule = rules.rule(for: group)
+		let effective = Priorities.of(group, rule: rule)
+		let builtIn = rule?.priority == .normal || rule == nil
+		return VStack(alignment: .leading, spacing: 4) {
+			HStack {
+				Text(L("Priority")).font(.caption.weight(.semibold))
+				Spacer()
+				HelpButton(anchor: "priorities").controlSize(.mini)
+			}
+			Picker(L("Priority"), selection: Binding(get: { effective }, set: { model.setPriority(group, $0) })) {
+				ForEach(AppPriority.allCases) { Text($0.title).tag($0) }
+			}
+			.pickerStyle(.segmented)
+			.labelsHidden()
+			Text(effective == .low && builtIn && Priorities.isMaintenance(group)
+				 ? L("Low by default: this is maintenance work. It's paused while the Mac needs its resources. Set High to keep it running.")
+				 : effective == .low ? L("Slowed first, and paused if the Mac needs its resources for a while. It resumes when there's room.")
+				 : effective == .high ? L("Never slowed or paused, even in the background.")
+				: L("Handled by Auto like most apps."))
+				.font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+			if autoLearn, model.patterns.likelySoon(ImpactKey.of(group), at: Date()) >= 0.5 {
+				Label(L("You usually use this around now, so Auto keeps it at full speed longer and doesn't freeze it."), systemImage: "clock")
+					.font(.caption2).foregroundStyle(.secondary)
 			}
 		}
 	}

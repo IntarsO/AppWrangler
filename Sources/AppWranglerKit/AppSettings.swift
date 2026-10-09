@@ -24,6 +24,7 @@ struct RuleChanges {
 	var enabled: Bool?
 	var ignored: Bool?
 	var useAuto: Bool?
+	var priority: AppPriority?
 	var power: PowerCondition?
 	var lowPowerModeOnly: Bool?
 	var hotOnly: Bool?
@@ -41,6 +42,7 @@ struct RuleChanges {
 		("enabled", "false = keep the rule but switch it off."),
 		("ignored", "true = never suggest limits for this app and keep it out of Auto mode."),
 		("use_auto", "true = drop this app's own CPU cap and efficiency-core setting so Auto mode manages it."),
+		("priority", "high, normal or low — what matters when the Mac needs its resources. Low work (updaters, indexing) is slowed first and paused if the need lasts; high is never slowed or paused."),
 		("power", "any, battery or charger — only apply the rule on that power source."),
 		("low_power_mode_only", "true = only apply while Low Power Mode is on."),
 		("hot_only", "true = only apply while the Mac is hot (thermal pressure)."),
@@ -53,13 +55,13 @@ struct RuleChanges {
 	var isEmpty: Bool {
 		cpuLimit == nil && efficiencyCores == nil && backgroundOnly == nil && memoryLimitMB == nil && memoryAction == nil
 			&& lowMemoryAction == nil && includeHelpers == nil && enabled == nil && ignored == nil && useAuto == nil
-			&& power == nil && lowPowerModeOnly == nil && hotOnly == nil && schedule == nil
+			&& priority == nil && power == nil && lowPowerModeOnly == nil && hotOnly == nil && schedule == nil
 	}
 
 	/// Does this change turn something on (so a missing rule should be created)?
 	var addsSomething: Bool {
 		(cpuLimit ?? 0) > 0 || efficiencyCores == true || (memoryLimitMB ?? 0) > 0
-			|| (lowMemoryAction.map { $0 != .none } ?? false) || ignored == true
+			|| (lowMemoryAction.map { $0 != .none } ?? false) || ignored == true || (priority.map { $0 != .normal } ?? false)
 	}
 
 	struct ParseError: Error, CustomStringConvertible { let description: String }
@@ -111,6 +113,7 @@ struct RuleChanges {
 			case "enabled": c.enabled = try bool(key, v)
 			case "ignored": c.ignored = try bool(key, v)
 			case "use_auto": c.useAuto = try bool(key, v)
+			case "priority": c.priority = try choice(key, v, { AppPriority(rawValue: $0) }, "high, normal, low")
 			case "power": c.power = try choice(key, v, { PowerCondition(rawValue: $0) }, "any, battery, charger")
 			case "low_power_mode_only": c.lowPowerModeOnly = try bool(key, v)
 			case "hot_only": c.hotOnly = try bool(key, v)
@@ -185,6 +188,7 @@ struct RuleChanges {
 		if let v = lowMemoryAction { rule.pressureAction = v }
 		if let v = includeHelpers { rule.includeHelpers = v }
 		if let v = ignored { rule.ignored = v }
+		if let v = priority { rule.priority = v }
 		if useAuto == true {
 			rule.cpuLimitEnabled = false
 			rule.backgroundMode = false
@@ -258,6 +262,7 @@ enum AppSettings {
 			"include_helpers": r.includeHelpers,
 			"enabled": rule?.enabled ?? false,
 			"ignored": r.ignored,
+			"priority": r.priority.rawValue,
 			"power": r.conditions.power.rawValue,
 			"low_power_mode_only": r.conditions.lowPowerModeOnly,
 			"hot_only": r.conditions.hotOnly,

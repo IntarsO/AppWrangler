@@ -252,6 +252,13 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.autoShareCPU) private var autoShareCPU = true
 	@AppStorage(Prefs.autoBusyPercent) private var autoBusyPercent = 75.0
 	@AppStorage(Prefs.autoFreezeIdle) private var autoFreezeIdle = false
+	@AppStorage(Prefs.autoAdaptive) private var autoAdaptive = true
+	@AppStorage(Prefs.autoShed) private var autoShed = true
+	@AppStorage(Prefs.autoProcesses) private var autoProcesses = true
+	@AppStorage(Prefs.autoAway) private var autoAway = true
+	@AppStorage(Prefs.autoAwayMinutes) private var autoAwayMinutes = 5
+	@AppStorage(Prefs.autoLearn) private var autoLearn = true
+	@Local private var routineForgotten = false
 	@AppStorage(Prefs.autoFreezeIdleMinutes) private var autoFreezeIdleMinutes = 10
 	@Local private var launchAtLogin = LoginItem.isEnabled
 	@Local private var loginError: String?
@@ -291,6 +298,36 @@ struct GeneralSettings: View {
 						Text(L("Then background apps share what the foreground isn't using, each keeping a minimum, so nothing starves. On battery, the threshold is at most 50%."))
 							.font(.caption).foregroundStyle(.secondary)
 					}
+					Toggle(L("Adapt to what the Mac needs right now"), isOn: $autoAdaptive)
+					Text(L("When you're plugged in and the Mac has room, a background app that's doing real work runs at full speed so it finishes sooner. On battery, in Low Power Mode or when the Mac is hot, apps move to the efficiency cores after 10 seconds. Memory is relieved early, one app at a time, and frozen apps resume one by one."))
+						.font(.caption).foregroundStyle(.secondary)
+					Toggle(L("Also manage command-line processes"), isOn: $autoProcesses)
+					Text(L("Processes that run hot move to the efficiency cores, but only while the Mac needs its resources (busy, on battery or hot). They are never capped or frozen, and build tools, system software and anything a terminal is waiting for are left alone."))
+						.font(.caption).foregroundStyle(.secondary)
+					Toggle(L("When I'm away, let everything run at full speed"), isOn: $autoAway)
+					if autoAway {
+						Picker(L("Away after no input for"), selection: $autoAwayMinutes) {
+							Text("2 min").tag(2)
+							Text("5 min").tag(5)
+							Text("10 min").tag(10)
+							Text("30 min").tag(30)
+						}
+					}
+					Text(L("While you're away and plugged in, nothing is held back, so background work finishes sooner. It's all restored the moment you touch the Mac."))
+						.font(.caption).foregroundStyle(.secondary)
+					Toggle(L("Learn my routine"), isOn: $autoLearn)
+					Text(L("Remembers which apps you use in which hour of the week, on this Mac only. Apps you usually use around now stay at full speed longer and aren't frozen; they come back early if they were."))
+						.font(.caption).foregroundStyle(.secondary)
+					if autoLearn {
+						Button(routineForgotten ? L("Forgotten") : L("Forget what it learned")) {
+							model.patterns.reset()
+							routineForgotten = true
+						}
+						.disabled(routineForgotten)
+					}
+					Toggle(L("Pause low-priority work when the Mac needs the resources"), isOn: $autoShed)
+					Text(L("Updaters, Spotlight and photo analysis, and apps you set to Low priority are slowed first and, if the need lasts, paused. They resume when the Mac has room again, and are never paused for more than 10 minutes at a stretch."))
+						.font(.caption).foregroundStyle(.secondary)
 					Toggle(L("When the Mac is low on memory, freeze apps I haven't used for a while"), isOn: $autoFreezeIdle)
 					if autoFreezeIdle {
 						Picker(L("Unused for at least"), selection: $autoFreezeIdleMinutes) {

@@ -86,6 +86,9 @@ struct PanelView: View {
 		guard autoEnabled else { return L("Off — only your rules apply") }
 		let s = model.autoSummary
 		var text = L("%d apps · %d in use · %d on E-cores", s.managed, s.inUse, s.onEfficiency)
+		if s.away { return L("You're away · background apps run at full speed") }
+		if s.runningFree > 0 { text += " · " + L("%d running free", s.runningFree) }
+		if s.processes > 0 { text += " · " + L("%d processes held", s.processes) }
 		let frozen = model.enforcer.frozen.count
 		if frozen > 0 { text += " · " + L("%d frozen", frozen) }
 		if s.busy { text += " · " + L("Mac busy") }
@@ -200,6 +203,7 @@ struct PanelView: View {
 		switch model.enforcer.autoDecisions[g.id] {
 		case let d? where d.reason == .foreground || d.reason == .recent: return L("in use")
 		case let d? where d.reason == .audio: return L("audio")
+		case let d? where d.lifted: return L("running free")
 		case let d? where d.cap != nil: return L("shared CPU")
 		case let d? where d.efficiency: return L("E-cores")
 		default: return ""
@@ -285,11 +289,15 @@ struct ActionCard: View {
 			HStack(spacing: 6) {
 				Button(L("OK")) { model.dismissAction(action) }
 					.help(L("Keep it this way"))
+				if action.kind == .shed {
+					Button(L("Resume now")) { model.resumeShed() }
+						.help(L("Resume everything that was paused, and don't pause it again for 10 minutes"))
+				}
 				if action.kind == .runaway && !autoManaged {
 					// Auto can't handle this one (Auto is off, or it isn't an app): offer what does.
 					if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
-					Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: action.info) }
 					Button(L("E-cores")) { model.applySuggestion(.ecores, info: action.info) }
+						.help(L("Move it to the efficiency cores while it's in the background"))
 				}
 				Button(L("Set manually…")) {
 					model.showInWindow(action)
@@ -328,6 +336,7 @@ struct ActionCard: View {
 		case .autoFreeze, .lowMemoryRule: return "snowflake"
 		case .memoryRule: return "memorychip"
 		case .runaway: return "flame.fill"
+		case .shed: return "pause.circle"
 		}
 	}
 
@@ -336,6 +345,7 @@ struct ActionCard: View {
 		case .autoFreeze, .lowMemoryRule: return .cyan
 		case .memoryRule: return .purple
 		case .runaway: return .orange
+		case .shed: return .indigo
 		}
 	}
 }
