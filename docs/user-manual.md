@@ -282,6 +282,8 @@ Each app is flagged at most once an hour. `appwrangler undo` reverts what these 
 
 ## Impact
 
+![Settings → Impact: CPU time and energy saved, time held back and frozen, and the Memory section with time short of memory, peak swap and swap read back](images/impact.png)
+
 **Settings → Impact** shows what AppWrangler has achieved, and what it cost to run, for the **Last hour**, **Today**, **7 days** or **30 days**. The same numbers are available from `appwrangler stats` and the [MCP server](mcp.md). The panel footer shows "saved … today".
 
 **How it helped:**
