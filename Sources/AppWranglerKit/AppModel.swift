@@ -335,6 +335,7 @@ final class AppModel: ObservableObject {
 		runaway.threshold = max(0.1, d.double(forKey: Prefs.runawayPercent) / 100)
 		runaway.duration = max(60, d.double(forKey: Prefs.runawayMinutes) * 60)
 		autoPilot.settings = Prefs.autoSettings
+		enforcer.gradualThaw = autoPilot.settings.adaptive
 		reschedule()
 	}
 
@@ -388,7 +389,8 @@ final class AppModel: ObservableObject {
 		state.now = Date()
 		let auto = decideAuto(lastSnapshot, state: state, newSample: false)
 		enforcer.apply(lastSnapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
-					   autoFreeze: autoFreezeCandidates(lastSnapshot, state: state), autoFreezeActive: autoFreezeActive)
+					   autoFreeze: autoFreezeCandidates(lastSnapshot, state: state), autoFreezeActive: autoFreezeActive,
+					   autoLowMemory: autoFreezeActive ? autoMemoryIsShort(state) : nil)
 		writeState()
 	}
 
@@ -396,14 +398,30 @@ final class AppModel: ObservableObject {
 
 	/// Opt-in Auto memory: while the Mac is low on memory, apps you haven't used
 	/// for a while may be frozen (they resume when you switch to them).
-	private func autoFreezeCandidates(_ snapshot: Snapshot, state: SystemState) -> Set<String> {
+	private func autoFreezeCandidates(_ snapshot: Snapshot, state: SystemState, paced: Bool = false, now: Date = Date()) -> Set<String> {
 		let s = autoPilot.settings
-		guard s.enabled, s.freezeIdleWhenLowMemory, state.memoryPressure >= enforcer.pressureThreshold else { return [] }
+		guard s.enabled, s.freezeIdleWhenLowMemory, autoMemoryIsShort(state) else { return [] }
 		let groups = autoEligible(snapshot).filter { g in
 			(rules.rule(for: g)?.pressureAction ?? PressureAction.none) == PressureAction.none	// the app's own rule decides otherwise
 		}
-		return Set(AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
-												  audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt))
+		let ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
+												 audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt)
+		// Adaptive: one app at a time, biggest first, then look again, so only as much is frozen as memory needs.
+		guard paced && s.adaptive else { return Set(ids) }
+		guard let first = ids.first, now.timeIntervalSince(lastAutoFreezeStep) >= Self.autoFreezeStepGap else { return [] }
+		lastAutoFreezeStep = now
+		return [first]
+	}
+
+	/// Pause between one app frozen for memory and the next while memory is still short.
+	static let autoFreezeStepGap: TimeInterval = 15
+	private var runningFree: Set<String> = []
+	private var lastAutoFreezeStep = Date.distantPast
+
+	/// Memory is short by Auto's own measure: adaptive steps in at the first warning,
+	/// otherwise at the level the low-memory rules use (critical by default).
+	private func autoMemoryIsShort(_ state: SystemState) -> Bool {
+		state.memoryPressure >= (autoPilot.settings.adaptive ? min(enforcer.pressureThreshold, 2) : enforcer.pressureThreshold)
 	}
 
 	/// Processes playing or recording audio (macOS 14.2+). Only queried when
@@ -444,11 +462,27 @@ final class AppModel: ObservableObject {
 		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
 		let decisions = autoPilot.decide(groups: autoEligible(snapshot), frontmostPid: frontmostPid, lastActive: lastActive,
 										 audioPids: audioPids, systemCPU: snapshot.systemCPU,
-										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu, demand: demand)
+										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu,
+										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand)
+		logRunningFree(decisions, groups: snapshot.groups)
 		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
 		// Forget focus times of apps that have quit.
 		if lastActive.count > 200 { lastActive = lastActive.filter { kill($0.key, 0) == 0 } }
 		return decisions
+	}
+
+	/// Apps that started or stopped running free: say so in the activity log.
+	private func logRunningFree(_ decisions: [String: AutoDecision], groups: [AppGroup]) {
+		let now = Set(decisions.filter { $0.value.lifted }.keys)
+		defer { runningFree = now }
+		guard now != runningFree else { return }
+		let names = Dictionary(groups.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+		for id in now.subtracting(runningFree) {
+			log.add(names[id] ?? id, L("Working in the background and the Mac has room: running at full speed"))
+		}
+		for id in runningFree.subtracting(now) where names[id] != nil {
+			log.add(names[id] ?? id, L("Back on the efficiency cores"))
+		}
 	}
 
 	func tick() {
@@ -495,7 +529,8 @@ final class AppModel: ObservableObject {
 		refreshAudio()
 		let auto = decideAuto(snapshot, state: state, newSample: true)
 		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
-					   autoFreeze: autoFreezeCandidates(snapshot, state: state), autoFreezeActive: autoFreezeActive)
+					   autoFreeze: autoFreezeCandidates(snapshot, state: state, paced: true), autoFreezeActive: autoFreezeActive,
+					   autoLowMemory: autoFreezeActive ? autoMemoryIsShort(state) : nil)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		let efficiency = snapshot.groups.reduce(0.0) { $0 + (enforcer.isInBackgroundMode($1) ? $1.cpu : 0) }

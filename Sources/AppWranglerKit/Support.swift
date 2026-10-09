@@ -129,6 +129,7 @@ enum Prefs {
 	static let autoBusyPercent = "AWAutoBusyPercent"
 	static let autoFreezeIdle = "AWAutoFreezeIdle"
 	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
+	static let autoAdaptive = "AWAutoAdaptive"
 	static let dismissedAdvice = "AWDismissedAdvice"
 	static let mainWindowOpen = "AWMainWindowOpen"
 	static let showPanelOnAction = "AWShowPanelOnAction"
@@ -144,6 +145,7 @@ enum Prefs {
 		s.busyThresholdOnBattery = min(s.busyThreshold, 0.5)
 		s.freezeIdleWhenLowMemory = d.bool(forKey: autoFreezeIdle)
 		s.freezeIdleAfter = min(max(d.double(forKey: autoFreezeIdleMinutes), 1), 24 * 60) * 60
+		s.adaptive = d.bool(forKey: autoAdaptive)
 		return s
 	}
 
@@ -170,6 +172,7 @@ enum Prefs {
 			autoBusyPercent: 75,
 			autoFreezeIdle: false,
 			autoFreezeIdleMinutes: 10,
+			autoAdaptive: true,
 			showPanelOnAction: true,
 		])
 	}

@@ -108,6 +108,11 @@ final class Enforcer {
 	/// so pressure hovering at the threshold doesn't freeze and thaw repeatedly.
 	var pressureThawDelay: TimeInterval = 60
 	private var memoryFineSince: Date?
+	/// Resume memory-frozen apps one at a time (oldest first) instead of all at once, so they
+	/// don't all wake together and squeeze memory again.
+	var gradualThaw = false
+	var thawGap: TimeInterval = 10
+	private var lastThaw: Date?
 
 	private var gids: [String: UInt32] = [:]
 	private var nextGid: UInt32 = 1
@@ -167,16 +172,19 @@ final class Enforcer {
 	/// - Parameters:
 	///   - autoFreeze: apps Auto mode may freeze while the Mac is low on memory.
 	///   - autoFreezeActive: Auto's idle-app freezing is switched on (else its freezes are lifted).
+	///   - autoLowMemory: whether memory is short by Auto's own (earlier) measure; nil means the same as
+	///     `pressureThreshold`. Freezes are held, and not thawed, while either measure says it's short.
 	func apply(_ snapshot: Snapshot, rules: RuleStore, state: SystemState, frontmostPid: pid_t,
 			   auto: [String: AutoDecision] = [:], audioPids: Set<pid_t> = [], autoFreeze: Set<String> = [],
-			   autoFreezeActive: Bool = false, now: Date = Date()) {
+			   autoFreezeActive: Bool = false, autoLowMemory: Bool? = nil, now: Date = Date()) {
 		autoDecisions = auto
 		var limits: [String: Double] = [:]
 		defer { effectiveLimit = limits }
 		let freshSample = snapshot.seq != 0 && snapshot.seq != lastEvaluatedSeq
 		if freshSample { lastEvaluatedSeq = snapshot.seq }
 		let lowMemory = state.memoryPressure >= pressureThreshold
-		if lowMemory { memoryFineSince = nil } else if memoryFineSince == nil { memoryFineSince = now }
+		let holdFreezes = lowMemory || (autoLowMemory ?? false)
+		if holdFreezes { memoryFineSince = nil } else if memoryFineSince == nil { memoryFineSince = now }
 
 		var desired: [UInt32: Applied] = [:]
 		var wantBackground: [pid_t: String] = [:]
@@ -226,7 +234,7 @@ final class Enforcer {
 			}
 
 			// Auto mode: freeze an app you haven't used for a while when memory runs short.
-			if freshSample, !paused, lowMemory, autoFreeze.contains(group.id), frozen[group.id] == nil, !pressureActed.contains(group.id),
+			if freshSample, !paused, autoLowMemory ?? lowMemory, autoFreeze.contains(group.id), frozen[group.id] == nil, !pressureActed.contains(group.id),
 			   !group.pids.contains(frontmostPid), !group.pids.contains(where: audioPids.contains),
 			   (auto[group.id].map { $0.reason == .background } ?? true) {
 				pressureActed.insert(group.id)
@@ -309,11 +317,20 @@ final class Enforcer {
 		}
 
 		// Memory came back (and stayed back for a while): thaw what we froze because of it.
-		if !lowMemory && freshSample, let since = memoryFineSince, now.timeIntervalSince(since) >= pressureThawDelay {
+		if !holdFreezes && freshSample, let since = memoryFineSince, now.timeIntervalSince(since) >= pressureThawDelay {
 			pressureActed.removeAll()
-			for (id, reason) in frozen where reason == .memoryPressure {
+			var due = frozen.filter { $0.value == .memoryPressure }.map(\.key)
+			if gradualThaw {
+				if let last = lastThaw, now.timeIntervalSince(last) < thawGap {
+					due = []
+				} else {
+					due = Array(due.sorted { (frozenSince[$0] ?? .distantPast) < (frozenSince[$1] ?? .distantPast) }.prefix(1))
+				}
+			}
+			for id in due {
 				clearFrozen(id)
 				if let gid = gids[id] { desired[gid] = nil }
+				lastThaw = now
 				onEvent?(groupNames[id] ?? id, L("Memory pressure eased — resumed"), false)
 			}
 		}

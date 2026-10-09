@@ -59,9 +59,19 @@ This manual is also built into the app (no internet needed). Open it from the **
 | Other apps in the background | After 30 s in the background they move to the **efficiency cores**. They keep working (sync, notifications, downloads), just using far less power. |
 | The Mac is busy (above 75% CPU, or 50% on battery) | Background apps **share** whatever CPU the foreground isn't using. Light apps keep what they use; heavy ones split the rest; each keeps a minimum so nothing freezes. One core is always kept free for the app you're using. When the Mac calms down, the caps go away. |
 
+**Adaptive Auto (on by default).** Auto also follows what the Mac needs right now:
+
+| Situation | What Auto does |
+|---|---|
+| You're plugged in, the Mac is calm and cool, and a background app is doing real work (at least 0.3 of a core for 10 s) | The app **runs free** instead of staying on the efficiency cores, so the job (an export, a sync, a build you started elsewhere) finishes sooner. It goes back to the efficiency cores when the Mac gets busy, or when the app has been quiet for 30 s. After a busy spell nothing runs free for 2 minutes, so it can't flip back and forth. |
+| You're on battery, in Low Power Mode, or the Mac is hot | Background apps move to the efficiency cores after **10 s** instead of 30 s, and nothing runs free. |
+| Memory is short (see below) | Auto steps in at the first warning, one app at a time, and resumes apps one by one. |
+
+Switch it off with *Adapt to what the Mac needs right now* in Settings → General → Auto mode, or `appwrangler prefs auto_adaptive=off`; Auto then keeps its fixed timings. Apps running free show as *"Auto · running free"*, and each change is in Settings → Activity.
+
 **Optional: freeze idle apps when memory runs out.** Turn on *When the Mac is low on memory, freeze apps I haven't used for a while* in Settings → General → Auto mode (or run `appwrangler auto freeze-idle on`). It's off by default.
 
-- **What it freezes.** When the Mac reaches the low-memory level you chose (Settings → General → Low memory), Auto freezes regular apps you haven't used for 10 minutes (adjustable), biggest first.
+- **What it freezes.** With [adaptive Auto](#auto-mode) on, Auto steps in at the first sign of memory pressure (*warning*) and freezes regular apps you haven't used for 10 minutes (adjustable), **one app at a time, biggest first**, every 15 s while memory is still short, so it freezes only as much as needed. With adaptive off, it waits for the low-memory level you chose (Settings → General → Low memory, *critical* by default) and freezes every candidate at once.
 - **What it never freezes:**
   - the app you're using;
   - anything playing or recording audio;
@@ -74,7 +84,7 @@ This manual is also built into the app (no internet needed). Open it from the **
 - **Why it helps.** Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive.
 - **Getting them back:**
   - An app **resumes the moment you switch to it**.
-  - All of them resume once memory has been fine for a minute. The delay stops them from freezing and thawing over and over when memory hovers at the limit.
+  - They resume once memory has been fine for a minute, **one every 10 s** with adaptive Auto (all at once without it), so they don't all wake together and squeeze memory again. The delay stops them from freezing and thawing over and over when memory hovers at the limit.
   - They also resume as soon as you turn this setting (or Auto mode) off.
 - **Effect.** On a Mac with little RAM this does more than any CPU setting. To free memory right away, whatever the pressure, use [Free memory now](#free-memory-now).
 

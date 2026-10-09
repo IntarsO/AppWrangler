@@ -603,6 +603,7 @@ struct GroupRow: View {
 		guard let d = model.enforcer.autoDecisions[group.id] else { return nil }
 		switch (d.reason, d.cap, d.efficiency) {
 		case (.audio, _, _): return L("Auto · full speed (playing or recording audio)")
+		case (.background, _, _) where d.lifted: return L("Auto · running free (it's working and the Mac has room)")
 		case (.background, let cap?, _): return L("Auto · shared CPU %@ (Mac busy)", Fmt.percent(cap))
 		case (.background, nil, true): return L("Auto · efficiency cores (in background)")
 		default: return nil

@@ -18,8 +18,15 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
 - Clicking an app under *Busiest apps* opens it, expanded, in the main window.
 - Russian is no longer kept complete: new text shows in English.
 
+- **Adaptive Auto** (on by default; `appwrangler prefs auto_adaptive=off` to switch it off). Auto now follows what the Mac needs right now:
+  - when you're plugged in and the Mac is calm and cool, a background app that's doing real work **runs free** instead of staying on the efficiency cores, so the job finishes sooner. It goes back when the Mac gets busy or the app goes quiet, and nothing runs free for two minutes after a busy spell;
+  - on battery, in Low Power Mode or when the Mac is hot, background apps move to the efficiency cores after 10 s instead of 30 s;
+  - idle freezing steps in at the first memory warning, one app at a time (biggest first, every 15 s) instead of waiting for critical and freezing everything at once, and holds while memory is short;
+  - frozen apps resume one at a time (every 10 s) once memory has been fine for a minute;
+  - apps running free show in the panel's Auto line, in the app's row, and in the activity log.
+
 ### Added (for contributors)
-- Tests for the chart history and the cards.
+- Tests for the chart history and the cards, and for adaptive Auto (running free, battery, cooldown, early and gradual memory handling).
 - **The GitHub wiki is generated from the docs.** `scripts/sync-wiki.py` builds it (and checks every link); a workflow publishes it when `WIKI_SYNC` is `on`.
 
 ## [1.4.1] — 2026-10-09

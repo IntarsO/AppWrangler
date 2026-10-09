@@ -86,6 +86,7 @@ struct PanelView: View {
 		guard autoEnabled else { return L("Off — only your rules apply") }
 		let s = model.autoSummary
 		var text = L("%d apps · %d in use · %d on E-cores", s.managed, s.inUse, s.onEfficiency)
+		if s.runningFree > 0 { text += " · " + L("%d running free", s.runningFree) }
 		let frozen = model.enforcer.frozen.count
 		if frozen > 0 { text += " · " + L("%d frozen", frozen) }
 		if s.busy { text += " · " + L("Mac busy") }
@@ -200,6 +201,7 @@ struct PanelView: View {
 		switch model.enforcer.autoDecisions[g.id] {
 		case let d? where d.reason == .foreground || d.reason == .recent: return L("in use")
 		case let d? where d.reason == .audio: return L("audio")
+		case let d? where d.lifted: return L("running free")
 		case let d? where d.cap != nil: return L("shared CPU")
 		case let d? where d.efficiency: return L("E-cores")
 		default: return ""
