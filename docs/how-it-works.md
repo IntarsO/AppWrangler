@@ -19,7 +19,7 @@ This is a tour of the internals for curious users and contributors.
 | Impact statistics (savings, cost, accuracy) | `Sources/AppWranglerKit/Stats.swift` |
 | Sampling schedule, instant re-apply on any change | `Sources/AppWranglerKit/AppModel.swift` |
 | Notifications, login item, global shortcut | `Sources/AppWranglerKit/Services.swift` |
-| UI (SwiftUI in an `NSPopover`, the main window, Settings and Help windows) | `Sources/AppWranglerKit/Views/` |
+| UI (the menu bar panel in an `NSPopover`, the main window, Settings and Help windows) | `Sources/AppWranglerKit/Views/` |
 | `appwrangler://` links (widget buttons, Shortcuts) | `Sources/AppWranglerKit/AppURL.swift` |
 | App-wide settings for the CLI and MCP (`prefs`) | `Sources/AppWranglerKit/Preferences.swift` |
 | Auto mode (focus, E-cores, fair share, idle-app freezing) | `Sources/AppWranglerKit/AutoPilot.swift` |

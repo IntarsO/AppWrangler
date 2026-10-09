@@ -12,11 +12,25 @@ import SwiftUI
 struct RuleEditor: View {
 	@Binding var rule: AppRule
 	var showsEnableToggle = false
+	/// Only the memory limit and helper processes: what's left to set for an app Auto mode looks after.
+	var memoryOnly = false
 	@Local private var showConditions = false
 
 	private var maxCPU: Double { Double(max(SystemInfo.ncpu, 1) * 100) }
 
 	var body: some View {
+		if memoryOnly {
+			VStack(alignment: .leading, spacing: 10) {
+				memorySection
+				Divider()
+				Toggle(L("Include helper processes"), isOn: $rule.includeHelpers)
+			}
+		} else {
+			fullEditor
+		}
+	}
+
+	private var fullEditor: some View {
 		VStack(alignment: .leading, spacing: 10) {
 			if showsEnableToggle {
 				Toggle(L("Rule enabled"), isOn: $rule.enabled)

@@ -286,6 +286,8 @@ struct ActionCard: View {
 				Button(L("OK")) { model.dismissAction(action) }
 					.help(L("Keep it this way"))
 				if action.kind == .runaway && !autoManaged {
+					// Auto can't handle this one (Auto is off, or it isn't an app): offer what does.
+					if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
 					Button(L("Limit 50%")) { model.applySuggestion(.limit50, info: action.info) }
 					Button(L("E-cores")) { model.applySuggestion(.ecores, info: action.info) }
 				}
@@ -313,7 +315,8 @@ struct ActionCard: View {
 	}
 
 	/// Auto mode looks after this app (so a runaway in the background is on efficiency cores).
-	private var autoManaged: Bool { model.enforcer.autoDecisions[action.groupID] != nil }
+	private var autoManaged: Bool { model.autoManages(action.groupID) }
+	@AppStorage(Prefs.autoEnabled) private var autoEnabled = true
 
 	private var detail: String {
 		guard action.kind == .runaway, autoManaged else { return action.detail }

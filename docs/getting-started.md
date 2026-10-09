@@ -45,7 +45,7 @@ Apps you build yourself open without any Gatekeeper prompt.
 
 AppWrangler has no Dock icon (except while its window is open). Look for the **lasso** icon (a loop with a gauge needle inside) in the menu bar at the top right of the screen.
 
-- **Left-click** opens the main panel.
+- **Left-click** opens the panel: a quick overview with charts. The full list of apps is in the main window (the **All apps** button).
 - **Right-click** gives quick access to *Pause All Limits*, *Open in a Window*, *Settings…*, *Help & Documentation* and *Quit AppWrangler*.
 
 > Can't see it? On a crowded menu bar macOS may hide it behind the notch. Quit a few other menu bar apps, or hold ⌘ and drag icons to make room.
@@ -54,16 +54,22 @@ AppWrangler has no Dock icon (except while its window is open). Look for the **l
 
 ## 3. Take a look around
 
-The panel shows:
+The panel is a quick overview. It also opens by itself, for 30 seconds and without taking keyboard focus, when AppWrangler has just frozen or flagged an app.
 
-- **At the top:** your Mac's chip (for example *Apple M1 · 4P + 4E · 8 GB*), total CPU use, and memory use with memory pressure.
-- **In the list:** everything that's running, in four sections:
+What you see:
+
+- **At the top:** your Mac's chip (for example *Apple M1 · 4P + 4E · 8 GB*), the **Auto** switch with what Auto is doing right now, and an **Active / Paused** switch.
+- **Two charts** of the last 10 minutes: CPU (with a dashed green line for the part that runs on efficiency cores) and memory (shaded while the Mac was short of memory).
+- **A card** whenever AppWrangler just did something, such as freezing an idle app when memory ran low. It disappears 30 seconds after you see it. **OK** leaves it to Auto; **Set manually…** opens that app's settings in the main window.
+- **Busiest apps** (the top five) and **Recently** (the last few things AppWrangler did).
+
+Click **All apps** at the bottom to open the main window. It's a normal window that stays open, like Activity Monitor, with everything that's running in four sections:
   - **Apps:** the apps you use, with a Dock icon.
   - **Menu bar & background apps:** things like Dropbox or menu bar utilities.
   - **macOS system services:** parts of macOS such as Wi-Fi or Control Center (collapsed by default).
   - **Processes:** command-line tools and background daemons (collapsed by default).
 
-Each row shows:
+Each row in the window shows:
 - the name, plus a **+N** count of helper processes that are counted together with the app;
 - a **one-line description of what it is**, such as "Web browser" or "Spotlight indexing your files";
 - its current **CPU** (100% = one full core) and **memory**.
@@ -74,7 +80,7 @@ Click any row to open its details:
 - a 10-minute CPU and memory chart;
 - its settings.
 
-Want it on screen all the time? The window button at the top of the panel opens the same view in a normal window, like Activity Monitor. There's also a [desktop widget](user-manual.md#desktop-widget).
+Want something on screen all the time? Keep the main window open, or add the [desktop widget](user-manual.md#desktop-widget).
 
 ---
 
@@ -87,7 +93,7 @@ You don't have to set anything up. **Auto mode** is on from the start:
 
 The *Auto* line at the top of the panel shows what it's doing.
 
-The yellow **Suggestions** section, when it appears, points out anything worth changing, such as an app using more memory than your Mac has. Each suggestion has a one-click button. If your Mac is short of memory, consider turning on *freeze apps I haven't used for a while* in Settings → General → Auto mode. See the [User Manual](user-manual.md#auto-mode).
+The yellow **Suggestions** section of the main window, when it appears, points out anything worth changing (the panel shows a **Suggestions** line that opens it), such as an app using more memory than your Mac has. Each suggestion has a one-click button. If your Mac is short of memory, consider turning on *freeze apps I haven't used for a while* in Settings → General → Auto mode. See the [User Manual](user-manual.md#auto-mode).
 
 ---
 
@@ -95,8 +101,8 @@ The yellow **Suggestions** section, when it appears, points out anything worth c
 
 For most everyday apps, Auto mode is the better choice: a fixed limit can make an app feel slow. Use your own rule for things Auto doesn't manage, such as a build tool or a background process, or to set a memory limit. Say a sync app keeps using too much CPU:
 
-1. Click it in the list.
-2. Turn on **Limit CPU** and pick **25%** (or drag the slider). New rules apply only while the app is in the background.
+1. Click it in the main window's list (or in **Busiest apps** in the panel). Its details open with **Auto (recommended)** selected.
+2. Choose **Custom rule**, turn on **Limit CPU** and pick **25%** (or drag the slider). New rules apply only while the app is in the background.
 3. Done. The limit is enforced within half a second. The row turns orange, and a gauge icon shows it's being throttled.
 
 From now on, the limit applies **every time the app runs**, including after you restart your Mac.
@@ -112,7 +118,7 @@ To remove a limit, turn the toggle off or click **Remove Rule**.
 
 ## 6. Recommended settings
 
-Open **Settings…** (bottom of the panel, or right-click the menu bar icon):
+Open **Settings…** (the gear at the bottom of the panel, or right-click the menu bar icon):
 
 - **General → Launch AppWrangler at login.** Install the app in /Applications first.
 - **General → Runaway apps.** This is on by default: AppWrangler tells you when something burns CPU in the background for a few minutes.

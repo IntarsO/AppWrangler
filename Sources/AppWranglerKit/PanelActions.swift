@@ -111,3 +111,64 @@ struct PanelActions {
 		Array(items.filter { $0.isVisible(at: now) }.prefix(limit))
 	}
 }
+
+/// How AppWrangler treats one app, as the main window offers it. Auto comes first:
+/// a custom rule is for apps Auto mode can't handle well, or when you want something specific.
+enum Handling: String, CaseIterable, Identifiable {
+	case auto
+	case custom
+	case leaveAlone
+
+	var id: String { rawValue }
+
+	var title: String {
+		switch self {
+		case .auto: return L("Auto (recommended)")
+		case .custom: return L("Custom rule")
+		case .leaveAlone: return L("Leave alone")
+		}
+	}
+
+	/// Memory-only rules don't count: Auto still looks after the app's CPU.
+	static func of(_ rule: AppRule?) -> Handling {
+		guard let rule else { return .auto }
+		if rule.ignored { return .leaveAlone }
+		if rule.enabled && (rule.cpuLimitEnabled || rule.backgroundMode) { return .custom }
+		return .auto
+	}
+
+	/// Change `rule` so the app is handled this way. A rule left with nothing in it should be removed by the caller.
+	func apply(to rule: inout AppRule) {
+		switch self {
+		case .auto:
+			rule.cpuLimitEnabled = false
+			rule.backgroundMode = false
+			rule.ignored = false
+		case .custom:
+			rule.ignored = false
+			rule.enabled = true
+		case .leaveAlone:
+			rule.ignored = true
+			rule.enabled = true
+		}
+	}
+}
+
+/// Decides when the menu bar panel opens by itself because AppWrangler just did something.
+struct PanelOpening {
+	/// Cards already announced; each is announced once, even if the panel stayed closed.
+	private(set) var announced: Set<UUID> = []
+	private var lastOpened = Date.distantPast
+	/// After opening, wait this long before opening again, so a busy spell doesn't keep popping up.
+	static let minimumGap: TimeInterval = 120
+
+	mutating func shouldOpen(cards: [PanelAction], now: Date, enabled: Bool, panelShown: Bool, windowInUse: Bool) -> Bool {
+		let fresh = cards.filter { $0.shownAt == nil && !announced.contains($0.id) && $0.isVisible(at: now) }
+		guard !fresh.isEmpty else { return false }
+		announced.formUnion(fresh.map(\.id))
+		if announced.count > 200 { announced = Set(fresh.map(\.id)) }
+		guard enabled, !panelShown, !windowInUse, now.timeIntervalSince(lastOpened) >= Self.minimumGap else { return false }
+		lastOpened = now
+		return true
+	}
+}

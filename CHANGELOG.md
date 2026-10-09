@@ -2,6 +2,25 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The menu bar panel is now an overview.** It shows:
+  - CPU and memory charts for the last 10 minutes (a dashed line for the share on efficiency cores; shading while the Mac was short of memory);
+  - the Auto line with its switch;
+  - the five busiest apps and the last few things AppWrangler did.
+
+  The full list of apps moved to the main window: click **All apps**. The window is unchanged.
+- **Cards for what AppWrangler just did.** When Auto freezes an idle app, a memory rule acts, or a background app runs away, the panel shows a card for 30 seconds from when you see it. **OK** leaves it to Auto, **Set manually…** opens that app's settings in the main window, and **Leave *app* alone** keeps it out of Auto. Nothing needs a click: Auto handles it by default.
+- **The panel opens by itself** (for 30 seconds, without taking keyboard focus, at most once every two minutes) when a card appears. Turn it off in Settings → General → Notifications or with `appwrangler prefs show_panel_on_action=off`.
+- **Auto comes first for every app.** An app's details in the main window start with *Auto (recommended)*, *Custom rule* or *Leave alone*, and the manual editor only shows for a custom rule. The right-click menu and the runaway banner lead with Auto too; *Limit 50%* and *E-cores* are offered only when Auto can't handle the app.
+- Clicking an app under *Busiest apps* opens it, expanded, in the main window.
+- Russian is no longer kept complete: new text shows in English.
+
+### Added (for contributors)
+- Tests for the chart history and the cards.
+- **The GitHub wiki is generated from the docs.** `scripts/sync-wiki.py` builds it (and checks every link); a workflow publishes it when `WIKI_SYNC` is `on`.
+
 ## [1.4.1] — 2026-10-09
 
 ### Added
@@ -17,7 +36,6 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
 - In Impact, "Memory freed" shows "—" instead of "Zero KB" when nothing was freed.
 
 ### Added (for contributors)
-- **The GitHub wiki is generated from the docs.** `scripts/sync-wiki.py` builds it (and checks every link); a workflow publishes it when `WIKI_SYNC` is `on`.
 - **Screenshots without your own apps:** debug builds have a demo mode (`-AWDemoFixture scripts/demo/fixture.json`) that shows made-up apps and numbers, with nothing measured or enforced. `scripts/screenshots.sh` uses it.
 - `scripts/render-social.sh` renders the 1280×640 social preview.
 - `scripts/record-demo.sh` records the README demo and turns it into an MP4 and a GIF with Apple's frameworks only.

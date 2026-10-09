@@ -286,6 +286,40 @@ final class AppModel: ObservableObject {
 		panelActions.dismiss(action.id)
 	}
 
+	/// Auto mode looks after this app right now.
+	func autoManages(_ groupID: String) -> Bool { enforcer.autoDecisions[groupID] != nil }
+
+	func turnOnAuto() {
+		UserDefaults.standard.set(true, forKey: Prefs.autoEnabled)
+		log.add("AppWrangler", L("Auto mode turned on"))
+	}
+
+	/// The main window's first choice for an app: Auto, a custom rule, or leave it alone. Undoable.
+	func setHandling(_ group: AppGroup, _ mode: Handling) {
+		let existing = rules.rule(for: group)
+		var rule = existing ?? AppRule.forGroup(group)
+		mode.apply(to: &rule)
+		rule = rule.sanitized()
+		if !rule.hasLimits && !rule.ignored {
+			guard let existing else { return }
+			rules.remove(id: existing.id)
+			ChangeJournal.record(before: existing, after: nil, source: "window", store: rules)
+		} else {
+			rules.upsert(rule)
+			ChangeJournal.record(before: existing, after: rules.rules.first { $0.id == rule.id }, source: "window", store: rules)
+		}
+		rules.saveNow()
+		runaway.snooze(group.id)
+		suggestions.removeAll { $0.groupID == group.id }
+		for card in panelActions.items where card.groupID == group.id { panelActions.dismiss(card.id) }
+		switch mode {
+		case .auto: log.add(group.name, L("Handled by Auto mode"))
+		case .custom: break	// the rule editor logs what it sets
+		case .leaveAlone: log.add(group.name, L("Left alone: no suggestions, no automatic actions"))
+		}
+		reapply()
+	}
+
 	/// "Set manually…": show the app in the main window with its settings open.
 	func showInWindow(_ action: PanelAction) {
 		panelActions.dismiss(action.id)

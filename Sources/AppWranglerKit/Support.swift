@@ -131,6 +131,7 @@ enum Prefs {
 	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
 	static let dismissedAdvice = "AWDismissedAdvice"
 	static let mainWindowOpen = "AWMainWindowOpen"
+	static let showPanelOnAction = "AWShowPanelOnAction"
 
 	static var autoSettings: AutoSettings {
 		let d = UserDefaults.standard
@@ -169,6 +170,7 @@ enum Prefs {
 			autoBusyPercent: 75,
 			autoFreezeIdle: false,
 			autoFreezeIdleMinutes: 10,
+			showPanelOnAction: true,
 		])
 	}
 }

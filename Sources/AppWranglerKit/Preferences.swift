@@ -37,6 +37,7 @@ enum PreferenceSettings {
 		Spec(key: "runaway_percent", defaultsKey: Prefs.runawayPercent, kind: .number(20...800), help: "CPU % that counts as a lot (default 80)."),
 		Spec(key: "runaway_minutes", defaultsKey: Prefs.runawayMinutes, kind: .number(1...30), help: "For how many minutes (default 3)."),
 		Spec(key: "notifications", defaultsKey: Prefs.notifications, kind: .bool, help: "Notifications for memory limits, low memory and runaway apps."),
+		Spec(key: "show_panel_on_action", defaultsKey: Prefs.showPanelOnAction, kind: .bool, help: "Open the menu bar panel by itself, without taking focus, when AppWrangler freezes or flags an app."),
 		Spec(key: "menu_bar_cpu", defaultsKey: Prefs.menuBarCPU, kind: .bool, help: "Show the total CPU % next to the menu bar icon."),
 		Spec(key: "pause_shortcut", defaultsKey: Prefs.hotKeyEnabled, kind: .bool, help: "⌃⌥⌘P pauses and resumes all limits."),
 	]
