@@ -83,7 +83,7 @@ enum SystemInfo {
 
 struct ActivityEvent: Identifiable {
 	let id = UUID()
-	let date = Date()
+	var date = Date()
 	let app: String
 	let message: String
 }
@@ -101,6 +101,10 @@ final class ActivityLog: ObservableObject {
 	}
 
 	func clear() { events.removeAll() }
+
+	#if DEBUG
+	func replace(with events: [ActivityEvent]) { self.events = events }
+	#endif
 }
 
 enum Prefs {

@@ -123,6 +123,35 @@ extension AppModel {
 					memoryBytes: UInt64(fixture.memoryTotalGB * 1_073_741_824), memoryUsedBytes: snap.memory.used,
 					memoryPressure: fixture.pressure, swapUsedBytes: UInt64(fixture.swapUsedGB * 1_073_741_824),
 					autoFreezeIdle: true, fileExists: { _ in true })))
+		recordDemoPanel(fixture, groups: groups)
+	}
+
+	/// Ten minutes of believable chart data, a card and recent activity.
+	private func recordDemoPanel(_ fixture: DemoFixture, groups: [AppGroup]) {
+		let now = Date()
+		let gb = 1_073_741_824.0
+		var points: [SystemPoint] = []
+		for i in 0..<300 {	// every 2 s
+			let t = Double(i) / 300
+			let wave = 0.5 + 0.5 * sin(t * 19) * cos(t * 7)
+			let cpu = fixture.systemCPU * (0.55 + 0.6 * wave) + (i > 120 && i < 150 ? 0.25 : 0)
+			let memory = (fixture.memoryUsedGB - 0.9 + 0.9 * min(1, t * 1.4)) * gb
+			points.append(SystemPoint(time: now.addingTimeInterval(-Double(300 - i) * 2), cpu: min(cpu, 1),
+									  efficiency: cpu * (0.25 + 0.1 * wave), memoryUsed: UInt64(memory),
+									  pressure: t > 0.62 ? fixture.pressure : 1))
+		}
+		var actions: [PanelAction] = []
+		if let photos = groups.first(where: { $0.name == "Photos" }) {
+			actions.append(PanelAction(date: now.addingTimeInterval(-40), kind: .autoFreeze, groupID: photos.id, name: photos.name,
+									   bundleID: photos.bundleID, path: photos.path, title: L("Auto froze %@", photos.name),
+									   detail: L("Mac is low on memory. It resumes when you switch to it.")))
+		}
+		let events = [
+			ActivityEvent(date: now.addingTimeInterval(-40), app: "Photos", message: L("Mac is low on memory — frozen by Auto mode until you switch to it")),
+			ActivityEvent(date: now.addingTimeInterval(-260), app: "Slack", message: L("Resumed — you switched to it")),
+			ActivityEvent(date: now.addingTimeInterval(-540), app: "node", message: L("Has used %@ CPU for %d minutes in the background.", Fmt.percent(0.5), 5)),
+		]
+		setDemoPanel(history: points, actions: actions, events: events)
 	}
 }
 #endif

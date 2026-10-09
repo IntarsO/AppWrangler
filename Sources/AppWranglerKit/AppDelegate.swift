@@ -76,9 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		popover.behavior = .transient
 		popover.animates = true
 		popover.delegate = self
-		popover.contentViewController = NSHostingController(
-			rootView: PopoverView(model: model, rules: model.rules, openSettings: { [weak self] in self?.showSettings() },
-								  openWindow: { [weak self] in self?.showMainWindow() }))
+		let panel = NSHostingController(
+			rootView: PanelView(model: model, rules: model.rules, log: model.log, openSettings: { [weak self] in self?.showSettings() },
+								openWindow: { [weak self] in self?.showMainWindow() }))
+		panel.sizingOptions = [.preferredContentSize]	// grows and shrinks as cards come and go
+		popover.contentViewController = panel
 
 		Notifier.shared.setUp()
 		Notifier.shared.onAction = { [weak self] action, info in self?.model.applySuggestion(action, info: info) }
@@ -319,8 +321,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
 	// MARK: Popover
 
-	func popoverWillShow(_ notification: Notification) { model.surfaceDidAppear() }
-	func popoverDidClose(_ notification: Notification) { model.surfaceDidDisappear() }
+	func popoverWillShow(_ notification: Notification) {
+		model.surfaceDidAppear()
+		model.panelDidAppear()
+	}
+
+	func popoverDidClose(_ notification: Notification) {
+		model.surfaceDidDisappear()
+		model.panelDidDisappear()
+	}
 
 	// MARK: Settings window
 

@@ -335,7 +335,7 @@ struct PopoverView: View {
 		let groups = filtered
 		let byID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
 		let ordered = order.ids.compactMap { byID[$0] } + groups.filter { !order.ids.contains($0.id) }
-		return ScrollView {
+		return ScrollViewReader { proxy in ScrollView {
 			LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
 				ForEach(AppKind.allCases) { kind in
 					let items = ordered.filter { $0.kind == kind }
@@ -361,6 +361,21 @@ struct PopoverView: View {
 			hovering = inside
 			if !inside { refreshOrder() }
 		}
+		.onAppear { showRequested(proxy) }
+		.onChange(of: model.focusRequest) { _ in showRequested(proxy) }
+		.onChange(of: model.snapshot.seq) { _ in showRequested(proxy) }
+		}
+	}
+
+	/// "Set manually…" or a click in the menu bar panel: open that app's settings.
+	private func showRequested(_ proxy: ScrollViewProxy) {
+		guard inWindow, let id = model.focusRequest else { return }
+		guard let group = model.snapshot.groups.first(where: { $0.id == id }) else { return }	// not measured yet
+		model.focusRequest = nil
+		search = ""
+		if collapsed.contains(group.kind.rawValue) { toggleSection(group.kind) }
+		expanded = id
+		DispatchQueue.main.async { withAnimation { proxy.scrollTo(id, anchor: .top) } }
 	}
 
 	private func sectionHeader(_ kind: AppKind, count: Int) -> some View {

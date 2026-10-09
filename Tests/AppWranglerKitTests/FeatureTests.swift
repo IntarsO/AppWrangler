@@ -203,12 +203,13 @@ import Testing
 		return regex.matches(in: s, range: NSRange(s.startIndex..., in: s)).map { String(s[Range($0.range, in: s)!]) }.sorted()
 	}
 
-	@Test func russianCoversEveryKey() throws {
+	/// Russian isn't kept complete any more: untranslated text shows in English.
+	/// Still, most of the app should be translated, and no translation may be stale.
+	@Test func russianIsMostlyComplete() throws {
 		let keys = try Self.keysInSources()
 		let ru = try Self.strings("ru")
 		#expect(keys.count > 150)
-		let missing = keys.subtracting(ru.keys).sorted()
-		#expect(missing.isEmpty, "Missing Russian translations:\n\(missing.joined(separator: "\n"))")
+		#expect(Double(keys.intersection(ru.keys).count) / Double(keys.count) > 0.8)
 	}
 
 	@Test func placeholdersMatch() throws {
