@@ -80,16 +80,6 @@ jobs:
           gh release create "v$VERSION" "build/AppWrangler-$VERSION.zip" "build/AppWrangler-mcp-$VERSION.mcpb" --verify-tag \
             --title "AppWrangler $VERSION" --notes-file build/release-notes.md --latest
 
-      # Publishing to the official MCP Registry is opt-in:
-      #   gh variable set MCP_REGISTRY --body on -R IntarsO/AppWrangler
-      - name: Publish to the MCP Registry
-        if: (github.event_name == 'push' || !inputs.dry_run) && vars.MCP_REGISTRY == 'on'
-        run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_darwin_arm64.tar.gz" | tar xz mcp-publisher
-          mkdir -p build/registry && cp build/server.json build/registry/server.json
-          ./mcp-publisher login github-oidc
-          (cd build/registry && ../../mcp-publisher publish)
-
       - name: Update the Homebrew cask
         if: github.event_name == 'push' || !inputs.dry_run
         run: |
@@ -102,3 +92,15 @@ jobs:
           git config user.email "30525407+IntarsO@users.noreply.github.com"
           git commit -am "Homebrew cask: AppWrangler $VERSION"
           git push origin main
+
+      # Publishing to the official MCP Registry is opt-in:
+      #   gh variable set MCP_REGISTRY --body on -R IntarsO/AppWrangler
+      - name: Publish to the MCP Registry
+        # Runs last, and a failure here doesn't fail the release.
+        if: (github.event_name == 'push' || !inputs.dry_run) && vars.MCP_REGISTRY == 'on'
+        continue-on-error: true
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_darwin_arm64.tar.gz" | tar xz mcp-publisher
+          mkdir -p build/registry && cp build/server.json build/registry/server.json
+          ./mcp-publisher login github-oidc
+          (cd build/registry && ../../mcp-publisher publish)
