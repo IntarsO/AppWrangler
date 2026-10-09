@@ -253,6 +253,7 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.autoBusyPercent) private var autoBusyPercent = 75.0
 	@AppStorage(Prefs.autoFreezeIdle) private var autoFreezeIdle = false
 	@AppStorage(Prefs.autoAdaptive) private var autoAdaptive = true
+	@AppStorage(Prefs.autoShed) private var autoShed = true
 	@AppStorage(Prefs.autoFreezeIdleMinutes) private var autoFreezeIdleMinutes = 10
 	@Local private var launchAtLogin = LoginItem.isEnabled
 	@Local private var loginError: String?
@@ -294,6 +295,9 @@ struct GeneralSettings: View {
 					}
 					Toggle(L("Adapt to what the Mac needs right now"), isOn: $autoAdaptive)
 					Text(L("When you're plugged in and the Mac has room, a background app that's doing real work runs at full speed so it finishes sooner. On battery, in Low Power Mode or when the Mac is hot, apps move to the efficiency cores after 10 seconds. Memory is relieved early, one app at a time, and frozen apps resume one by one."))
+						.font(.caption).foregroundStyle(.secondary)
+					Toggle(L("Pause low-priority work when the Mac needs the resources"), isOn: $autoShed)
+					Text(L("Updaters, Spotlight and photo analysis, and apps you set to Low priority are slowed first and, if the need lasts, paused. They resume when the Mac has room again, and are never paused for more than 10 minutes at a stretch."))
 						.font(.caption).foregroundStyle(.secondary)
 					Toggle(L("When the Mac is low on memory, freeze apps I haven't used for a while"), isOn: $autoFreezeIdle)
 					if autoFreezeIdle {

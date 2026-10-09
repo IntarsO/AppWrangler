@@ -693,6 +693,7 @@ struct GroupDetail: View {
 					.font(.caption).foregroundStyle(.secondary)
 			} else {
 				handling
+				priorityPicker
 				actions
 			}
 			if group.processes.count > 1 {
@@ -749,6 +750,31 @@ struct GroupDetail: View {
 				Label(L("No suggestions and no automatic actions for this app."), systemImage: "hand.raised")
 					.font(.caption).foregroundStyle(.secondary)
 			}
+		}
+	}
+
+	/// What matters when the Mac needs its resources: low priority work is paused first.
+	private var priorityPicker: some View {
+		let rule = rules.rule(for: group)
+		let effective = Priorities.of(group, rule: rule)
+		let builtIn = rule?.priority == .normal || rule == nil
+		return VStack(alignment: .leading, spacing: 4) {
+			HStack {
+				Text(L("Priority")).font(.caption.weight(.semibold))
+				Spacer()
+				HelpButton(anchor: "priorities").controlSize(.mini)
+			}
+			Picker(L("Priority"), selection: Binding(get: { effective }, set: { model.setPriority(group, $0) })) {
+				ForEach(AppPriority.allCases) { Text($0.title).tag($0) }
+			}
+			.pickerStyle(.segmented)
+			.labelsHidden()
+			Text(effective == .low && builtIn && Priorities.isMaintenance(group)
+				 ? L("Low by default: this is maintenance work. It's paused while the Mac needs its resources. Set High to keep it running.")
+				 : effective == .low ? L("Slowed first, and paused if the Mac needs its resources for a while. It resumes when there's room.")
+				 : effective == .high ? L("Never slowed or paused, even in the background.")
+				 : L("Handled by Auto like most apps."))
+				.font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 		}
 	}
 

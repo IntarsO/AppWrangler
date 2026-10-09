@@ -83,6 +83,9 @@ struct AutoSettings: Equatable {
 	var freezeIdleWhenLowMemory = false
 	var freezeIdleAfter: TimeInterval = 600
 
+	/// Pause low priority work (updaters, indexing, anything you marked Low) while the Mac needs
+	/// its resources for what you're doing; see Priority.swift.
+	var shed = true
 	/// Follow what the Mac needs right now instead of fixed timings: run working
 	/// background apps free when there's room, tighten when strained, and act on
 	/// memory early and gently.
@@ -101,13 +104,14 @@ struct AutoSettings: Equatable {
 }
 
 struct AutoDecision: Equatable {
-	enum Reason: String { case foreground, audio, recent, background }
+	enum Reason: String { case foreground, audio, recent, background, priority }
 
 	/// Plain-language state, for status output.
 	var label: String {
 		switch reason {
 		case .foreground: return "in use — full speed"
 		case .audio: return "playing or recording audio — full speed"
+		case .priority: return "high priority — full speed"
 		case .recent: return "just used — full speed for a few seconds"
 		case .background:
 			if lifted { return "background — running free: it's working and the Mac has room" }
@@ -161,7 +165,7 @@ final class AutoPilot {
 	@discardableResult
 	func decide(groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date], audioPids: Set<pid_t>,
 				systemCPU: Double, onBattery: Bool, ncpu: Int, lowPower: Bool = false, hot: Bool = false,
-				demand: [String: Double] = [:], now: Date = Date()) -> [String: AutoDecision] {
+				demand: [String: Double] = [:], priorities: [String: AppPriority] = [:], now: Date = Date()) -> [String: AutoDecision] {
 		guard settings.enabled else {
 			reset()
 			return [:]
@@ -200,6 +204,8 @@ final class AutoPilot {
 			let reason: AutoDecision.Reason
 			if g.pids.contains(frontmostPid) {
 				reason = .foreground
+			} else if priorities[g.id] == .high {
+				reason = .priority
 			} else if g.pids.contains(where: audioPids.contains) {
 				reason = .audio
 			} else if let t = g.pids.compactMap({ lastActive[$0] }).max(), now.timeIntervalSince(t) < settings.focusGrace {
@@ -218,8 +224,10 @@ final class AutoPilot {
 			let since = backgroundSince[g.id] ?? g.pids.compactMap({ lastActive[$0] }).max() ?? now
 			backgroundSince[g.id] = since
 			var d = AutoDecision(reason: .background)
-			d.efficiency = settings.useEfficiencyCores && now.timeIntervalSince(since) >= grace
-			if d.efficiency && shouldRunFree(g, roomToRunFree: roomToRunFree, now: now) {
+			let low = priorities[g.id] == .low
+			// Low priority work goes to the efficiency cores at once; it never runs free.
+			d.efficiency = settings.useEfficiencyCores && (low || now.timeIntervalSince(since) >= grace)
+			if d.efficiency && !low && shouldRunFree(g, roomToRunFree: roomToRunFree, now: now) {
 				d.efficiency = false
 				d.lifted = true
 			}

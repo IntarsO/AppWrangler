@@ -83,9 +83,11 @@ enum FreezeReason: String {
 	case manual, memoryLimit, memoryPressure
 	/// "Free memory now": idle apps frozen on request; they resume when you switch to them.
 	case idle
+	/// Low priority work paused while the Mac needs its resources; it resumes when there's room again.
+	case shed
 
 	/// Freezes that end by themselves as soon as you switch to the app (or it plays audio).
-	var resumesOnFocus: Bool { self == .memoryPressure || self == .idle }
+	var resumesOnFocus: Bool { self == .memoryPressure || self == .idle || self == .shed }
 }
 
 final class Enforcer {
@@ -223,7 +225,7 @@ final class Enforcer {
 			if let reason = frozen[group.id] {
 				let stillWanted: Bool
 				switch reason {
-				case .manual, .idle: stillWanted = true
+				case .manual, .idle, .shed: stillWanted = true
 				case .memoryLimit: stillWanted = rule.map { $0.memoryLimitEnabled && $0.memoryAction == .freeze } ?? false
 				case .memoryPressure: stillWanted = rule?.pressureAction == .freeze || autoFreezeActive
 				}

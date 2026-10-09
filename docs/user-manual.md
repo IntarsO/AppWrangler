@@ -18,6 +18,7 @@ This manual is also built into the app (no internet needed). Open it from the **
   - [Helper processes](#helper-processes)
   - [Ignoring an app](#ignoring-an-app)
   - [How rules are matched](#how-rules-are-matched)
+- [Priorities](#priorities)
 - [Freeze, quit and force quit](#freeze-quit-and-force-quit)
 - [Free memory now](#free-memory-now)
 - [Pausing all limits](#pausing-all-limits)
@@ -281,6 +282,39 @@ When more than one rule could apply, the most specific wins: **bundle ID → pat
 
 ---
 
+## Priorities
+
+Some work can wait. When the Mac needs its resources for what you're doing, **low priority work is slowed first and, if the need lasts, paused**, so what matters keeps running at full speed. Everything resumes as soon as the Mac has room again.
+
+| Priority | What it means |
+|---|---|
+| **High** | Never capped, never held on the efficiency cores, never frozen: runs at full speed even in the background. For something you depend on, such as a local server or a sync you're waiting for. |
+| **Normal** | The default. [Auto mode](#auto-mode) handles the app as described above. |
+| **Low** | Work that can wait. It goes to the efficiency cores at once (no 30 s wait) and never runs free. |
+
+**What's Low by default.** The built-in list is short on purpose:
+- Spotlight indexing helpers (`mdworker`) and photo and media analysis (`photoanalysisd`, `mediaanalysisd`);
+- updaters from other companies, such as Google Software Update, Microsoft AutoUpdate or an app's own *Updater* helper, but only background apps and processes inside an app or Library folder.
+
+It never includes an app you use, Apple's own updaters, command-line tools from Homebrew or your projects, build tools, or anything critical to macOS.
+
+**When low priority work is paused.** Auto looks at what the Mac needs:
+- **The Mac is busy with what you're doing.** The Mac has been saturated (see *busy* above) for 15 s while the app in front is using at least half a core: low priority work that is using CPU is paused.
+- **Memory is short** (pressure at *warning* or worse) for 5 s: low priority work using 100 MB or more is paused, biggest first.
+- **Never for long.** Nothing is paused for more than 10 minutes at a stretch, and then it runs undisturbed for 5 minutes, so an update can always finish.
+
+**Getting it back.**
+- It resumes once the Mac has had room for 30 s.
+- A card in the panel says what was paused, with **Resume now**, which also stops it being paused again for 10 minutes.
+- Switching to a paused app resumes it at once, and so does turning the setting off.
+- A shell's foreground job is never paused (it would look suspended to the shell).
+
+**Set a priority.** Open an app's details in the main window and pick **High**, **Normal** or **Low** under *Priority*. From the command line: `appwrangler set Backup priority=low`; assistants use `configure_app` with `priority`. For something that is Low by default, set **High** to keep it running, or [ignore it](#ignoring-an-app) to leave it entirely alone.
+
+**Turn it off.** Settings → General → Auto mode → *Pause low-priority work when the Mac needs the resources*, or `appwrangler prefs auto_shed=off`. Low priority apps are still moved to the efficiency cores.
+
+---
+
 ## Freeze, quit and force quit
 
 - **Freeze** suspends the app and all its helpers immediately. It uses no CPU while frozen; its memory stays allocated, and macOS can compress it. **Unfreeze** resumes it exactly where it was. A frozen app shows a spinning cursor if you click its windows; that's expected.
@@ -487,6 +521,7 @@ appwrangler set Slack use_auto=true          # drop Slack's own CPU settings; Au
 | `enabled` | `true` / `false` | *Rule enabled* |
 | `ignored` | `true` / `false` | [Ignore this app](#ignoring-an-app) |
 | `use_auto` | `true` | Turns off the CPU cap and efficiency cores, so [Auto mode](#auto-mode) manages the app |
+| `priority` | `high`, `normal`, `low` | [Priorities](#priorities): low work is paused first when the Mac needs its resources |
 | `power` | `any`, `battery`, `charger` | [When to apply](#when-to-apply-conditions) → Power |
 | `low_power_mode_only` | `true` / `false` | Only in Low Power Mode |
 | `hot_only` | `true` / `false` | Only when the Mac is hot |

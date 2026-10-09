@@ -287,6 +287,10 @@ struct ActionCard: View {
 			HStack(spacing: 6) {
 				Button(L("OK")) { model.dismissAction(action) }
 					.help(L("Keep it this way"))
+				if action.kind == .shed {
+					Button(L("Resume now")) { model.resumeShed() }
+						.help(L("Resume everything that was paused, and don't pause it again for 10 minutes"))
+				}
 				if action.kind == .runaway && !autoManaged {
 					// Auto can't handle this one (Auto is off, or it isn't an app): offer what does.
 					if !autoEnabled { Button(L("Turn on Auto")) { model.turnOnAuto() } }
@@ -330,6 +334,7 @@ struct ActionCard: View {
 		case .autoFreeze, .lowMemoryRule: return "snowflake"
 		case .memoryRule: return "memorychip"
 		case .runaway: return "flame.fill"
+		case .shed: return "pause.circle"
 		}
 	}
 
@@ -338,6 +343,7 @@ struct ActionCard: View {
 		case .autoFreeze, .lowMemoryRule: return .cyan
 		case .memoryRule: return .purple
 		case .runaway: return .orange
+		case .shed: return .indigo
 		}
 	}
 }

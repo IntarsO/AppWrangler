@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
 	let system = SystemStateMonitor()
 	let stats = StatsStore()
 	let autoPilot = AutoPilot()
+	let shedder = Shedder()
 	@Published private(set) var autoSummary = AutoSummary()
 	/// When each app pid was last frontmost (Auto's grace period).
 	private var lastActive: [pid_t: Date] = [:]
@@ -87,7 +88,7 @@ final class AppModel: ObservableObject {
 			self?.stats.record(event, key: ImpactKey.of(group), name: group.name)
 		}
 		enforcer.onFreeze = { [weak self] group, reason in
-			guard reason.resumesOnFocus else { return }	// frozen because of memory
+			guard reason.resumesOnFocus, reason != .shed else { return }	// frozen because of memory
 			self?.stats.record(.memoryFreeze(bytes: Double(group.footprint)), key: ImpactKey.of(group), name: group.name)
 		}
 		enforcer.onAction = { [weak self] group, kind, detail in self?.addAction(group, kind, detail) }
@@ -265,6 +266,7 @@ final class AppModel: ObservableObject {
 		case .autoFreeze: title = L("Auto froze %@", group.name)
 		case .runaway: title = L("%@ is using a lot of CPU", group.name)
 		case .memoryRule, .lowMemoryRule: title = group.name
+		case .shed: title = L("Paused %@", group.name)
 		}
 		panelActions.add(PanelAction(kind: kind, groupID: group.id, name: group.name, bundleID: group.bundleID,
 									 path: group.path, title: title, detail: detail), shown: panelVisible)
@@ -403,6 +405,7 @@ final class AppModel: ObservableObject {
 		guard s.enabled, s.freezeIdleWhenLowMemory, autoMemoryIsShort(state) else { return [] }
 		let groups = autoEligible(snapshot).filter { g in
 			(rules.rule(for: g)?.pressureAction ?? PressureAction.none) == PressureAction.none	// the app's own rule decides otherwise
+				&& Priorities.of(g, rule: rules.rule(for: g)) != .high
 		}
 		let ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
 												 audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt)
@@ -460,15 +463,112 @@ final class AppModel: ObservableObject {
 			return autoPilot.refocus(frontmostPid: frontmostPid, lastActive: lastActive)
 		}
 		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
-		let decisions = autoPilot.decide(groups: autoEligible(snapshot), frontmostPid: frontmostPid, lastActive: lastActive,
+		let eligible = autoEligible(snapshot)
+		let priorities = Dictionary(eligible.compactMap { g -> (String, AppPriority)? in
+			let p = Priorities.of(g, rule: rules.rule(for: g))
+			return p == .normal ? nil : (g.id, p)
+		}, uniquingKeysWith: { a, _ in a })
+		let decisions = autoPilot.decide(groups: eligible, frontmostPid: frontmostPid, lastActive: lastActive,
 										 audioPids: audioPids, systemCPU: snapshot.systemCPU,
 										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu,
-										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand)
+										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand, priorities: priorities)
 		logRunningFree(decisions, groups: snapshot.groups)
 		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
 		// Forget focus times of apps that have quit.
 		if lastActive.count > 200 { lastActive = lastActive.filter { kill($0.key, 0) == 0 } }
 		return decisions
+	}
+
+	// MARK: Priorities
+
+	/// Pause low priority work while the Mac needs its resources for what you're doing, and
+	/// resume it when there's room again (see Priority.swift).
+	private func runShedding(_ snapshot: Snapshot, state: SystemState, now: Date = Date()) {
+		let s = autoPilot.settings
+		guard s.enabled, s.shed, !enforcer.paused else {
+			releaseShed()
+			return
+		}
+		let me = getpid()
+		let foregroundCPU = snapshot.groups.first { $0.pids.contains(frontmostPid) }?.cpu ?? 0
+		let need: Shedder.Need = state.memoryPressure >= 2 ? .memory
+			: autoPilot.busy && foregroundCPU >= 0.5 ? .cpu : .none
+		let candidates: [Shedder.Candidate] = snapshot.groups.compactMap { g in
+			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid),
+				  !g.pids.contains(where: audioPids.contains), Priorities.of(g, rule: rules.rule(for: g)) == .low else { return nil }
+			return Shedder.Candidate(id: g.id, name: g.name, cpu: g.cpu, footprint: g.footprint)
+		}
+		shedder.sync(stillPaused: Set(enforcer.frozen.filter { $0.value == .shed }.keys))
+		let plan = shedder.update(candidates, need: need, now: now)
+		let byID = Dictionary(snapshot.groups.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+		var pausedNow: [AppGroup] = []
+		for id in plan.pause {
+			guard let g = byID[id], !enforcer.isFrozen(id) else { continue }
+			enforcer.freeze(g, reason: .shed)
+			guard enforcer.isFrozen(id) else { continue }
+			pausedNow.append(g)
+			log.add(g.name, need == .memory ? L("Paused: low priority while memory is short")
+					: L("Paused: low priority while the Mac is busy with what you're doing"))
+		}
+		for id in plan.resume where enforcer.frozen[id] == .shed {
+			enforcer.unfreeze(id)
+			log.add(byID[id]?.name ?? id, L("Resumed: the Mac has room again"))
+		}
+		// Anything still frozen as "shed" that the shedder no longer tracks (it quit, or the shedder was reset) is let go.
+		for (id, reason) in enforcer.frozen where reason == .shed && shedder.paused[id] == nil && !pausedNow.contains(where: { $0.id == id }) {
+			enforcer.unfreeze(id)
+		}
+		if !pausedNow.isEmpty { addShedCard(pausedNow, need: need) }
+		if !plan.isEmpty { reapply(); writeState() }
+	}
+
+	/// Resume everything that was paused, and keep it from being paused again for ten minutes.
+	func resumeShed() {
+		let ids = shedder.resumeAll()
+		for id in ids where enforcer.frozen[id] == .shed { enforcer.unfreeze(id) }
+		panelActions.remove(kind: .shed)
+		if !ids.isEmpty { log.add("AppWrangler", L("Resumed the low-priority work you asked for; it won't be paused again for 10 minutes")) }
+		reapply()
+		writeState()
+	}
+
+	private func releaseShed() {
+		guard !enforcer.frozen.filter({ $0.value == .shed }).isEmpty || !shedder.paused.isEmpty else { return }
+		for (id, reason) in enforcer.frozen where reason == .shed { enforcer.unfreeze(id) }
+		shedder.reset()
+		panelActions.remove(kind: .shed)
+	}
+
+	private func addShedCard(_ groups: [AppGroup], need: Shedder.Need) {
+		guard let first = groups.first else { return }
+		let names = groups.map(\.name)
+		let shown = names.prefix(3).joined(separator: ", ") + (names.count > 3 ? L(" and %d more", names.count - 3) : "")
+		panelActions.remove(kind: .shed)
+		panelActions.add(PanelAction(
+			kind: .shed, groupID: first.id, name: first.name, bundleID: first.bundleID, path: first.path,
+			title: groups.count == 1 ? L("Paused %@", first.name) : L("Paused %d low-priority tasks", groups.count),
+			detail: shown + ". " + (need == .memory ? L("Memory is short, so work that can wait is paused.")
+									 : L("The Mac is busy with what you're doing, so work that can wait is paused.")) + " " + L("It resumes when there's room again.")),
+			shown: panelVisible)
+	}
+
+	/// Low priority: set by you; or built in for updaters and indexing helpers.
+	func setPriority(_ group: AppGroup, _ priority: AppPriority) {
+		let existing = rules.rule(for: group)
+		var rule = existing ?? AppRule.forGroup(group)
+		rule.priority = priority
+		rule = rule.sanitized()
+		if !rule.hasLimits && !rule.ignored {
+			guard let existing else { return }
+			rules.remove(id: existing.id)
+			ChangeJournal.record(before: existing, after: nil, source: "window", store: rules)
+		} else {
+			rules.upsert(rule)
+			ChangeJournal.record(before: existing, after: rules.rules.first { $0.id == rule.id }, source: "window", store: rules)
+		}
+		rules.saveNow()
+		log.add(group.name, priority == .normal ? L("Normal priority") : L("%@ priority", priority.title))
+		reapply()
 	}
 
 	/// Apps that started or stopped running free: say so in the activity log.
@@ -500,6 +600,7 @@ final class AppModel: ObservableObject {
 		let full = uiVisible || (runawayEnabled && Date().timeIntervalSince(lastFullScan) >= 5)
 		var matcher = rules.matcher(for: state)
 		matcher.groupIDs.formUnion(enforcer.trackedGroupIDs)
+		if autoPilot.settings.enabled && autoPilot.settings.shed { matcher.patterns.append(contentsOf: Priorities.measuredNames) }
 		if !full && matcher.isEmpty && !needsBackgroundSampling {
 			// Nothing to watch: just make sure limits from removed rules are lifted.
 			lastSnapshot = Snapshot()
@@ -531,6 +632,7 @@ final class AppModel: ObservableObject {
 		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
 					   autoFreeze: autoFreezeCandidates(snapshot, state: state, paced: true), autoFreezeActive: autoFreezeActive,
 					   autoLowMemory: autoFreezeActive ? autoMemoryIsShort(state) : nil)
+		runShedding(snapshot, state: state)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
 		let efficiency = snapshot.groups.reduce(0.0) { $0 + (enforcer.isInBackgroundMode($1) ? $1.cpu : 0) }

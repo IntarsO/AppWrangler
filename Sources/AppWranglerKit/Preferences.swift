@@ -31,6 +31,7 @@ enum PreferenceSettings {
 		Spec(key: "auto_share_cpu", defaultsKey: Prefs.autoShareCPU, kind: .bool, help: "Auto shares the CPU fairly between background apps when the Mac is busy."),
 		Spec(key: "auto_busy_percent", defaultsKey: Prefs.autoBusyPercent, kind: .number(30...95), help: "Whole-Mac CPU % above which the Mac counts as busy (default 75; at most 50 on battery)."),
 		Spec(key: "auto_adaptive", defaultsKey: Prefs.autoAdaptive, kind: .bool, help: "Auto follows what the Mac needs: working background apps run free when it has room, apps are held sooner on battery or when hot, and memory is relieved early, one app at a time."),
+		Spec(key: "auto_shed", defaultsKey: Prefs.autoShed, kind: .bool, help: "Pause low-priority work (updaters, Spotlight and photo analysis, apps you marked Low) while the Mac needs its resources for what you're doing; it resumes when there's room again."),
 		Spec(key: "freeze_idle", defaultsKey: Prefs.autoFreezeIdle, kind: .bool, help: "Auto freezes apps you haven't used for a while when the Mac is low on memory."),
 		Spec(key: "freeze_idle_minutes", defaultsKey: Prefs.autoFreezeIdleMinutes, kind: .number(1...1440), help: "How long an app must be unused first (default 10)."),
 		Spec(key: "low_memory_level", defaultsKey: Prefs.pressureLevel, kind: .choice(["warning": 2, "critical": 4]), help: "Memory pressure at which low-memory actions happen: warning or critical (default)."),

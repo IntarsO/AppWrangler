@@ -70,7 +70,7 @@ appwrangler set Dropbox efficiency_cores=on power=battery schedule=09:00-18:00 w
 appwrangler set Slack use_auto=true      # remove its own CPU settings; Auto mode manages it
 ```
 
-Keys: `cpu_limit` (0 = off), `efficiency_cores`, `background_only`, `memory_limit_mb` (0 = off), `memory_action`, `low_memory_action`, `include_helpers`, `enabled`, `ignored`, `use_auto`, `power`, `low_power_mode_only`, `hot_only`, `schedule` (`HH:MM-HH:MM` or `off`), `weekdays`. Booleans accept `true/false`, `on/off` or `yes/no`. The [full table](user-manual.md#every-setting-of-an-app) explains each one. A rule left with nothing in it is removed, so Auto mode manages the app again.
+Keys: `cpu_limit` (0 = off), `efficiency_cores`, `background_only`, `memory_limit_mb` (0 = off), `memory_action`, `low_memory_action`, `include_helpers`, `enabled`, `ignored`, `use_auto`, `priority` (`high`/`normal`/`low`), `power`, `low_power_mode_only`, `hot_only`, `schedule` (`HH:MM-HH:MM` or `off`), `weekdays`. Booleans accept `true/false`, `on/off` or `yes/no`. The [full table](user-manual.md#every-setting-of-an-app) explains each one. A rule left with nothing in it is removed, so Auto mode manages the app again.
 
 ### `status`
 Shows whether AppWrangler is running, whether limits are paused, what's frozen, any apps currently flagged by [runaway alerts](user-manual.md#runaway-alerts), and how many rules are active.
@@ -94,7 +94,7 @@ appwrangler prefs freeze_idle=on freeze_idle_minutes=30 low_memory_level=warning
 appwrangler prefs auto_efficiency_after=60 runaway_alerts=off
 ```
 
-Keys: `auto`, `auto_adaptive`, `auto_efficiency_cores`, `auto_efficiency_after` (s), `auto_share_cpu`, `auto_busy_percent`, `freeze_idle`, `freeze_idle_minutes`, `low_memory_level` (`warning`/`critical`), `runaway_alerts`, `runaway_percent`, `runaway_minutes`, `notifications`, `menu_bar_cpu`, `show_panel_on_action`, `pause_shortcut`. Values are checked first: nothing changes if one is invalid. `--json` prints the current values as JSON.
+Keys: `auto`, `auto_adaptive`, `auto_shed`, `auto_efficiency_cores`, `auto_efficiency_after` (s), `auto_share_cpu`, `auto_busy_percent`, `freeze_idle`, `freeze_idle_minutes`, `low_memory_level` (`warning`/`critical`), `runaway_alerts`, `runaway_percent`, `runaway_minutes`, `notifications`, `menu_bar_cpu`, `show_panel_on_action`, `pause_shortcut`. Values are checked first: nothing changes if one is invalid. `--json` prints the current values as JSON.
 
 ### `free-memory`
 Freezes the apps you haven't used for a while, right now, whatever the memory pressure. Each app resumes the moment you switch to it. It never freezes the app in use, audio, busy apps, messaging and calls apps, terminals, IDEs, virtual machines or menu bar apps. [More](user-manual.md#free-memory-now).

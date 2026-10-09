@@ -130,6 +130,7 @@ enum Prefs {
 	static let autoFreezeIdle = "AWAutoFreezeIdle"
 	static let autoFreezeIdleMinutes = "AWAutoFreezeIdleMinutes"
 	static let autoAdaptive = "AWAutoAdaptive"
+	static let autoShed = "AWAutoShed"
 	static let dismissedAdvice = "AWDismissedAdvice"
 	static let mainWindowOpen = "AWMainWindowOpen"
 	static let showPanelOnAction = "AWShowPanelOnAction"
@@ -146,6 +147,7 @@ enum Prefs {
 		s.freezeIdleWhenLowMemory = d.bool(forKey: autoFreezeIdle)
 		s.freezeIdleAfter = min(max(d.double(forKey: autoFreezeIdleMinutes), 1), 24 * 60) * 60
 		s.adaptive = d.bool(forKey: autoAdaptive)
+		s.shed = d.bool(forKey: autoShed)
 		return s
 	}
 
@@ -173,6 +175,7 @@ enum Prefs {
 			autoFreezeIdle: false,
 			autoFreezeIdleMinutes: 10,
 			autoAdaptive: true,
+			autoShed: true,
 			showPanelOnAction: true,
 		])
 	}

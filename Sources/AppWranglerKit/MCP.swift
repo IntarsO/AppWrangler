@@ -439,6 +439,7 @@ final class MCPServer {
 		prop("enabled", ["type": "boolean"])
 		prop("ignored", ["type": "boolean"])
 		prop("use_auto", ["type": "boolean"])
+		prop("priority", ["type": "string", "enum": ["high", "normal", "low"]])
 		prop("power", ["type": "string", "enum": ["any", "battery", "charger"]])
 		prop("low_power_mode_only", ["type": "boolean"])
 		prop("hot_only", ["type": "boolean"])

@@ -25,6 +25,8 @@ All notable changes to AppWrangler are documented here. The format follows [Keep
   - frozen apps resume one at a time (every 10 s) once memory has been fine for a minute;
   - apps running free show in the panel's Auto line, in the app's row, and in the activity log.
 
+- **Priorities.** Each app or process is *High*, *Normal* or *Low* priority. When the Mac needs its resources for what you're doing (it's saturated while the app in front works, or memory is short), low priority work is moved to the efficiency cores at once and, if the need lasts, **paused**; it resumes when the Mac has had room for 30 s, and is never paused for more than 10 minutes at a stretch. The built-in Low list is short and conservative: Spotlight and photo analysis helpers, and third-party updaters (Google Software Update, Microsoft AutoUpdate…). High priority apps are never capped, held or frozen. Pick a priority in an app's details, with `appwrangler set <app> priority=low`, or through `configure_app`. A card in the panel says what was paused, with **Resume now**. Switch it off with `appwrangler prefs auto_shed=off`.
+
 ### Added (for contributors)
 - Tests for the chart history and the cards, and for adaptive Auto (running free, battery, cooldown, early and gradual memory handling).
 - **The GitHub wiki is generated from the docs.** `scripts/sync-wiki.py` builds it (and checks every link); a workflow publishes it when `WIKI_SYNC` is `on`.
