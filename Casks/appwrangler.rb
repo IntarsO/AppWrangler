@@ -5,8 +5,8 @@
 #
 # Updated for each release (version + sha256 of the release zip).
 cask "appwrangler" do
-  version "1.4.1"
-  sha256 "942f904d0eb3ff0e347b55b4b9375253a9f0d932c9ea868c449b85185a9febbd"
+  version "1.5.0"
+  sha256 "aec4779d358e88193350263af92a67ab60694ed36e9f976e17e336a685a6a04b"
 
   url "https://github.com/IntarsO/AppWrangler/releases/download/v#{version}/AppWrangler-#{version}.zip"
   name "AppWrangler"
