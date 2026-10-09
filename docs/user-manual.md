@@ -6,7 +6,8 @@ This manual is also built into the app (no internet needed). Open it from the **
 
 - [Key ideas](#key-ideas)
 - [Auto mode](#auto-mode)
-- [The main panel](#the-main-panel)
+- [The menu bar panel](#the-menu-bar-panel)
+- [The main window](#the-main-window)
 - [Rules](#rules)
   - [Only while the app is in the background](#only-while-the-app-is-in-the-background)
   - [Limit CPU](#limit-cpu)
@@ -101,15 +102,46 @@ The **Auto** switch in the panel header turns it off; `appwrangler auto on|off` 
 
 ---
 
-## The main panel
+## The menu bar panel
 
-Click the menu bar icon.
+Click the menu bar icon. The panel is a quick overview; for the full list of apps, click **All apps** to open the [main window](#the-main-window).
 
-![The AppWrangler panel: CPU and memory meters, the Auto mode line, suggestions for this Mac, and running apps with their rules](images/panel.png)
+![The AppWrangler panel: CPU and memory charts, the Auto mode line, a card about an app Auto just froze, the busiest apps and recent activity](images/panel.png)
 
 | Area | What it shows |
 |---|---|
-| Header | Chip and core layout (e.g. *4P + 4E*), total CPU, memory used and memory pressure, and an **Active / Paused** switch. A line appears when you're on battery, in Low Power Mode, or the Mac is hot. |
+| Header | The chip and core layout (e.g. *4P + 4E*), an **Active / Paused** switch, the **Auto** switch with what Auto is doing (apps managed, in use, on efficiency cores, frozen, whether the Mac is busy), and a line when you're on battery, in Low Power Mode, or the Mac is hot. |
+| Charts | The last 10 minutes of CPU and memory. The CPU chart has a dashed green line for the share used by apps on efficiency cores. The memory chart is shaded while the Mac was short of memory. |
+| Cards | Something AppWrangler just did, with a way to set that app up by hand (see below). |
+| Suggestions | A line with the number of [suggestions](#suggestions-what-to-change) and the first one. Click it to see and apply them in the main window. |
+| Busiest apps | The five apps using the most CPU, with what Auto or a rule is doing to each. Click one to open it in the main window. |
+| Recently | The last three things AppWrangler did. The full list is in Settings → Activity. |
+| Footer | CPU time saved today, **All apps**, **?** (Help), the gear for **Settings…**, and **Quit**. |
+
+**Cards.** When AppWrangler does something on its own, the panel shows a card. It's shown for 30 seconds from when you see it, and the event stays in **Recently** afterwards. Cards appear when:
+
+- Auto froze an idle app because memory ran low;
+- an app's own [memory limit](#memory-limit) or low-memory setting froze, quit or warned about it;
+- a background app used a lot of CPU for a while ([runaway alert](#runaway-alerts)).
+
+The buttons:
+
+- **OK** leaves things as they are. Auto stays in charge.
+- **Set manually…** opens the app in the main window with its settings ready to edit.
+- **Leave *app* alone** (for Auto's own actions) keeps the app out of Auto mode, as [ignoring it](#ignoring-an-app) does. If the app was frozen, it's resumed. `appwrangler undo` reverts it.
+- For a runaway app that Auto doesn't manage, **Limit 50%** and **E-cores** create a rule right away.
+
+By default, nothing needs a click: everything is handled by Auto mode.
+
+---
+
+## The main window
+
+The main window has the full list of apps, with the details and settings of each. Open it with **All apps** in the panel, with *Open in a Window* in the menu bar icon's right-click menu, or by clicking an app under **Busiest apps** or **Set manually…** on a card (the app is then expanded for you).
+
+| Area | What it shows |
+|---|---|
+| Header | Chip and core layout, total CPU, memory used and memory pressure, an **Active / Paused** switch and the **Auto** line. A line appears when you're on battery, in Low Power Mode, or the Mac is hot. |
 | Alerts | Orange banner with [runaway alerts](#runaway-alerts), if any. |
 | Suggestions | Yellow section with [recommended settings](#suggestions-what-to-change) for what's running. Each has one-click buttons to apply it, and **×** hides it for a week. Click the header to collapse it. |
 | Search | Matches names, bundle IDs and descriptions. Try "browser", "sync" or "Spotlight". |
@@ -117,8 +149,8 @@ Click the menu bar icon.
 | Sections | **Apps**, **Menu bar & background apps**, **macOS system services**, **Processes**. Click a header to collapse or expand it. Searching shows matches in every section. |
 | Footer | Number of active rules and CPU time saved today, **?** (Help), **Settings…**, **Quit**. |
 
-**Open it in a window.** The window button (top right of the panel) opens the same view in a normal, resizable window that stays open, like Activity Monitor. *Open in a Window* in the menu bar icon's right-click menu does the same.
-- While the window is open, AppWrangler shows a Dock icon and appears in ⌘-Tab.
+The window is resizable and stays open, like Activity Monitor.
+- While it's open, AppWrangler shows a Dock icon and appears in ⌘-Tab.
 - If you quit AppWrangler with the window open, it reopens next time.
 - The menu bar panel keeps working as before.
 
@@ -140,7 +172,7 @@ Click the menu bar icon.
   - a safety note: *Safe to limit*, *Limit with care*, or *Critical to macOS*;
   - the bundle ID and path. You can select and copy them.
 - **Live stats:** CPU, memory, energy (watts), disk read/write per second, threads.
-- **Chart:** CPU and memory over the last 10 minutes, with peaks. History is collected while AppWrangler is measuring the app: apps with rules, every app while Auto mode is on, and everything while the panel is open.
+- **Chart:** CPU and memory over the last 10 minutes, with peaks. History is collected while AppWrangler is measuring the app: apps with rules, every app while Auto mode is on, and everything while the panel or window is open.
 - **Throttling status**, e.g. *"Throttling: using 25%, allowed to run 12% of the time"*.
 - **The rule editor** (described below) and buttons for **Freeze**, **Quit**, **Force Quit** and **Remove Rule**.
 - **Processes (N):** every process in the group, with its own CPU and memory.
@@ -270,7 +302,7 @@ Use the **Active/Paused** switch in the header, *Pause All Limits* in the right-
 
 ## Runaway alerts
 
-When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows an orange alert at the top of the panel, with **Limit 50%**, **E-cores** and **×** (dismiss for an hour). It also sends a notification with three buttons:
+When an app **you haven't made a rule for** averages more than 80% CPU (adjustable) for 3 minutes (adjustable) while **not in front**, AppWrangler shows a card in the panel and an orange alert at the top of the main window, with **Limit 50%**, **E-cores** and **×** (dismiss for an hour). If Auto already manages the app, the card offers **Set manually…** and **Leave *app* alone** instead. It also sends a notification with three buttons:
 
 - **Limit to 50%** creates a CPU-limit rule.
 - **Use efficiency cores** creates an efficiency-cores rule.
@@ -349,7 +381,7 @@ AppWrangler has a widget for the desktop and Notification Center (macOS 14 Sonom
 - **Auto** turns Auto mode on or off (highlighted when on);
 - **Free memory** runs [Free memory now](#free-memory-now).
 
-The widget updates within a few seconds of a button press. Click anywhere else on the widget to open AppWrangler's [window](#the-main-panel).
+The widget updates within a few seconds of a button press. Click anywhere else on the widget to open AppWrangler's [window](#the-main-window).
 
 **Colour or grey?** With the default widget style, macOS shows desktop widgets in full colour only when the desktop itself is active. While you're working in an app, it shows them in a muted, monochrome style; AppWrangler's rings and status then take your accent colour. To keep them in colour all the time, choose **System Settings → Desktop & Dock → Widgets → Widget style → Full-color**.
 
@@ -364,7 +396,7 @@ The widget updates within a few seconds of a button press. Click anywhere else o
 
 AppWrangler looks at your Mac and recommends settings. You'll find them:
 
-- in the **Suggestions** section of the panel, with buttons that apply them in one click;
+- in the **Suggestions** section of the main window (the panel links to it), with buttons that apply them in one click;
 - in Terminal:
 
   ```bash
@@ -507,7 +539,7 @@ AppWrangler responds to `appwrangler://` links. The widget's buttons use them, a
 
 | Link | Does |
 |---|---|
-| `appwrangler://window` | Opens AppWrangler's [window](#the-main-panel) |
+| `appwrangler://window` | Opens AppWrangler's [window](#the-main-window) |
 | `appwrangler://settings` | Opens Settings |
 | `appwrangler://help/user-manual#auto-mode` | Opens Help at a page and section (`getting-started`, `user-manual`, `mcp`, `cli`, `faq`, `how-it-works`) |
 | `appwrangler://pause`, `…/resume`, `…/toggle-pause` | [Pauses or resumes](#pausing-all-limits) all CPU limits |

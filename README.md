@@ -51,7 +51,7 @@ Or download the zip from [Releases](https://github.com/IntarsO/AppWrangler/relea
 | 🧠 **Memory limit** | When an app's memory stays above your limit, get notified, or freeze, quit or force-quit it. (macOS doesn't let one app hard-cap another's memory, so AppWrangler watches and acts.) |
 | 🚨 **Low-memory protection** | When your Mac runs short of memory, automatically freeze or quit apps you've marked as expendable, and resume them afterwards. **Free memory now** does it on demand. |
 | ⏱ **Conditions** | Make any rule apply only on battery or on the charger, in Low Power Mode, when the Mac is hot, or during set hours and days. |
-| 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — an alert in the panel and a notification with *Limit*, *E-cores* and *Ignore* buttons. |
+| 🔥 **Runaway alerts** | "Chrome Helper has used 150% CPU for 3 minutes" — a card in the panel and a notification with *Limit*, *E-cores* and *Ignore* buttons. |
 | ❄️ **Freeze, quit, force quit** | Suspend any app instantly and resume it later. |
 | 📊 **Impact** | How much CPU time and energy it saved, how often your Mac ran short of memory and how much it swapped, and what AppWrangler itself cost to run. |
 | 💡 **Suggestions** | "Brave uses more than your 8 GB of RAM — here's what to do." Concrete recommendations, each with the reason, the benefit and a one-click fix. `appwrangler undo` takes changes back. |
