@@ -98,6 +98,8 @@ final class Enforcer {
 	let controller: ProcessController
 	/// (app name, message, post a notification?)
 	var onEvent: ((String, String, Bool) -> Void)?
+	/// Something the menu bar panel shows as a card, with a way to set the app up by hand.
+	var onAction: ((AppGroup, PanelAction.Kind, String) -> Void)?
 	/// Actions for the impact statistics: (group, event).
 	var onImpact: ((AppGroup, StatsStore.Event) -> Void)?
 	/// Which pressure level counts as "low memory": 2 = warning, 4 = critical.
@@ -230,6 +232,7 @@ final class Enforcer {
 				pressureActed.insert(group.id)
 				onImpact?(group, .lowMemoryAction)
 				onEvent?(group.name, L("Mac is low on memory — frozen by Auto mode until you switch to it"), true)
+				onAction?(group, .autoFreeze, L("Mac is low on memory. It resumes when you switch to it."))
 				freeze(group, reason: .memoryPressure)
 			}
 
@@ -395,6 +398,7 @@ final class Enforcer {
 			memoryTriggered.insert(group.id)
 			let detail = L("Memory %@ exceeded limit %@", Fmt.bytes(footprint), Fmt.megabytes(rule.memoryLimitMB))
 			let quits = rule.memoryAction == .quit || rule.memoryAction == .forceQuit
+			onAction?(group, .memoryRule, detail)
 			onImpact?(group, .memoryAction(freedBytes: quits ? Double(group.footprint) : 0))
 			switch rule.memoryAction {
 			case .notify:
@@ -423,9 +427,11 @@ final class Enforcer {
 		case .freeze:
 			guard frozen[group.id] == nil else { return }
 			onEvent?(group.name, L("Mac is low on memory — frozen"), true)
+			onAction?(group, .lowMemoryRule, L("Mac is low on memory — frozen"))
 			freeze(group, reason: .memoryPressure)
 		case .quit:
 			onEvent?(group.name, L("Mac is low on memory — quitting"), true)
+			onAction?(group, .lowMemoryRule, L("Mac is low on memory — quitting"))
 			quit(group)
 		}
 	}

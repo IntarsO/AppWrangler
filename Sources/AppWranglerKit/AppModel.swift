@@ -24,6 +24,13 @@ final class AppModel: ObservableObject {
 	let log = ActivityLog()
 	let enforcer: Enforcer
 	let history = HistoryStore()
+	/// System CPU and memory for the menu bar panel's charts.
+	let systemHistory = SystemHistory()
+	/// Cards in the menu bar panel for things AppWrangler just did.
+	@Published private(set) var panelActions = PanelActions()
+	/// An app to show, expanded, in the main window ("Set manually…").
+	@Published var focusRequest: String?
+	private var panelVisible = false
 	let runaway = RunawayDetector()
 	let system = SystemStateMonitor()
 	let stats = StatsStore()
@@ -83,6 +90,7 @@ final class AppModel: ObservableObject {
 			guard reason.resumesOnFocus else { return }	// frozen because of memory
 			self?.stats.record(.memoryFreeze(bytes: Double(group.footprint)), key: ImpactKey.of(group), name: group.name)
 		}
+		enforcer.onAction = { [weak self] group, kind, detail in self?.addAction(group, kind, detail) }
 		log.notifier = { title, body in Notifier.shared.post(title: title, body: body) }
 	}
 
@@ -236,6 +244,52 @@ final class AppModel: ObservableObject {
 	func surfaceDidDisappear() {
 		visibleSurfaces = max(0, visibleSurfaces - 1)
 		if visibleSurfaces == 0 { reschedule() }
+	}
+
+	// MARK: Panel cards
+
+	/// The menu bar panel opened: cards it shows now hide 30 s from now.
+	func panelDidAppear() {
+		panelVisible = true
+		panelActions.markShown(at: Date())
+	}
+
+	func panelDidDisappear() {
+		panelVisible = false
+		panelActions.prune(at: Date())
+	}
+
+	private func addAction(_ group: AppGroup, _ kind: PanelAction.Kind, _ detail: String) {
+		let title: String
+		switch kind {
+		case .autoFreeze: title = L("Auto froze %@", group.name)
+		case .runaway: title = L("%@ is using a lot of CPU", group.name)
+		case .memoryRule, .lowMemoryRule: title = group.name
+		}
+		panelActions.add(PanelAction(kind: kind, groupID: group.id, name: group.name, bundleID: group.bundleID,
+									 path: group.path, title: title, detail: detail), shown: panelVisible)
+	}
+
+	/// "OK": leave things as they are (Auto keeps handling the app).
+	func dismissAction(_ action: PanelAction) {
+		panelActions.dismiss(action.id)
+		if action.kind == .runaway { runaway.snooze(action.groupID); suggestions.removeAll { $0.groupID == action.groupID } }
+	}
+
+	/// "Leave … alone": keep the app out of Auto mode and automatic actions (undoable).
+	func leaveAlone(_ action: PanelAction) {
+		applySuggestion(.ignore, info: action.info)
+		if let group = snapshot.groups.first(where: { $0.id == action.groupID }) ?? lastSnapshot.groups.first(where: { $0.id == action.groupID }),
+		   isFrozen(group) {
+			unfreeze(group)
+		}
+		panelActions.dismiss(action.id)
+	}
+
+	/// "Set manually…": show the app in the main window with its settings open.
+	func showInWindow(_ action: PanelAction) {
+		panelActions.dismiss(action.id)
+		focusRequest = action.groupID
 	}
 
 	// MARK: Scheduling
@@ -410,6 +464,11 @@ final class AppModel: ObservableObject {
 					   autoFreeze: autoFreezeCandidates(snapshot, state: state), autoFreezeActive: autoFreezeActive)
 		onSystemCPU?(snapshot.systemCPU)
 		history.record(snapshot)
+		let efficiency = snapshot.groups.reduce(0.0) { $0 + (enforcer.isInBackgroundMode($1) ? $1.cpu : 0) }
+		systemHistory.record(SystemPoint(time: snapshot.date, cpu: snapshot.systemCPU,
+										 efficiency: min(snapshot.systemCPU, efficiency / Double(max(SystemInfo.ncpu, 1))),
+										 memoryUsed: snapshot.memory.used, pressure: Int(snapshot.memory.pressure_level)))
+		if !panelVisible && !panelActions.items.isEmpty { panelActions.prune(at: Date()) }
 		if Date().timeIntervalSince(lastWidgetWrite) >= 60 { updateWidget() }
 		if Date().timeIntervalSince(lastUsageWrite) >= 60 {
 			lastUsageWrite = Date()
@@ -443,6 +502,7 @@ final class AppModel: ObservableObject {
 			suggestions.insert(s, at: 0)
 			stats.record(.runawayAlert, key: "bundle:" + (s.bundleID ?? s.path), name: s.name)
 			let body = L("Has used %@ CPU for %d minutes in the background.", Fmt.percent(s.averageCPU), s.minutes)
+			if let group = snapshot.groups.first(where: { $0.id == s.groupID }) { addAction(group, .runaway, body) }
 			log.add(s.name, body)
 			Notifier.shared.post(title: L("%@ is using a lot of CPU", s.name), body: body, suggestion: [
 				"groupID": s.groupID, "name": s.name, "bundleID": s.bundleID ?? "", "path": s.path,
@@ -473,6 +533,7 @@ final class AppModel: ObservableObject {
 		ChangeJournal.record(before: before, after: rules.rules.first { $0.id == rule.id }, source: "alert", store: rules)
 		runaway.snooze(groupID)
 		suggestions.removeAll { $0.groupID == groupID }
+		for card in panelActions.items where card.groupID == groupID { panelActions.dismiss(card.id) }
 		log.add(name, rule.summary)
 		writeState()
 	}
@@ -489,6 +550,13 @@ final class AppModel: ObservableObject {
 		self.autoSummary = summary
 		self.advice = advice
 		demoMode = true
+	}
+
+	/// Demo.swift: chart history, cards and recent activity for the menu bar panel.
+	func setDemoPanel(history points: [SystemPoint], actions: [PanelAction], events: [ActivityEvent]) {
+		systemHistory.replace(with: points)
+		for a in actions.reversed() { panelActions.add(a, shown: false) }
+		log.replace(with: events)
 	}
 	#endif
 
