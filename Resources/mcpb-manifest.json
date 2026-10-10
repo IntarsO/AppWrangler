@@ -127,6 +127,10 @@
       "description": "Freeze apps the user hasn't used for a while; each resumes on switch"
     },
     {
+      "name": "make_room",
+      "description": "Make room for one app for a while (e.g. a video call); everything else steps back"
+    },
+    {
       "name": "pause_limits",
       "description": "Pause or resume all CPU limits"
     },

@@ -160,7 +160,7 @@ import Testing
 			let d = decide(p, g, at: t, priority: .high, system: t > 100 ? 0.95 : 0.2)
 			#expect(d.reason == .priority && !d.efficiency && d.cap == nil)
 		}
-		#expect(AutoDecision(reason: .priority).label.contains("high priority"))
+		#expect(AutoDecision(reason: .priority).label.contains("prioritized"))
 	}
 
 	@Test func lowPriorityGoesToTheEfficiencyCoresAtOnceAndNeverRunsFree() {
@@ -195,7 +195,7 @@ import Testing
 		#expect(!rule.hasLimits)
 		rule.priority = .high
 		#expect(rule.hasLimits && rule.isActive)
-		#expect(rule.summary.contains("High priority"))
+		#expect(rule.summary.contains("prioritized"))
 	}
 
 	@Test func priorityIsASettingForTheCommandLineAndAssistants() throws {

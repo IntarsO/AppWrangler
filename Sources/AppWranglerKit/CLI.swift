@@ -49,7 +49,7 @@ enum CLI {
 	static let commands: Set<String> = [
 		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
-		"suggest", "show", "set", "undo", "free-memory", "prefs",
+		"suggest", "show", "set", "undo", "free-memory", "prefs", "make-room",
 	]
 
 	static func isInvocation(_ args: [String]) -> Bool {
@@ -349,6 +349,29 @@ enum CLI {
 				return 0
 			}
 
+		case "make-room":
+			guard let first = rest.first else {
+				print(AppState.read()?.roomFor ?? "Not making room for any app.")
+				return 0
+			}
+			if first.lowercased() == "off" {
+				guard postToApp("make-room", "off") else { return fail("AppWrangler isn't running") }
+				print("make-room off: sent")
+				return 0
+			}
+			var minutes = 60.0
+			if rest.count >= 2 {
+				guard let m = RoomFor.parseDuration(rest[1]) else { return fail("duration must look like 30m, 1h, 3h or until-stop") }
+				minutes = m
+			}
+			let wanted = first.lowercased()
+			guard apps.contains(where: { $0.name.lowercased() == wanted || $0.bundleID?.lowercased() == wanted }) else {
+				return fail("\(first) isn't running; make room for a running app")
+			}
+			guard postToApp("make-room", "\(minutes)|\(first)") else { return fail("AppWrangler isn't running") }
+			print("make-room \(first) " + (minutes == 0 ? "until you stop it" : "for \(Fmt.duration(minutes * 60))") + ": sent")
+			return 0
+
 		case "freeze", "unfreeze":
 			guard rest.count >= 1 else { return fail("usage: \(command) <app>") }
 			if command == "freeze", let problem = RuleTargets.check(rest[0]) { return fail(problem.description) }
@@ -496,6 +519,8 @@ enum CLI {
 	  ignore <app>                   never suggest limits for this app
 	  unlimit <app>                  delete the rule
 	  freeze|unfreeze <app>          suspend / resume an app now (AppWrangler must be running)
+	  make-room <app> [30m|1h|3h|until-stop]   give one app everything it needs for a while (default 1h)
+	  make-room off | make-room      stop it | show what it's doing
 	  pause|resume                   pause or resume all CPU limits
 	  prefs [key=value …]            show or change app-wide settings (Auto, low memory, alerts…)
 	  free-memory                    freeze apps unused for a while now (they resume when you switch to them)

@@ -123,14 +123,17 @@ struct AutoSettings: Equatable {
 }
 
 struct AutoDecision: Equatable {
-	enum Reason: String { case foreground, audio, recent, background, priority }
+	enum Reason: String { case foreground, audio, recent, background, priority, room }
 
 	/// Plain-language state, for status output.
 	var label: String {
 		switch reason {
 		case .foreground: return "in use — full speed"
 		case .audio: return "playing or recording audio — full speed"
-		case .priority: return "high priority — full speed"
+		case .priority:
+			if let cap { return String(format: "prioritized — sharing %.0f%% while the Mac is saturated", cap * 100) }
+			return "prioritized — full speed"
+		case .room: return "making room for it — full speed, everything else steps back"
 		case .recent: return "just used — full speed for a few seconds"
 		case .background:
 			if away { return "background — running free while you're away" }
@@ -197,7 +200,7 @@ final class AutoPilot {
 	func decide(groups: [AppGroup], frontmostPid: pid_t, lastActive: [pid_t: Date], audioPids: Set<pid_t>,
 				systemCPU: Double, onBattery: Bool, ncpu: Int, lowPower: Bool = false, hot: Bool = false,
 				demand: [String: Double] = [:], priorities: [String: AppPriority] = [:], away: Bool = false,
-				likely: Set<String> = [], now: Date = Date()) -> [String: AutoDecision] {
+				likely: Set<String> = [], roomFor: String? = nil, now: Date = Date()) -> [String: AutoDecision] {
 		guard settings.enabled else {
 			reset()
 			return [:]
@@ -207,7 +210,9 @@ final class AutoPilot {
 		// clearly under it (threshold − 15 points) to stop.
 		// Only samples at least ~1 s apart count, so extra quick samples (after a
 		// launch or a setting change) can't flip the state on a tiny window.
-		let threshold = onBattery ? settings.busyThresholdOnBattery : settings.busyThreshold
+		// Making room for an app: the Mac counts as busy sooner, so the rest steps back sooner.
+		let making = roomFor.map { id in groups.contains { $0.id == id } } ?? false
+		let threshold = (onBattery ? settings.busyThresholdOnBattery : settings.busyThreshold) - (making ? 0.15 : 0)
 		if lastLoadSample.map({ now.timeIntervalSince($0) >= 0.9 }) ?? true {
 			lastLoadSample = now
 			busyStreak = systemCPU >= threshold ? busyStreak + 1 : 0
@@ -220,8 +225,9 @@ final class AutoPilot {
 		// What the Mac needs right now. Strained (battery, Low Power Mode, hot): hold background
 		// apps sooner. Room to spare (plugged in, calm, cool, not just busy): let working apps run free.
 		let strained = settings.adaptive && (onBattery || lowPower || hot)
-		let grace = strained ? min(settings.efficiencyAfter, settings.strainedEfficiencyAfter) : settings.efficiencyAfter
-		let roomToRunFree = settings.adaptive && !strained && !busy && systemCPU < threshold - 0.15
+		// Making room: everything else goes to the efficiency cores at once and never runs free.
+		let grace = making ? 0 : strained ? min(settings.efficiencyAfter, settings.strainedEfficiencyAfter) : settings.efficiencyAfter
+		let roomToRunFree = !making && settings.adaptive && !strained && !busy && systemCPU < threshold - 0.15
 			&& lastBusy.map { now.timeIntervalSince($0) >= settings.liftCooldown } ?? true
 
 		var result: [String: AutoDecision] = [:]
@@ -236,7 +242,7 @@ final class AutoPilot {
 			groupPids[g.id] = Set(g.pids)
 			if g.kind == .process {
 				// Only while the Mac needs its resources, and never anything but the efficiency cores.
-				if let d = processDecision(g, needsResources: !away && (busy || strained), now: now) {
+				if let d = processDecision(g, needsResources: making || (!away && (busy || strained)), now: now) {
 					result[g.id] = d
 					processIDs.insert(g.id)
 				}
@@ -245,6 +251,8 @@ final class AutoPilot {
 			let reason: AutoDecision.Reason
 			if g.pids.contains(frontmostPid) {
 				reason = .foreground
+			} else if g.id == roomFor {
+				reason = .room
 			} else if priorities[g.id] == .high {
 				reason = .priority
 			} else if g.pids.contains(where: audioPids.contains) {
@@ -265,7 +273,7 @@ final class AutoPilot {
 			let since = backgroundSince[g.id] ?? g.pids.compactMap({ lastActive[$0] }).max() ?? now
 			backgroundSince[g.id] = since
 			var d = AutoDecision(reason: .background)
-			if away {
+			if away && !making {
 				// You're not here: nothing is held back, so background work finishes at full speed.
 				d.lifted = true
 				d.away = true
@@ -275,7 +283,7 @@ final class AutoPilot {
 			}
 			let low = priorities[g.id] == .low
 			// An app you usually use around now stays at full speed a while longer (unless the Mac is strained).
-			let appGrace = !strained && likely.contains(g.id) ? max(grace, settings.likelyGrace) : grace
+			let appGrace = !strained && !making && likely.contains(g.id) ? max(grace, settings.likelyGrace) : grace
 			// Low priority work goes to the efficiency cores at once; it never runs free.
 			d.efficiency = settings.useEfficiencyCores && (low || now.timeIntervalSince(since) >= appGrace)
 			if d.efficiency && !low && shouldRunFree(g, roomToRunFree: roomToRunFree, now: now) {
@@ -293,14 +301,26 @@ final class AutoPilot {
 		}
 
 		// Fair share of what the foreground and everything else leave free.
-		if busy && !away && settings.shareCPU && !background.isEmpty {
+		if busy && (!away || making) && settings.shareCPU && !background.isEmpty {
 			let backgroundUsage = background.reduce(0) { $0 + $1.cpu }
 			let othersUsage = max(0, systemCPU * Double(ncpu) - backgroundUsage)
-			let minimumBudget = max(Double(ncpu) * 0.25, settings.floorCores * Double(background.count))
-			let budget = max(minimumBudget, Double(ncpu) - othersUsage - settings.headroomCores)
+			let minimumBudget = max(Double(ncpu) * (making ? 0.15 : 0.25), settings.floorCores * Double(background.count))
+			// Making room: one more core is kept free for the app you're making room for.
+			let budget = max(minimumBudget, Double(ncpu) - othersUsage - settings.headroomCores - (making ? 1 : 0))
 			let wants = background.map { (id: $0.id, want: max(demand[$0.id] ?? $0.cpu, $0.cpu)) }
 			for (id, cap) in Self.fairShare(wants, budget: budget, floor: settings.floorCores) {
 				result[id]?.cap = cap
+			}
+		}
+
+		// Prioritized apps run free, but not past the point where the Mac stalls: if the Mac is busy and
+		// together they'd take more than all but one core, they share what's left of it.
+		if busy {
+			let prioritized = groups.filter { result[$0.id]?.reason == .priority }
+			let room = Double(ncpu) - settings.headroomCores
+			if prioritized.reduce(0, { $0 + $1.cpu }) > room {
+				let wants = prioritized.map { (id: $0.id, want: max(demand[$0.id] ?? $0.cpu, $0.cpu)) }
+				for (id, cap) in Self.fairShare(wants, budget: room, floor: 0.5) { result[id]?.cap = cap }
 			}
 		}
 

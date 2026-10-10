@@ -12,6 +12,8 @@
 //      appwrangler://pause | resume | toggle-pause
 //      appwrangler://auto/on | off | toggle
 //      appwrangler://free-memory         freeze apps you haven't used for a while
+//      appwrangler://make-room/Zoom?minutes=60   make room for an app (minutes=0: until stopped)
+//      appwrangler://make-room/off       stop making room
 //
 
 import Foundation
@@ -23,6 +25,8 @@ enum AppURL: Equatable {
 	case pause, resume, togglePause
 	case auto(Bool?)	// nil = toggle
 	case freeMemory
+	case makeRoom(app: String, minutes: Double)
+	case stopRoom
 
 	init?(_ url: URL) {
 		guard url.scheme?.lowercased() == "appwrangler" else { return nil }
@@ -42,6 +46,13 @@ enum AppURL: Equatable {
 			default: return nil
 			}
 		case "free-memory": self = .freeMemory
+		case "make-room":
+			let app = (url.path as NSString).lastPathComponent.removingPercentEncoding ?? ""
+			if app.isEmpty { return nil }
+			if app.lowercased() == "off" { self = .stopRoom; return }
+			let minutes = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+				.first { $0.name == "minutes" }?.value.flatMap(RoomFor.parseDuration) ?? 60
+			self = .makeRoom(app: app, minutes: minutes)
 		default: return nil
 		}
 	}

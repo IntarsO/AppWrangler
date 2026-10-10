@@ -24,6 +24,7 @@ struct PanelView: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 0) {
 			header
+			if let room = model.roomFor { roomBanner(room) }
 			charts
 			TimelineView(.periodic(from: .now, by: 1)) { context in
 				let cards = model.panelActions.visible(at: context.date)
@@ -36,6 +37,7 @@ struct PanelView: View {
 				}
 			}
 			if !model.advice.isEmpty { adviceLine }
+			if !model.frozenApps.isEmpty { frozenList }
 			Divider()
 			topApps
 			Divider()
@@ -155,6 +157,52 @@ struct PanelView: View {
 		.padding(.horizontal, 12)
 		.padding(.bottom, 10)
 		.help(L("Open the main window to see and apply suggestions"))
+	}
+
+	// MARK: Make room
+
+	private func roomBanner(_ room: RoomFor) -> some View {
+		TimelineView(.periodic(from: .now, by: 30)) { context in
+			HStack(spacing: 8) {
+				Image(systemName: "person.wave.2.fill").foregroundStyle(.green)
+				VStack(alignment: .leading, spacing: 1) {
+					Text(L("Making room for %@", room.name)).font(.caption.weight(.semibold))
+					Text(room.remainingText(at: context.date) + " · " + L("everything else steps back"))
+						.font(.caption2).foregroundStyle(.secondary)
+				}
+				Spacer()
+				Button(L("Stop")) { model.stopMakingRoom() }.controlSize(.small)
+			}
+			.padding(8)
+			.background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.1)))
+		}
+		.padding(.horizontal, 12)
+		.padding(.bottom, 10)
+	}
+
+	// MARK: Frozen
+
+	/// Each frozen app with its own Unfreeze button. There's deliberately no "unfreeze all":
+	/// you take back the one you need, and the rest stays tamed.
+	private var frozenList: some View {
+		let frozen = model.frozenApps
+		return VStack(alignment: .leading, spacing: 3) {
+			Text(L("Frozen (%d)", frozen.count)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+			ForEach(frozen.prefix(4), id: \.id) { app in
+				HStack(spacing: 6) {
+					Image(systemName: "snowflake").foregroundStyle(.cyan).font(.caption)
+					Text(app.name).font(.caption).lineLimit(1)
+					Text(app.reason.label).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+					Spacer(minLength: 4)
+					Button(L("Unfreeze")) { model.unfreezeByYou(app.id) }.controlSize(.small)
+				}
+			}
+			if frozen.count > 4 {
+				Text(L("and %d more — right-click the menu bar icon", frozen.count - 4)).font(.caption2).foregroundStyle(.tertiary)
+			}
+		}
+		.padding(.horizontal, 12)
+		.padding(.bottom, 10)
 	}
 
 	// MARK: Busiest apps

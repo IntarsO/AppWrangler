@@ -135,6 +135,8 @@ enum Prefs {
 	static let autoAway = "AWAutoAway"
 	static let autoAwayMinutes = "AWAutoAwayMinutes"
 	static let autoLearn = "AWAutoLearn"
+	/// "Make room for" an app: JSON of RoomFor (MakeRoom.swift).
+	static let roomFor = "AWRoomFor"
 	static let dismissedAdvice = "AWDismissedAdvice"
 	static let mainWindowOpen = "AWMainWindowOpen"
 	static let showPanelOnAction = "AWShowPanelOnAction"
@@ -229,6 +231,8 @@ struct AppState: Codable {
 	var auto: String? = nil
 	/// What Auto is doing to each app it manages (app name → state).
 	var autoApps: [String: String]? = nil
+	/// "Making room for Zoom (47 min left)".
+	var roomFor: String? = nil
 	var updated: Date
 
 	static var url: URL { DataDirectory.url.appendingPathComponent("state.json") }

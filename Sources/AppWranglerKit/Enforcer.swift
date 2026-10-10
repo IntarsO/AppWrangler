@@ -86,6 +86,17 @@ enum FreezeReason: String {
 	/// Low priority work paused while the Mac needs its resources; it resumes when there's room again.
 	case shed
 
+	/// Why it's frozen, for menus and the panel.
+	var label: String {
+		switch self {
+		case .manual: return L("frozen by you")
+		case .memoryLimit: return L("over its memory limit")
+		case .memoryPressure: return L("memory was short")
+		case .idle: return L("Free memory")
+		case .shed: return L("can wait; paused while the Mac is busy")
+		}
+	}
+
 	/// Freezes that end by themselves as soon as you switch to the app (or it plays audio).
 	var resumesOnFocus: Bool { self == .memoryPressure || self == .idle || self == .shed }
 }
@@ -162,6 +173,13 @@ final class Enforcer {
 
 	func isFrozen(_ groupID: String) -> Bool { frozen[groupID] != nil }
 
+	/// The name of a group seen recently (frozen apps may be missing from a partial sample).
+	func name(of groupID: String) -> String? { groupNames[groupID] }
+
+	/// "Make room for" this app: its own CPU limit and efficiency-core setting are set aside
+	/// (memory limits still apply), so nothing holds it back.
+	var exemptGroupID: String?
+
 	// MARK: Apply
 
 	/// Apply rules. Safe to call repeatedly with the same snapshot (e.g. on a
@@ -196,7 +214,12 @@ final class Enforcer {
 		for group in snapshot.groups where group.ownerPid != selfPid && !Protected.contains(group) {
 			groupNames[group.id] = group.name
 			lastGroups[group.id] = group
-			let rule = rules.rule(for: group).flatMap { $0.isInEffect(state) ? $0 : nil }
+			var rule = rules.rule(for: group).flatMap { $0.isInEffect(state) ? $0 : nil }
+			if group.id == exemptGroupID, var r = rule {
+				r.cpuLimitEnabled = false
+				r.backgroundMode = false
+				rule = r
+			}
 			// Never SIGSTOP a shell's foreground job — the shell would treat it as
 			// suspended and detach it. Efficiency cores still apply to it.
 			let allPids = (rule?.includeHelpers ?? true) ? group.pids.sorted() : [group.ownerPid]
