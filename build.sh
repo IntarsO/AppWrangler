@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${VERSION:-1.5.0}"	# release CI passes the tag
+VERSION="${VERSION:-1.6.0}"	# release CI passes the tag
 # Dotted, so each part fits in 32 bits: WidgetKit rejects a widget whose
 # CFBundleVersion LaunchServices can't store ("Bundle version did not match").
 BUILD_NUMBER="$(date +%Y%m%d.%H%M)"

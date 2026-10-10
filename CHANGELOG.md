@@ -2,7 +2,7 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.0] — 2026-10-10
 
 ### Added
 - **Make room for an app** — for a call, a recording, a render or a game. For 30 minutes, 1 hour, 3 hours or until you stop it, one app gets everything it needs: full speed, never capped or frozen (its own CPU rule set aside; memory limits still apply). Everything else steps back: efficiency cores at once, the Mac counts as busy from 60% and the rest then shares one core less, work that can wait is paused, hot processes are held, and idle apps are frozen if memory gets short, even if idle freezing is off. Away mode is suspended. Start it from the menu bar icon's right-click menu, an app's details, `appwrangler make-room Zoom 1h`, `appwrangler://make-room/Zoom?minutes=60`, or the MCP tool `make_room`; the panel shows the time left with **Stop**.
