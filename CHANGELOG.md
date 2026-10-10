@@ -2,6 +2,17 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Make room for an app** — for a call, a recording, a render or a game. For 30 minutes, 1 hour, 3 hours or until you stop it, one app gets everything it needs: full speed, never capped or frozen (its own CPU rule set aside; memory limits still apply). Everything else steps back: efficiency cores at once, the Mac counts as busy from 60% and the rest then shares one core less, work that can wait is paused, hot processes are held, and idle apps are frozen if memory gets short, even if idle freezing is off. Away mode is suspended. Start it from the menu bar icon's right-click menu, an app's details, `appwrangler make-room Zoom 1h`, `appwrangler://make-room/Zoom?minutes=60`, or the MCP tool `make_room`; the panel shows the time left with **Stop**.
+- **Unfreeze one app** from the menu bar icon's right-click menu (one item per frozen app, with why it was frozen) or the panel's new **Frozen** list. There's deliberately no "unfreeze all": the rest stays tamed. Something that can wait isn't paused again for 30 minutes after you unfreeze it.
+- **A snowflake on the menu bar icon** (❄︎2) while apps are frozen.
+
+### Changed
+- **Prioritized** (was *High*) apps get room: while one is working, work that can wait is paused and the rest makes way. They still stay within the safety limits: if prioritized apps together would take every core while the Mac is saturated, they share all but one. The tiers now read **Prioritized**, **Normal** and **Can wait** (still `high`, `normal`, `low` for the command line and assistants).
+- **Calls count as what matters:** an app playing or recording audio (Zoom, Teams, Meet in a browser) makes the rest step back while it works, and you don't count as away during a call.
+
 ## [1.5.0] — 2026-10-10
 
 ### Added

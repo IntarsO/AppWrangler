@@ -21,11 +21,12 @@ enum AppPriority: String, Codable, CaseIterable, Identifiable {
 
 	var id: String { rawValue }
 
+	/// What the app shows: "Prioritized", "Normal", "Can wait". (The CLI and MCP say high / normal / low.)
 	var title: String {
 		switch self {
-		case .high: return L("High")
+		case .high: return L("Prioritized")
 		case .normal: return L("Normal")
-		case .low: return L("Low")
+		case .low: return L("Can wait")
 		}
 	}
 }
@@ -125,6 +126,12 @@ final class Shedder {
 		holdOffUntil = nil
 		paused = [:]
 		resting = [:]
+	}
+
+	/// You resumed this one by hand: leave it alone for `seconds`.
+	func rest(_ id: String, for seconds: TimeInterval = 1800, now: Date = Date()) {
+		paused[id] = nil
+		resting[id] = now.addingTimeInterval(seconds)
 	}
 
 	/// You asked for everything back: resume what's paused, and pause nothing for `holdOff` seconds.

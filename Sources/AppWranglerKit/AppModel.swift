@@ -40,6 +40,10 @@ final class AppModel: ObservableObject {
 	let patterns: UsagePatterns
 	/// You're away (no input, plugged in): Auto holds nothing back.
 	private(set) var away = false
+	/// "Make room for" an app (MakeRoom.swift); survives a restart until it ends.
+	@Published private(set) var roomFor: RoomFor? = RoomFor.load()
+	/// The running group being made room for, if it's running.
+	private var roomGroupID: String?
 	private var userIdle: TimeInterval = 0
 	private var lastRoutineRecord = Date()
 	private var lastPatternSave = Date()
@@ -405,19 +409,24 @@ final class AppModel: ObservableObject {
 		writeState()
 	}
 
-	private var autoFreezeActive: Bool { autoPilot.settings.enabled && autoPilot.settings.freezeIdleWhenLowMemory }
+	/// Making room for an app freezes idle apps when memory is short, even if idle freezing is off.
+	private var autoFreezeActive: Bool {
+		autoPilot.settings.enabled && (autoPilot.settings.freezeIdleWhenLowMemory || roomGroupID != nil)
+	}
 
 	/// Opt-in Auto memory: while the Mac is low on memory, apps you haven't used
 	/// for a while may be frozen (they resume when you switch to them).
 	private func autoFreezeCandidates(_ snapshot: Snapshot, state: SystemState, paced: Bool = false, now: Date = Date()) -> Set<String> {
 		let s = autoPilot.settings
-		guard s.enabled, s.freezeIdleWhenLowMemory, autoMemoryIsShort(state) else { return [] }
+		let making = roomGroupID != nil
+		guard s.enabled, s.freezeIdleWhenLowMemory || making, autoMemoryIsShort(state) else { return [] }
 		let groups = autoEligible(snapshot).filter { g in
 			(rules.rule(for: g)?.pressureAction ?? PressureAction.none) == PressureAction.none	// the app's own rule decides otherwise
-				&& Priorities.of(g, rule: rules.rule(for: g)) != .high
+				&& Priorities.of(g, rule: rules.rule(for: g)) != .high && g.id != roomGroupID
 		}
-		var ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive,
-												 audioPids: audioPids, idleAfter: s.freezeIdleAfter, since: launchedAt)
+		// Making room: apps unused for 2 minutes may go, not just after the usual 10.
+		var ids = AutoPilot.idleFreezeCandidates(groups, frontmostPid: frontmostPid, lastActive: lastActive, audioPids: audioPids,
+												 idleAfter: making ? min(s.freezeIdleAfter, 120) : s.freezeIdleAfter, since: launchedAt)
 		if s.learn && !patterns.isEmpty {
 			// Apps you usually use around now are skipped; the ones you're least likely to need soon go first.
 			let keys = Dictionary(groups.map { ($0.id, ImpactKey.of($0)) }, uniquingKeysWith: { a, _ in a })
@@ -440,7 +449,7 @@ final class AppModel: ObservableObject {
 	/// Memory is short by Auto's own measure: adaptive steps in at the first warning,
 	/// otherwise at the level the low-memory rules use (critical by default).
 	private func autoMemoryIsShort(_ state: SystemState) -> Bool {
-		state.memoryPressure >= (autoPilot.settings.adaptive ? min(enforcer.pressureThreshold, 2) : enforcer.pressureThreshold)
+		state.memoryPressure >= (autoPilot.settings.adaptive || roomGroupID != nil ? min(enforcer.pressureThreshold, 2) : enforcer.pressureThreshold)
 	}
 
 	/// Processes playing or recording audio (macOS 14.2+). Only queried when
@@ -468,6 +477,7 @@ final class AppModel: ObservableObject {
 			guard g.kind == .app || g.kind == .background || managedProcess, g.ownerPid != me, !Protected.contains(g),
 				  !enforcer.isFrozen(g.id) else { return false }
 			if let scope, !(g.bundleID ?? "").hasPrefix(scope) { return false }
+			if g.id == roomGroupID { return true }	// making room for it: its own CPU rule is set aside
 			guard let rule = rules.rule(for: g) else { return true }
 			return !rule.ignored && !(rule.enabled && (rule.cpuLimitEnabled || rule.backgroundMode))
 		}
@@ -484,6 +494,7 @@ final class AppModel: ObservableObject {
 			return autoPilot.refocus(frontmostPid: frontmostPid, lastActive: lastActive)
 		}
 		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
+		updateRoom(snapshot)
 		let eligible = autoEligible(snapshot)
 		let priorities = Dictionary(eligible.compactMap { g -> (String, AppPriority)? in
 			let p = Priorities.of(g, rule: rules.rule(for: g))
@@ -496,12 +507,66 @@ final class AppModel: ObservableObject {
 										 audioPids: audioPids, systemCPU: snapshot.systemCPU,
 										 onBattery: state.onBattery, ncpu: SystemInfo.ncpu,
 										 lowPower: state.lowPowerMode, hot: state.isHot, demand: demand, priorities: priorities,
-										 away: away, likely: likely, now: now)
+										 away: away, likely: likely, roomFor: roomGroupID, now: now)
 		logRunningFree(decisions, groups: snapshot.groups)
 		if autoPilot.summary != autoSummary { autoSummary = autoPilot.summary }
 		// Forget focus times of apps that have quit.
 		if lastActive.count > 200 { lastActive = lastActive.filter { kill($0.key, 0) == 0 } }
 		return decisions
+	}
+
+	// MARK: Make room
+
+	/// Make room for an app for `minutes` (0 = until you stop it).
+	func makeRoom(for group: AppGroup, minutes: Double) {
+		makeRoom(name: group.name, bundleID: group.bundleID, minutes: minutes)
+	}
+
+	func makeRoom(name: String, bundleID: String?, minutes: Double) {
+		let room = RoomFor(name: name, bundleID: bundleID, until: minutes > 0 ? Date().addingTimeInterval(minutes * 60) : nil)
+		roomFor = room
+		RoomFor.save(room)
+		for g in lastSnapshot.groups where room.matches(g) && isFrozen(g) { unfreeze(g) }
+		log.add(name, minutes > 0 ? L("Making room for it for %@", Fmt.duration(minutes * 60)) : L("Making room for it until you stop it"))
+		reapply()
+		tickSoon(0.1)
+		writeState()
+	}
+
+	func stopMakingRoom(timeUp: Bool = false) {
+		guard let room = roomFor else { return }
+		roomFor = nil
+		roomGroupID = nil
+		enforcer.exemptGroupID = nil
+		RoomFor.save(nil)
+		log.add(room.name, timeUp ? L("Stopped making room for it: time's up") : L("Stopped making room for it"))
+		reapply()
+		writeState()
+	}
+
+	/// Find the app being made room for; end it when the time is up.
+	private func updateRoom(_ snapshot: Snapshot, now: Date = Date()) {
+		guard let room = roomFor else { roomGroupID = nil; enforcer.exemptGroupID = nil; return }
+		guard room.isActive(at: now) else { stopMakingRoom(timeUp: true); return }
+		let group = snapshot.groups.first { ($0.kind == .app || $0.kind == .background) && room.matches($0) }
+		roomGroupID = group?.id
+		enforcer.exemptGroupID = group?.id
+	}
+
+	/// You unfroze one app by hand: let it be. Something paused because it can wait isn't paused again for half an hour.
+	func unfreezeByYou(_ groupID: String) {
+		guard let reason = enforcer.frozen[groupID] else { return }
+		if reason == .shed { shedder.rest(groupID) }
+		enforcer.unfreeze(groupID)
+		log.add(enforcer.name(of: groupID) ?? groupID, L("Unfrozen by you"))
+		reapply()
+		writeState()
+	}
+
+	/// What's frozen, for menus and the panel: (group id, name, why).
+	var frozenApps: [(id: String, name: String, reason: FreezeReason)] {
+		enforcer.frozen.map { (id: $0.key, name: enforcer.name(of: $0.key) ?? $0.key, reason: $0.value) }
+			.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 	}
 
 	// MARK: Away and routine
@@ -510,7 +575,9 @@ final class AppModel: ObservableObject {
 	private func updateAway(_ state: SystemState) {
 		let s = autoPilot.settings
 		userIdle = AwayMode.idleSeconds()
-		let now = AwayMode.isAway(idle: userIdle, after: s.awayAfter, enabled: s.enabled && s.away,
+		// Not while making room for an app, or while something plays or records audio (a call, a film):
+		// you're there even if you don't touch the keyboard.
+		let now = AwayMode.isAway(idle: userIdle, after: s.awayAfter, enabled: s.enabled && s.away && roomFor == nil && audioPids.isEmpty,
 								  onBattery: state.onBattery, lowPower: state.lowPowerMode, hot: state.isHot)
 		guard now != away else { return }
 		away = now
@@ -559,10 +626,15 @@ final class AppModel: ObservableObject {
 		}
 		let me = getpid()
 		let foregroundCPU = snapshot.groups.first { $0.pids.contains(frontmostPid) }?.cpu ?? 0
-		let need: Shedder.Need = away ? .none : state.memoryPressure >= 2 ? .memory
-			: autoPilot.busy && foregroundCPU >= 0.5 ? .cpu : .none
+		// What matters is working: the app in front, a call or anything playing audio, or a prioritized app.
+		let mattersWorking = foregroundCPU >= 0.5 || snapshot.groups.contains { g in
+			g.cpu >= 0.3 && (g.pids.contains(where: audioPids.contains) || Priorities.of(g, rule: rules.rule(for: g)) == .high)
+		}
+		let need: Shedder.Need = roomGroupID != nil ? (state.memoryPressure >= 2 ? .memory : .cpu)
+			: away ? .none : state.memoryPressure >= 2 ? .memory
+			: autoPilot.busy && mattersWorking ? .cpu : .none
 		let candidates: [Shedder.Candidate] = snapshot.groups.compactMap { g in
-			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid),
+			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid), g.id != roomGroupID,
 				  !g.pids.contains(where: audioPids.contains), Priorities.of(g, rule: rules.rule(for: g)) == .low else { return nil }
 			return Shedder.Candidate(id: g.id, name: g.name, cpu: g.cpu, footprint: g.footprint)
 		}
@@ -980,6 +1052,20 @@ final class AppModel: ObservableObject {
 			tickSoon(0.1)
 		case "pause": paused = true
 		case "resume": paused = false
+		case "make-room":
+			// target: "off", or "<minutes>|<app>" (0 minutes = until stopped).
+			if target == "off" { stopMakingRoom(); return }
+			let parts = target.split(separator: "|", maxSplits: 1).map(String.init)
+			guard parts.count == 2, let minutes = Double(parts[0]) else { return }
+			let snap = sampler.sampleNow(SampleRequest(apps: RunningApps.collect(), includeAll: false, includeApps: true,
+													   includeOtherUsers: false, withThreads: false, matcher: GroupMatcher()))
+			let t = parts[1].lowercased()
+			guard let group = snap.groups.first(where: { ($0.kind == .app || $0.kind == .background)
+				&& ($0.name.lowercased() == t || $0.bundleID?.lowercased() == t) }) else {
+				log.add("AppWrangler", L("No running app named %@", parts[1]))
+				return
+			}
+			makeRoom(for: group, minutes: minutes)
 		case "freeze", "unfreeze":
 			// Look the app up in a fresh sample so it works with the UI closed.
 			let request = SampleRequest(apps: RunningApps.collect(), includeAll: true, includeOtherUsers: false, withThreads: false, matcher: GroupMatcher())
@@ -996,6 +1082,7 @@ final class AppModel: ObservableObject {
 	}
 
 	private var lastWrittenState: (Bool, [String], [String], String, [String: String])?
+	private var lastWrittenRoom: RoomFor?
 
 	/// App name → what Auto is doing to it.
 	var autoAppStates: [String: String] {
@@ -1018,10 +1105,13 @@ final class AppModel: ObservableObject {
 		let runaway = suggestions.map(\.name)
 		let auto = autoDescription
 		let apps = autoAppStates
-		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto, last.4 == apps { return }
+		if let last = lastWrittenState, last.0 == paused, last.1 == frozen, last.2 == runaway, last.3 == auto, last.4 == apps,
+		   lastWrittenRoom == roomFor { return }
+		lastWrittenRoom = roomFor
 		let pausedOrFrozenChanged = lastWrittenState.map { $0.0 != paused || $0.1 != frozen } ?? false
 		lastWrittenState = (paused, frozen, runaway, auto, apps)
-		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, autoApps: apps, updated: Date()).write()
+		AppState(pid: getpid(), paused: paused, frozen: frozen, runaway: runaway, auto: auto, autoApps: apps,
+				 roomFor: roomFor.map { L("Making room for %@ (%@)", $0.name, $0.remainingText()) }, updated: Date()).write()
 		if pausedOrFrozenChanged { updateWidget() }
 	}
 

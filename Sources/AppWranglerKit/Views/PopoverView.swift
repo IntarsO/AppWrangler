@@ -696,6 +696,7 @@ struct GroupDetail: View {
 			} else {
 				handling
 				priorityPicker
+				makeRoomControl
 				actions
 			}
 			if group.processes.count > 1 {
@@ -751,6 +752,31 @@ struct GroupDetail: View {
 			case .leaveAlone:
 				Label(L("No suggestions and no automatic actions for this app."), systemImage: "hand.raised")
 					.font(.caption).foregroundStyle(.secondary)
+			}
+		}
+	}
+
+	/// "Make room for" this app for a while, or stop.
+	@ViewBuilder
+	private var makeRoomControl: some View {
+		if let room = model.roomFor, room.matches(group) {
+			HStack {
+				Label(L("Making room for it (%@)", room.remainingText()), systemImage: "person.wave.2.fill")
+					.font(.caption).foregroundStyle(.green)
+				Spacer()
+				Button(L("Stop")) { model.stopMakingRoom() }.controlSize(.small)
+			}
+		} else if group.kind == .app || group.kind == .background {
+			HStack {
+				Menu(L("Make room for it…")) {
+					ForEach(RoomFor.durations, id: \.minutes) { d in
+						Button(d.title) { model.makeRoom(for: group, minutes: d.minutes) }
+					}
+				}
+				.fixedSize()
+				.controlSize(.small)
+				.help(L("For a while, this app gets everything it needs (for example a video call): everything else steps back, and idle apps may be frozen if memory is short."))
+				Spacer()
 			}
 		}
 	}

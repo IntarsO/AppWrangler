@@ -46,7 +46,8 @@ Apps you build yourself open without any Gatekeeper prompt.
 AppWrangler has no Dock icon (except while its window is open). Look for the **lasso** icon (a loop with a gauge needle inside) in the menu bar at the top right of the screen.
 
 - **Left-click** opens the panel: a quick overview with charts. The full list of apps is in the main window (the **All apps** button).
-- **Right-click** gives quick access to *Pause All Limits*, *Open in a Window*, *Settings…*, *Help & Documentation* and *Quit AppWrangler*.
+- **Right-click** gives quick access to *Pause All Limits*, **Unfreeze** for each frozen app, **Make Room for** (one app gets everything for a while, such as a call), *Open in a Window*, *Settings…*, *Help & Documentation* and *Quit AppWrangler*.
+- A **snowflake** next to the icon (❄︎2) means apps are frozen.
 
 > Can't see it? On a crowded menu bar macOS may hide it behind the notch. Quit a few other menu bar apps, or hold ⌘ and drag icons to make room.
 

@@ -19,6 +19,7 @@ This manual is also built into the app (no internet needed). Open it from the **
   - [Ignoring an app](#ignoring-an-app)
   - [How rules are matched](#how-rules-are-matched)
 - [Priorities](#priorities)
+- [Make room for an app](#make-room-for-an-app)
 - [Freeze, quit and force quit](#freeze-quit-and-force-quit)
 - [Free memory now](#free-memory-now)
 - [Pausing all limits](#pausing-all-limits)
@@ -302,37 +303,68 @@ When more than one rule could apply, the most specific wins: **bundle ID → pat
 
 ## Priorities
 
-Some work can wait. When the Mac needs its resources for what you're doing, **low priority work is slowed first and, if the need lasts, paused**, so what matters keeps running at full speed. Everything resumes as soon as the Mac has room again.
+Some work matters more than the rest. When the Mac needs its resources, **work that can wait is slowed first and, if the need lasts, paused**, and **prioritized apps get room**. Everything resumes as soon as the Mac has room again.
 
 | Priority | What it means |
 |---|---|
-| **High** | Never capped, never held on the efficiency cores, never frozen: runs at full speed even in the background. For something you depend on, such as a local server or a sync you're waiting for. |
-| **Normal** | The default. [Auto mode](#auto-mode) handles the app as described above. |
-| **Low** | Work that can wait. It goes to the efficiency cores at once (no 30 s wait) and never runs free. |
+| **Prioritized** (`high`) | Never held on the efficiency cores, never frozen, and given room: while it's working, work that can wait is paused and other background apps make way. It still stays within the safety limits: your memory limits apply, and if prioritized apps together would take every core while the Mac is saturated, they share all but one, so the app in front never stalls. |
+| **Normal** (`normal`) | The default. [Auto mode](#auto-mode) handles the app as described above. |
+| **Can wait** (`low`) | It goes to the efficiency cores at once (no 30 s wait), never runs free, and is paused first when the Mac needs its resources. |
 
-**What's Low by default.** The built-in list is short on purpose:
+**Calls are prioritized automatically.** An app playing or recording audio (Zoom, Teams, FaceTime, or Google Meet in a browser) already runs at full speed and is never frozen. While it's working, it also counts as what matters, so work that can wait is paused and the rest makes way, just as for a prioritized app. You don't count as away while something plays or records audio. To be sure, [make room](#make-room-for-an-app) for the app.
+
+**What can wait by default.** The built-in list is short on purpose:
 - Spotlight indexing helpers (`mdworker`) and photo and media analysis (`photoanalysisd`, `mediaanalysisd`);
 - updaters from other companies, such as Google Software Update, Microsoft AutoUpdate or an app's own *Updater* helper, but only background apps and processes inside an app or Library folder.
 
 It never includes an app you use, Apple's own updaters, command-line tools from Homebrew or your projects, build tools, or anything critical to macOS.
 
-**When low priority work is paused.** Auto looks at what the Mac needs:
-- **The Mac is busy with what you're doing.** The Mac has been saturated (see *busy* above) for 15 s while the app in front is using at least half a core: low priority work that is using CPU is paused.
-- **Memory is short** (pressure at *warning* or worse) for 5 s: low priority work using 100 MB or more is paused, biggest first.
+**When work that can wait is paused.** Auto looks at what the Mac needs:
+- **The Mac is busy with what matters.** The Mac has been saturated (see *busy* above) for 15 s while the app in front, a call, or a prioritized app is working: work that can wait and is using CPU is paused.
+- **Memory is short** (pressure at *warning* or worse) for 5 s: work that can wait and uses 100 MB or more is paused, biggest first.
+- **While you [make room](#make-room-for-an-app) for an app**, at once.
 - **Never for long.** Nothing is paused for more than 10 minutes at a stretch, and then it runs undisturbed for 5 minutes, so an update can always finish.
 
 **Getting it back.**
 - It resumes once the Mac has had room for 30 s.
 - A card in the panel says what was paused, with **Resume now**, which also stops it being paused again for 10 minutes.
+- To get **one** app back, use **Unfreeze** next to it in the panel's *Frozen* list or the menu bar icon's right-click menu (see [Unfreezing one app](#unfreezing-one-app)). Something that can wait isn't paused again for 30 minutes after that.
 - Switching to a paused app resumes it at once, and so does turning the setting off.
 - A shell's foreground job is never paused (it would look suspended to the shell).
 
-**Set a priority.** Open an app's details in the main window and pick **High**, **Normal** or **Low** under *Priority*. From the command line: `appwrangler set Backup priority=low`; assistants use `configure_app` with `priority`. For something that is Low by default, set **High** to keep it running, or [ignore it](#ignoring-an-app) to leave it entirely alone.
+**Set a priority.** Open an app's details in the main window and pick **Prioritized**, **Normal** or **Can wait** under *Priority*. From the command line: `appwrangler set Backup priority=low` (`high`, `normal`, `low`); assistants use `configure_app` with `priority`. For something that can wait by default, set **Prioritized** to keep it running, or [ignore it](#ignoring-an-app) to leave it entirely alone.
 
-**Turn it off.** Settings → General → Auto mode → *Pause low-priority work when the Mac needs the resources*, or `appwrangler prefs auto_shed=off`. Low priority apps are still moved to the efficiency cores.
+**Turn it off.** Settings → General → Auto mode → *Pause low-priority work when the Mac needs the resources*, or `appwrangler prefs auto_shed=off`. Work that can wait still goes to the efficiency cores.
 
 ---
 
+## Make room for an app
+
+For a meeting, a recording, a render or a game: **one app gets everything it needs for a while**, and everything else steps back. It ends by itself.
+
+**Start it:**
+- right-click the menu bar icon → **Make Room for** → the app → **30 minutes**, **1 hour**, **3 hours** or **Until I stop it**;
+- in the main window, open the app's details → **Make room for it…**;
+- `appwrangler make-room Zoom 1h` (also `30m`, `3h`, `2h30m`, `until-stop`; one hour if you leave it out);
+- the link `appwrangler://make-room/Zoom?minutes=60` (for Shortcuts);
+- ask your AI assistant ("I'm about to join a call, make room for Zoom"), which uses the `make_room` tool.
+
+**While it's on:**
+
+| | |
+|---|---|
+| The app | Full speed and never capped, held on the efficiency cores or frozen, even in the background. Its own CPU limit or efficiency-core setting is set aside for now. Its memory limits still apply. |
+| Every other background app | To the efficiency cores at once (no 30 s wait); nothing runs free. The Mac counts as busy from 60% CPU (instead of 75%), and then the rest shares one core less, so one more core is always free for the app. |
+| Command-line processes that run hot | To the efficiency cores. |
+| Work that can wait | Paused at once. |
+| Memory | When memory gets short (*warning*), apps you haven't used for **2 minutes** are frozen, biggest first, even if idle freezing is off. The app in front, anything playing audio, messaging and calls apps, terminals and editors are still never frozen. |
+| Away mode | Suspended (in a meeting you may not touch the keyboard). |
+
+The panel shows *Making room for Zoom · 47 min left* with **Stop**. The menu bar icon's tooltip and `appwrangler status` show it too. When the time is up, or you stop it, everything goes back to normal on its own. It survives a restart of AppWrangler until the time is up. It needs [Auto mode](#auto-mode) on. Only one app at a time: making room for another replaces it.
+
+---
+
+## Freeze, quit and force quit
 ## Freeze, quit and force quit
 
 - **Freeze** suspends the app and all its helpers immediately. It uses no CPU while frozen; its memory stays allocated, and macOS can compress it. **Unfreeze** resumes it exactly where it was. A frozen app shows a spinning cursor if you click its windows; that's expected.
@@ -347,6 +379,16 @@ It never includes an app you use, Apple's own updaters, command-line tools from 
 - **A freeze AppWrangler made because of a setting** ends as soon as that setting no longer asks for it. Examples: you remove or disable a memory-limit rule, change its action from *Freeze*, or turn off low-memory freezing.
 
 AppWrangler never freezes a command running in a terminal's foreground, because the shell would treat it as suspended.
+
+### Unfreezing one app
+
+While anything is frozen, the menu bar icon shows a **snowflake** and how many (❄︎2), and its tooltip says what's going on. To get **one** app back, the one you need right now:
+- right-click the menu bar icon → **Unfreeze Photos** (one item per frozen app, with why it was frozen);
+- or use **Unfreeze** next to it in the panel's **Frozen** list;
+- or simply switch to it (for every automatic freeze);
+- or `appwrangler unfreeze Photos`.
+
+There's deliberately no *Unfreeze all*: the other apps stay tamed. Something paused because it can wait isn't paused again for 30 minutes after you unfreeze it. If you need an app to run undisturbed for a while, [make room](#make-room-for-an-app) for it instead.
 
 ---
 
@@ -616,6 +658,8 @@ AppWrangler responds to `appwrangler://` links. The widget's buttons use them, a
 | `appwrangler://pause`, `…/resume`, `…/toggle-pause` | [Pauses or resumes](#pausing-all-limits) all CPU limits |
 | `appwrangler://auto/on`, `…/auto/off`, `…/auto/toggle` | Turns [Auto mode](#auto-mode) on or off |
 | `appwrangler://free-memory` | [Free memory now](#free-memory-now) |
+| `appwrangler://make-room/Zoom?minutes=60` | [Make room](#make-room-for-an-app) for an app (`minutes=0`: until you stop it) |
+| `appwrangler://make-room/off` | Stop making room |
 
 For example: `open -g appwrangler://pause` (the `-g` keeps your current app in front). A link in a web page or email can't do anything without asking: macOS shows a prompt first.
 

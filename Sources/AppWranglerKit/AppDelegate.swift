@@ -146,6 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 			case .auto(let on)?:
 				UserDefaults.standard.set(on ?? !UserDefaults.standard.bool(forKey: Prefs.autoEnabled), forKey: Prefs.autoEnabled)
 			case .freeMemory?: model.freeMemoryNow()
+			case .makeRoom(let app, let minutes)?:
+				let running = NSWorkspace.shared.runningApplications.first {
+					$0.localizedName?.caseInsensitiveCompare(app) == .orderedSame || $0.bundleIdentifier?.caseInsensitiveCompare(app) == .orderedSame
+				}
+				model.makeRoom(name: running?.localizedName ?? app, bundleID: running?.bundleIdentifier, minutes: minutes)
+			case .stopRoom?: model.stopMakingRoom()
 			}
 			updateStatusTitle(nil)
 			model.updateWidget()
@@ -185,15 +191,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	private func updateStatusTitle(_ load: Double?) {
 		if let load { lastLoad = load }
 		guard let button = statusItem?.button else { return }
-		if UserDefaults.standard.bool(forKey: Prefs.menuBarCPU) {
-			let title = String(format: " %.0f%%", lastLoad * 100)
-			if button.title != title {
-				button.title = title
-				button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-			}
-		} else if !button.title.isEmpty {
-			button.title = ""
+		// A snowflake while anything is frozen, so you notice without opening anything.
+		let frozen = model.enforcer.frozen.count
+		var title = frozen > 0 ? " ❄︎\(frozen)" : ""
+		if UserDefaults.standard.bool(forKey: Prefs.menuBarCPU) { title += String(format: " %.0f%%", lastLoad * 100) }
+		if button.title != title {
+			button.title = title
+			button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
 		}
+		var tip = ["AppWrangler"]
+		if frozen > 0 { tip.append(L("%d frozen — right-click to unfreeze one", frozen)) }
+		if let room = model.roomFor { tip.append(L("Making room for %@ (%@)", room.name, room.remainingText())) }
+		button.toolTip = tip.joined(separator: "\n")
 		button.appearsDisabled = model.paused
 	}
 
@@ -288,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		let pause = NSMenuItem(title: model.paused ? L("Resume All Limits") : L("Pause All Limits"), action: #selector(togglePause), keyEquivalent: "")
 		pause.target = self
 		menu.addItem(pause)
+		addFrozenAndRoomItems(to: menu)
 		menu.addItem(.separator())
 		let window = NSMenuItem(title: L("Open in a Window"), action: #selector(openMainWindowMenu), keyEquivalent: "")
 		window.target = self
@@ -303,6 +313,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		statusItem?.menu = menu
 		statusItem?.button?.performClick(nil)
 		statusItem?.menu = nil	// restore left-click popover behaviour
+	}
+
+	/// One "Unfreeze <app>" per frozen app (no "unfreeze all": the rest stays tamed), and "Make room for".
+	private func addFrozenAndRoomItems(to menu: NSMenu) {
+		let frozen = model.frozenApps
+		if !frozen.isEmpty {
+			menu.addItem(.separator())
+			let header = NSMenuItem(title: L("Frozen (%d)", frozen.count), action: nil, keyEquivalent: "")
+			header.isEnabled = false
+			menu.addItem(header)
+			for app in frozen.prefix(15) {
+				let item = NSMenuItem(title: L("Unfreeze %@", app.name), action: #selector(unfreezeFromMenu(_:)), keyEquivalent: "")
+				item.target = self
+				item.representedObject = app.id
+				item.toolTip = app.reason.label
+				menu.addItem(item)
+			}
+		}
+		menu.addItem(.separator())
+		if let room = model.roomFor {
+			let stop = NSMenuItem(title: L("Stop Making Room for %@ (%@)", room.name, room.remainingText()), action: #selector(stopRoomFromMenu), keyEquivalent: "")
+			stop.target = self
+			menu.addItem(stop)
+			return
+		}
+		let holder = NSMenuItem(title: L("Make Room for"), action: nil, keyEquivalent: "")
+		let apps = NSMenu()
+		let running = NSWorkspace.shared.runningApplications
+			.filter { $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier && $0.localizedName != nil }
+			.sorted { ($0.localizedName ?? "").localizedCaseInsensitiveCompare($1.localizedName ?? "") == .orderedAscending }
+		for app in running {
+			let appItem = NSMenuItem(title: app.localizedName ?? "", action: nil, keyEquivalent: "")
+			if let icon = app.icon?.copy() as? NSImage {
+				icon.size = NSSize(width: 16, height: 16)
+				appItem.image = icon
+			}
+			let durations = NSMenu()
+			for d in RoomFor.durations {
+				let item = NSMenuItem(title: d.title, action: #selector(makeRoomFromMenu(_:)), keyEquivalent: "")
+				item.target = self
+				item.representedObject = ["name": app.localizedName ?? "", "bundleID": app.bundleIdentifier ?? "", "minutes": d.minutes] as [String: Any]
+				durations.addItem(item)
+			}
+			appItem.submenu = durations
+			apps.addItem(appItem)
+		}
+		holder.submenu = apps
+		holder.toolTip = L("Give one app everything it needs for a while, such as a video call; the rest steps back.")
+		menu.addItem(holder)
+	}
+
+	@objc private func unfreezeFromMenu(_ sender: NSMenuItem) {
+		guard let id = sender.representedObject as? String else { return }
+		model.unfreezeByYou(id)
+		updateStatusTitle(nil)
+	}
+
+	@objc private func makeRoomFromMenu(_ sender: NSMenuItem) {
+		guard let info = sender.representedObject as? [String: Any], let name = info["name"] as? String,
+			  let minutes = info["minutes"] as? Double else { return }
+		let bundleID = (info["bundleID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+		model.makeRoom(name: name, bundleID: bundleID, minutes: minutes)
+		updateStatusTitle(nil)
+	}
+
+	@objc private func stopRoomFromMenu() {
+		model.stopMakingRoom()
+		updateStatusTitle(nil)
 	}
 
 	@objc private func togglePause() {

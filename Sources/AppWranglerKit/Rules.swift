@@ -206,7 +206,7 @@ struct AppRule: Codable, Identifiable, Equatable {
 		if onlyWhenInactive && (cpuLimitEnabled || backgroundMode) { parts.append(L("background only")) }
 		if memoryLimitEnabled { parts.append(L("RAM %@", Fmt.megabytes(memoryLimitMB))) }
 		if pressureAction != .none { parts.append(L("low-memory: %@", pressureAction == .freeze ? L("freeze") : L("quit"))) }
-		if priority != .normal { parts.append(L("%@ priority", priority.title)) }
+		if priority != .normal { parts.append(priority.title.lowercased()) }
 		if parts.isEmpty { return L("No limits") }
 		let conditions = conditions.summary
 		return parts.joined(separator: " · ") + (conditions.isEmpty ? "" : " — " + conditions)

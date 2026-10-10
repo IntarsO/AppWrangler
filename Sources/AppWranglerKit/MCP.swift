@@ -397,6 +397,16 @@ final class MCPServer {
 				 properties: [:], required: [], readOnly: false, destructive: true) { [unowned self] _ in
 				self.cli(["free-memory"])
 			},
+			Tool(name: "make_room", title: "Make room for an app",
+				 description: "For a while, give one running app everything it needs, e.g. a video call: it runs at full speed and is never capped or frozen, while everything else steps back (efficiency cores at once, a tighter CPU share, low-priority work paused, idle apps frozen if memory is short). minutes: 30, 60, 180…, 0 = until stopped. stop: true ends it. Needs AppWrangler running.",
+				 properties: ["app": Self.appProperty, "minutes": ["type": "number", "minimum": 0, "maximum": 1440],
+							  "stop": ["type": "boolean"]],
+				 required: [], readOnly: false, destructive: false) { [unowned self] args in
+				if args["stop"] as? Bool == true { return self.cli(["make-room", "off"]) }
+				guard let app = args["app"] as? String, !app.isEmpty else { return Outcome(text: "give the app to make room for, or stop: true", isError: true) }
+				let minutes = (args["minutes"] as? NSNumber)?.doubleValue ?? 60
+				return self.cli(["make-room", app, minutes == 0 ? "until-stop" : "\(Int(minutes))"])
+			},
 			Tool(name: "pause_limits", title: "Pause or resume all limits",
 				 description: "Pause all CPU limits (frozen apps stay frozen) or resume them. Needs AppWrangler running.",
 				 properties: ["paused": ["type": "boolean"]], required: ["paused"], readOnly: false, destructive: false) { [unowned self] args in

@@ -20,7 +20,7 @@ It runs locally, speaks MCP over stdin/stdout, and never opens a network port. F
 | Mode | Command | Tools |
 |---|---|---|
 | **Read-only** (audit, analyse, advise) | `AppWrangler mcp --read-only` | `get_status`, `list_apps`, `explain_app`, `get_app_settings`, `suggest_settings`, `get_impact_stats`, `list_rules`, `get_preferences` |
-| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `set_preferences`, `free_memory`, `undo_last_change`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `pause_limits` |
+| **Full** (also change settings) | `AppWrangler mcp` | the above plus `configure_app`, `set_preferences`, `free_memory`, `undo_last_change`, `set_auto_mode`, `set_cpu_limit`, `set_efficiency_cores`, `set_memory_limit`, `set_low_memory_action`, `set_rule_conditions`, `set_rule_enabled`, `remove_rule`, `freeze_app`, `make_room`, `pause_limits` |
 
 In full mode, every tool that changes something is marked as such, so MCP clients ask you before running it. Tools that can freeze, quit or remove things are marked *destructive*. Start with `--read-only` if you only want insight.
 
@@ -136,6 +136,7 @@ ChatGPT connects to MCP servers through *Developer Mode* or workspace connectors
 | `set_rule_enabled` | Turn a rule on or off |
 | `remove_rule` | Delete a rule and lift its limits |
 | `freeze_app` | `app`, `frozen` (true to suspend, false to resume) |
+| `make_room` | `app`, `minutes` (30, 60, 180…; 0 = until stopped), or `stop: true`: [make room](user-manual.md#make-room-for-an-app) for one app, e.g. a call |
 | `pause_limits` | `paused` (frozen apps stay frozen) |
 
 The older single-purpose tools (`set_cpu_limit`, `set_memory_limit`, …) still work; `configure_app` does all of them in one call.

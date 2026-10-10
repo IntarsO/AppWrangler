@@ -11,7 +11,7 @@ ln -sf /Applications/AppWrangler.app/Contents/MacOS/AppWrangler /opt/homebrew/bi
 **How changes apply:**
 - Rule changes are written to `rules.json`. The running app notices within about half a second and enforces them immediately, with no restart.
 - If the app isn't running, rules apply when it starts.
-- `freeze`, `unfreeze`, `pause`, `resume` and `free-memory` act on the running app, so they need AppWrangler to be running.
+- `freeze`, `unfreeze`, `make-room`, `pause`, `resume` and `free-memory` act on the running app, so they need AppWrangler to be running.
 
 ## Naming apps
 
@@ -156,6 +156,9 @@ Deletes the app's rule. Its limits are lifted immediately.
 
 ### `freeze <app>` / `unfreeze <app>`
 Suspends or resumes a running app and its helpers now. Needs AppWrangler running. Fails (exit code 1) if no running app or process has that name. A command in a terminal's foreground is never frozen.
+
+### `make-room <app> [30m|1h|3h|until-stop]` / `make-room off`
+For a while, the app gets everything it needs (for example a video call) and everything else steps back: efficiency cores at once, a tighter CPU share, work that can wait paused, idle apps frozen if memory gets short. One hour if you give no time; `until-stop` keeps it on until `make-room off`. `make-room` alone shows what it's doing. Needs AppWrangler running. [More](user-manual.md#make-room-for-an-app).
 
 ### `pause` / `resume`
 Pauses or resumes all CPU limits. Frozen apps stay frozen.
