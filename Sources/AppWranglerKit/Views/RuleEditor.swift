@@ -184,7 +184,17 @@ struct RuleEditor: View {
 				Spacer()
 				HelpButton(anchor: "when-the-mac-is-low-on-memory")
 			}
+			if cautionAboutFreezing {
+				Label(L("Freezing this kind of app (messaging, browsers, AI and coding assistants, Finder) stops messages, calls and jobs until you switch back to it. Auto mode never does it."), systemImage: "exclamationmark.triangle")
+					.font(.caption).foregroundStyle(.orange)
+					.fixedSize(horizontal: false, vertical: true)
+			}
 		}
+	}
+
+	private var cautionAboutFreezing: Bool {
+		let freezes = rule.pressureAction == .freeze || (rule.memoryLimitEnabled && rule.memoryAction == .freeze)
+		return freezes && AppTraits.neverIdleFreeze(name: rule.displayName, bundleID: rule.matchKind == .bundleID ? rule.matchValue : nil)
 	}
 
 	private var conditionsSection: some View {

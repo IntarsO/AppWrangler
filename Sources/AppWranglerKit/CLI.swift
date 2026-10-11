@@ -49,7 +49,7 @@ enum CLI {
 	static let commands: Set<String> = [
 		"help", "list", "rules", "status", "stats", "auto", "limit", "unlimit", "ecores", "memlimit", "lowmem",
 		"enable", "disable", "ignore", "freeze", "unfreeze", "pause", "resume", "export", "import",
-		"suggest", "show", "set", "undo", "free-memory", "prefs", "make-room",
+		"suggest", "show", "set", "undo", "free-memory", "prefs", "make-room", "log",
 	]
 
 	static func isInvocation(_ args: [String]) -> Bool {
@@ -349,6 +349,16 @@ enum CLI {
 				return 0
 			}
 
+		case "log":
+			// What AppWrangler did, newest first (kept between runs; works when the app isn't running).
+			let limit = rest.first.flatMap { Int($0) } ?? 30
+			let events = ActivityLog.read(ActivityLog.fileURL(directory: store.fileURL.deletingLastPathComponent()), limit: max(1, limit))
+			if events.isEmpty { print("Nothing logged yet."); return 0 }
+			let fmt = DateFormatter()
+			fmt.dateFormat = "MMM d HH:mm"
+			for e in events { print("\(fmt.string(from: e.date))  \(e.app) — \(e.message)") }
+			return 0
+
 		case "make-room":
 			guard let first = rest.first else {
 				print(AppState.read()?.roomFor ?? "Not making room for any app.")
@@ -519,6 +529,7 @@ enum CLI {
 	  ignore <app>                   never suggest limits for this app
 	  unlimit <app>                  delete the rule
 	  freeze|unfreeze <app>          suspend / resume an app now (AppWrangler must be running)
+	  log [N]                        what AppWrangler did, newest first (last 30 by default)
 	  make-room <app> [30m|1h|3h|until-stop]   give one app everything it needs for a while (default 1h)
 	  make-room off | make-room      stop it | show what it's doing
 	  pause|resume                   pause or resume all CPU limits

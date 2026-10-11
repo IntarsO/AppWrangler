@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
 	static let shared = AppModel()
 
 	let rules: RuleStore
-	let log = ActivityLog()
+	let log: ActivityLog
 	let enforcer: Enforcer
 	let history = HistoryStore()
 	/// System CPU and memory for the menu bar panel's charts.
@@ -102,6 +102,7 @@ final class AppModel: ObservableObject {
 	init(rules: RuleStore = RuleStore(defaults: Migration.legacyDefaults), controller: ProcessController = LiveProcessController()) {
 		self.rules = rules
 		self.patterns = UsagePatterns(url: rules.fileURL.deletingLastPathComponent().appendingPathComponent("patterns.json"))
+		self.log = ActivityLog(url: ActivityLog.fileURL(directory: rules.fileURL.deletingLastPathComponent()))
 		self.enforcer = Enforcer(controller: controller)
 		enforcer.onEvent = { [weak self] app, message, notify in self?.log.add(app, message, notify: notify) }
 		enforcer.onImpact = { [weak self] group, event in
@@ -702,7 +703,8 @@ final class AppModel: ObservableObject {
 		let candidates: [Shedder.Candidate] = snapshot.groups.compactMap { g in
 			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid), g.id != roomGroupID,
 				  !isSpawnedByPrioritized(g, in: snapshot.groups),
-				  !g.pids.contains(where: audioPids.contains), Priorities.of(g, rule: rules.rule(for: g)) == .low else { return nil }
+				  !g.pids.contains(where: audioPids.contains), rules.rule(for: g)?.priority == .low,
+				  !AppTraits.neverIdleFreeze(name: g.name, bundleID: g.bundleID) else { return nil }	// only what you marked "Can wait"
 			return Shedder.Candidate(id: g.id, name: g.name, cpu: g.cpu, footprint: g.footprint)
 		}
 		shedder.sync(stillPaused: Set(enforcer.frozen.filter { $0.value == .shed }.keys))
@@ -852,7 +854,8 @@ final class AppModel: ObservableObject {
 		systemHistory.record(SystemPoint(time: snapshot.date, cpu: snapshot.systemCPU,
 										 efficiency: min(snapshot.systemCPU, efficiency / Double(max(SystemInfo.ncpu, 1))),
 										 memoryUsed: snapshot.memory.used, pressure: Int(snapshot.memory.pressure_level)))
-		if !panelVisible && !panelActions.items.isEmpty { panelActions.prune(at: Date()) }
+		// Only when something expired: writing a @Published property republishes even if nothing changed.
+		if !panelVisible, panelActions.items.contains(where: { !$0.isVisible(at: Date()) }) { panelActions.prune(at: Date()) }
 		if Date().timeIntervalSince(lastWidgetWrite) >= 60 { updateWidget() }
 		if Date().timeIntervalSince(lastUsageWrite) >= 60 {
 			lastUsageWrite = Date()
@@ -1250,6 +1253,7 @@ final class AppModel: ObservableObject {
 	func isFrozen(_ group: AppGroup) -> Bool { enforcer.isFrozen(group.id) }
 
 	func shutdown() {
+		log.saveNow()
 		patterns.save()
 		stats.flush()
 		enforcer.releaseAll()

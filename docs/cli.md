@@ -157,6 +157,9 @@ Deletes the app's rule. Its limits are lifted immediately.
 ### `freeze <app>` / `unfreeze <app>`
 Suspends or resumes a running app and its helpers now. Needs AppWrangler running. Fails (exit code 1) if no running app or process has that name. A command in a terminal's foreground is never frozen.
 
+### `log [N]`
+What AppWrangler did, newest first (the last 30 by default). The log is kept between runs in `activity.json` next to your rules, so it works when the app isn't running and answers "what did it do to me at 3 pm?". Settings → Activity shows the same list.
+
 ### `make-room <app> [30m|1h|3h|until-stop]` / `make-room off`
 For a while, the app gets everything it needs (for example a video call) and everything else steps back: efficiency cores at once, a tighter CPU share, work that can wait paused, idle apps frozen if memory gets short. One hour if you give no time; `until-stop` keeps it on until `make-room off`. `make-room` alone shows what it's doing. Needs AppWrangler running. [More](user-manual.md#make-room-for-an-app).
 

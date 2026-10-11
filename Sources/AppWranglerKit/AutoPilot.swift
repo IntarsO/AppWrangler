@@ -53,11 +53,28 @@ enum AppTraits {
 
 	static func isBuildTool(_ name: String) -> Bool { buildTools.contains(name.lowercased()) }
 
-	/// Never frozen just for being idle.
+	/// Browsers hold your calls, downloads and web chats; their own Memory Saver is the right lever.
+	static let browserBundles: Set<String> = [
+		"com.apple.Safari", "com.google.Chrome", "com.brave.Browser", "org.mozilla.firefox", "com.microsoft.edgemac",
+		"company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium",
+	]
+
+	/// Parts of macOS you use all the time; freezing them hangs file windows, the desktop or alarms.
+	static let essentialAppleBundles: Set<String> = [
+		"com.apple.finder", "com.apple.ActivityMonitor", "com.apple.systempreferences", "com.apple.calendar",
+		"com.apple.reminders", "com.apple.Passwords", "com.apple.keychainaccess", "com.apple.Terminal",
+	]
+
+	/// AI assistants, coding agents and dictation: they do long jobs for you in the background.
+	static let agentHints = ["claude", "chatgpt", "codex", "openai", "anthropic", "cursor", "copilot", "windsurf", "whispr", "wispr", "aider"]
+
+	/// Never frozen just for being idle, and never given a CPU cap: freezing or stalling these breaks
+	/// messages, calls, jobs and sessions. They still move to the efficiency cores in the background.
 	static func neverIdleFreeze(name: String, bundleID: String?) -> Bool {
 		if isMessaging(name: name, bundleID: bundleID) { return true }
+		if let bundleID, browserBundles.contains(bundleID) || essentialAppleBundles.contains(where: { $0.caseInsensitiveCompare(bundleID) == .orderedSame }) { return true }
 		let n = (name + " " + (bundleID ?? "")).lowercased()
-		return keepRunningHints.contains { n.range(of: "\\b" + $0, options: .regularExpression) != nil }
+		return (keepRunningHints + agentHints).contains { n.range(of: "\\b" + $0, options: .regularExpression) != nil }
 	}
 
 	static func isMessaging(name: String, bundleID: String?) -> Bool {
@@ -307,13 +324,16 @@ final class AutoPilot {
 		}
 
 		// Fair share of what the foreground and everything else leave free.
-		if busy && (!away || making) && settings.shareCPU && !background.isEmpty {
-			let backgroundUsage = background.reduce(0) { $0 + $1.cpu }
+		// Messaging, browsers, agents and the like are never stalled by a CPU cap (a cap is a stop/go
+		// duty cycle that can drop connections); they stay on the efficiency cores and count as "others".
+		let cappable = background.filter { !AppTraits.neverIdleFreeze(name: $0.name, bundleID: $0.bundleID) }
+		if busy && (!away || making) && settings.shareCPU && !cappable.isEmpty {
+			let backgroundUsage = cappable.reduce(0) { $0 + $1.cpu }
 			let othersUsage = max(0, systemCPU * Double(ncpu) - backgroundUsage)
-			let minimumBudget = max(Double(ncpu) * (making ? 0.15 : 0.25), settings.floorCores * Double(background.count))
+			let minimumBudget = max(Double(ncpu) * (making ? 0.15 : 0.25), settings.floorCores * Double(cappable.count))
 			// Making room: one more core is kept free for the app you're making room for.
 			let budget = max(minimumBudget, Double(ncpu) - othersUsage - settings.headroomCores - (making ? 1 : 0))
-			let wants = background.map { (id: $0.id, want: max(demand[$0.id] ?? $0.cpu, $0.cpu)) }
+			let wants = cappable.map { (id: $0.id, want: max(demand[$0.id] ?? $0.cpu, $0.cpu)) }
 			for (id, cap) in Self.fairShare(wants, budget: budget, floor: settings.floorCores) {
 				result[id]?.cap = cap
 			}
@@ -366,6 +386,9 @@ final class AutoPilot {
 	static func processEligible(_ g: AppGroup) -> Bool {
 		guard g.kind == .process, !Protected.contains(g), !AppTraits.isBuildTool(g.name),
 			  !AppTraits.neverIdleFreeze(name: g.name, bundleID: g.bundleID) else { return false }
+		// Spotlight and photo analysis helpers and third-party updaters: slowed on the efficiency cores when the
+		// Mac needs its resources (macOS's own way to throttle them), but never stopped.
+		if Priorities.isMaintenance(g) { return true }
 		let system = ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/bin/", "/Library/Apple/"]
 		if system.contains(where: { g.path.hasPrefix($0) }) { return false }
 		return ProcessCatalog.describe(g).safety == .safe

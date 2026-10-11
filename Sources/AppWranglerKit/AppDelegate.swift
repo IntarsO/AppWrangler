@@ -80,11 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		popover.behavior = .transient
 		popover.animates = true
 		popover.delegate = self
-		let panel = NSHostingController(
-			rootView: PanelView(model: model, rules: model.rules, log: model.log, openSettings: { [weak self] in self?.showSettings() },
-								openWindow: { [weak self] in self?.showMainWindow() }))
-		panel.sizingOptions = [.preferredContentSize]	// grows and shrinks as cards come and go
-		popover.contentViewController = panel
+		// The panel's SwiftUI view only exists while the popover is open (see makePanel): a live view
+		// in a closed popover is laid out and redrawn on every published change, which used to cost
+		// about 7% of a core while nothing was on screen.
 
 		// When AppWrangler does something, show the panel (without taking focus) so the card is seen.
 		panelCards = model.$panelActions.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.openPanelForNewCards() }
@@ -202,8 +200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		var tip = ["AppWrangler"]
 		if frozen > 0 { tip.append(L("%d frozen — right-click to unfreeze one", frozen)) }
 		if let room = model.roomFor { tip.append(L("Making room for %@ (%@)", room.name, room.remainingText())) }
-		button.toolTip = tip.joined(separator: "\n")
-		button.appearsDisabled = model.paused
+		// Setting these re-lays out the status item on every display; only touch what changed.
+		let text = tip.joined(separator: "\n")
+		if button.toolTip != text { button.toolTip = text }
+		if button.appearsDisabled != model.paused { button.appearsDisabled = model.paused }
 	}
 
 	@objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -242,8 +242,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		popover.performClose(nil)
 	}
 
+	private func makePanel() -> NSViewController {
+		let panel = NSHostingController(
+			rootView: PanelView(model: model, rules: model.rules, log: model.log, openSettings: { [weak self] in self?.showSettings() },
+								openWindow: { [weak self] in self?.showMainWindow() }))
+		panel.sizingOptions = [.preferredContentSize]	// grows and shrinks as cards come and go
+		return panel
+	}
+
 	private func showPopover(activate: Bool) {
 		guard let button = statusItem?.button else { return }
+		if popover.contentViewController == nil { popover.contentViewController = makePanel() }
 		if activate { NSApp.activate(ignoringOtherApps: true) }
 		popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 		if activate { popover.contentViewController?.view.window?.makeKey() }
@@ -443,6 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 		model.surfaceDidDisappear()
 		model.panelDidDisappear()
 		model.uiFocused = mainWindow?.isKeyWindow == true
+		popover.contentViewController = nil	// tear the SwiftUI view down while nothing is shown
 	}
 
 	/// The main window refreshes every second only while it's in front; behind other windows it slows down.
