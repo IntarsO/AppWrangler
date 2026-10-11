@@ -29,11 +29,13 @@ private func input(_ groups: [AppGroup], rules: [AppRule] = [], auto: Bool = tru
 		let hog = list.first { $0.id == "memory-hog:bundle:com.brave.Browser" }
 		#expect(hog != nil)
 		#expect(hog?.severity == .medium)
-		#expect(hog?.tip?.contains("brave://settings/system") == true)
+		#expect(hog?.tip?.contains("brave://policy") == true, "Memory Saver is set for it; the tip says how to check")
+		#expect(hog?.actions.first?.tool == "browser_memory_saver", "the biggest lever comes first")
+		#expect(hog?.actions.first?.cli.contains("defaults write com.brave.Browser HighEfficiencyModeEnabled -bool true") == true)
 		let tools = hog?.actions.map { $0.arguments.keys.sorted() } ?? []
 		#expect(tools.contains(["app", "memory_action", "memory_limit_mb"]))
 		#expect(tools.contains(["app", "low_memory_action"]))
-		#expect(hog?.actions.first?.cli.hasPrefix("appwrangler set 'Brave Browser' ") == true)
+		#expect(hog?.actions.contains { $0.cli.hasPrefix("appwrangler set 'Brave Browser' ") } == true)
 		#expect(list.contains { $0.id == "memory-short" })
 		// Over half the RAM is serious.
 		let huge = makeGroup(name: "Brave Browser", bundleID: "com.brave.Browser", pid: 10, footprintMB: 9000)

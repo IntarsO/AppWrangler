@@ -138,7 +138,23 @@ enum Suggestions {
 		"company.thebrowser.Browser": "Arc → Settings → Archive tabs after…",
 		"org.mozilla.firefox": "about:preferences → Performance (Firefox unloads tabs automatically when memory is low)",
 		"com.apple.Safari": "Safari frees background tabs on its own; close tabs you don't need",
+		"com.docker.docker": "Docker Desktop → Settings → Resources → Memory: lower the limit (e.g. 2 GB). The VM keeps that memory whether containers use it or not",
+		"com.utmapp.UTM": "Lower the VM's memory in its settings; it's reserved while the VM runs",
+		"com.parallels.desktop.console": "Lower the VM's memory in its configuration; it's reserved while the VM runs",
 	]
+
+	/// Chromium browsers accept Chrome's policies through their preferences: Memory Saver at
+	/// maximum, with call sites kept alive. Reversible (`defaults delete`), takes effect on restart.
+	static let chromiumPolicyBundles: Set<String> = ["com.google.Chrome", "com.brave.Browser", "org.chromium.Chromium"]
+	static let keepAliveSites = ["meet.google.com", "teams.microsoft.com", "zoom.us", "app.slack.com", "discord.com", "whereby.com"]
+
+	static func memorySaverAction(bundleID: String, appName: String) -> Suggestion.Action {
+		let sites = keepAliveSites.map { "\"\($0)\"" }.joined(separator: " ")
+		return Suggestion.Action(
+			label: L("Memory Saver at maximum (calls kept alive)"), tool: "browser_memory_saver",
+			arguments: ["app": appName, "bundle_id": bundleID],
+			cli: "defaults write \(bundleID) HighEfficiencyModeEnabled -bool true && defaults write \(bundleID) MemorySaverModeSavings -int 2 && defaults write \(bundleID) TabDiscardingExceptions -array \(sites)")
+	}
 
 	static func make(_ input: SuggestionInput, app: String? = nil) -> [Suggestion] {
 		var out: [Suggestion] = []
@@ -208,8 +224,11 @@ enum Suggestions {
 		for g in heavy where shortOfMemory || Double(g.footprint) > ram * 0.4 {
 			let existing = rule(for: g)
 			let share = Double(g.footprint) / ram
-			let tip = browserTip(g).map { L("Turn on the browser's tab sleeping: %@.", $0) }
+			let chromium = g.bundleID.map { chromiumPolicyBundles.contains($0) } ?? false
+			let tip = chromium ? L("The browser needs a restart afterwards; check it at %@.", (g.bundleID == "com.brave.Browser" ? "brave" : "chrome") + "://policy")
+				: browserTip(g).map { g.bundleID == "com.docker.docker" || g.bundleID?.hasSuffix("UTM") == true || g.bundleID?.contains("parallels") == true ? $0 + "." : L("Turn on the browser's tab sleeping: %@.", $0) }
 			var actions: [Suggestion.Action] = []
+			if chromium, let b = g.bundleID { actions.append(memorySaverAction(bundleID: b, appName: g.name)) }
 			if existing?.memoryLimitEnabled != true {
 				let mb = mbRoundedUp(Double(g.footprint) * 1.25)
 				actions.append(.configure(L("Warn me above %@", Fmt.megabytes(Double(mb))), app: target(g), ["memory_limit_mb": mb, "memory_action": "notify"]))

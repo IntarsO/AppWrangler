@@ -43,6 +43,19 @@ enum Grouping {
 		return nil
 	}
 
+	/// The running app that started a process, through any number of shells and helpers,
+	/// whether or not the process ships inside that app (a `node` test run started by Codex).
+	static func spawningApp(of pid: pid_t, ident: ProcIdent, apps: [pid_t: RunningApp], idents: [pid_t: ProcIdent]) -> pid_t? {
+		if ident.rpid != pid, apps[ident.rpid] != nil { return ident.rpid }
+		var p = ident.ppid
+		for _ in 0..<16 where p > 1 {
+			if apps[p] != nil { return p }
+			guard let parent = idents[p] else { return nil }
+			p = parent.ppid
+		}
+		return nil
+	}
+
 	static func groupID(for app: RunningApp) -> String {
 		"app:" + (app.bundleID ?? app.bundlePath ?? "\(app.pid)")
 	}
@@ -157,6 +170,7 @@ final class Sampler {
 			let key = "proc:\(pid)"
 			guard req.includeAll || req.matcher.matches(id: key, bundleID: nil, path: ident.path, name: ident.name) else { continue }
 			var group = AppGroup(id: key, ownerPid: pid, name: ident.name, bundleID: nil, path: ident.path, kind: .process)
+			group.spawnedBy = Grouping.spawningApp(of: pid, ident: ident, apps: req.apps, idents: idents)
 			measure(&group, pids: [pid], now: now, withThreads: req.withThreads)
 			groups.append(group)
 		}

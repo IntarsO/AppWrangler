@@ -18,6 +18,8 @@ struct RoomFor: Codable, Equatable {
 	var bundleID: String?
 	/// nil: until you stop it.
 	var until: Date?
+	/// Started by AppWrangler because you're in a call; ends with the call. Not saved.
+	var automatic = false
 
 	func isActive(at now: Date = Date()) -> Bool { until.map { now < $0 } ?? true }
 
@@ -26,8 +28,9 @@ struct RoomFor: Codable, Equatable {
 		return g.name.caseInsensitiveCompare(name) == .orderedSame
 	}
 
-	/// "47 min left", "2 h 5 min left", "until you stop it".
+	/// "47 min left", "2 h 5 min left", "until you stop it", "while the call lasts".
 	func remainingText(at now: Date = Date()) -> String {
+		if automatic { return L("while the call lasts") }
 		guard let until else { return L("until you stop it") }
 		let minutes = max(1, Int((until.timeIntervalSince(now) / 60).rounded(.up)))
 		return minutes >= 60 ? L("%d h %d min left", minutes / 60, minutes % 60) : L("%d min left", minutes)
@@ -57,6 +60,6 @@ struct RoomFor: Codable, Equatable {
 	}
 
 	static func save(_ room: RoomFor?, _ d: UserDefaults = .standard) {
-		if let room, let data = try? JSONEncoder().encode(room) { d.set(data, forKey: Prefs.roomFor) } else { d.removeObject(forKey: Prefs.roomFor) }
+		if let room, !room.automatic, let data = try? JSONEncoder().encode(room) { d.set(data, forKey: Prefs.roomFor) } else { d.removeObject(forKey: Prefs.roomFor) }
 	}
 }

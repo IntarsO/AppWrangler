@@ -2,6 +2,16 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Calls are handled by themselves.** When an app has been recording from the microphone for a few seconds, AppWrangler makes room for it until the call ends (a minute after the mic goes quiet; the camera keeps it going). Inside a browser it's granular: the busy renderer, the GPU and network helpers, the main process and anything recording stay at full speed; renderers of idle tabs move to the efficiency cores. Nothing touching the call is ever slowed or frozen. The panel says *In a call: making room for …* with **Stop** (which leaves that app alone for 30 minutes). Setting `auto_meeting`, on by default. No permission is needed and nothing is sent anywhere.
+- **Processes started by a prioritized app are prioritized:** a test run or build that Codex, Claude, a terminal or an IDE started is never held or paused, through any number of shells.
+- **One-click Memory Saver for Chrome and Brave** (maximum, with Meet, Teams, Zoom, Slack and Discord kept alive) in the memory suggestion; it sets the browser's own policies, reversible with `defaults delete`. Docker Desktop and virtual machines get a tip to lower the memory they reserve.
+
+### Fixed
+- AppWrangler used far too much CPU while its window was open behind other windows (it refreshed and collected thread details every second). The window now refreshes every 3 s unless it's in front, and thread details are only collected while a row is expanded.
+
 ## [1.6.0] — 2026-10-10
 
 ### Added

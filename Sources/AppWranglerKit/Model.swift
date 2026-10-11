@@ -71,6 +71,9 @@ struct AppGroup: Identifiable {
 	/// Bundle path for apps, executable path for plain processes.
 	let path: String
 	let kind: AppKind
+	/// For a plain process: the app that started it (a build from Codex, a test run from a
+	/// terminal), even though it isn't part of that app. Its priority follows that app's.
+	var spawnedBy: pid_t?
 	var processes: [ProcessStat] = []
 	var cpu: Double = 0
 	var footprint: UInt64 = 0

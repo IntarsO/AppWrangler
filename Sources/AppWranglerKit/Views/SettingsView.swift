@@ -258,6 +258,7 @@ struct GeneralSettings: View {
 	@AppStorage(Prefs.autoAway) private var autoAway = true
 	@AppStorage(Prefs.autoAwayMinutes) private var autoAwayMinutes = 5
 	@AppStorage(Prefs.autoLearn) private var autoLearn = true
+	@AppStorage(Prefs.autoMeeting) private var autoMeeting = true
 	@Local private var routineForgotten = false
 	@AppStorage(Prefs.autoFreezeIdleMinutes) private var autoFreezeIdleMinutes = 10
 	@Local private var launchAtLogin = LoginItem.isEnabled
@@ -300,6 +301,9 @@ struct GeneralSettings: View {
 					}
 					Toggle(L("Adapt to what the Mac needs right now"), isOn: $autoAdaptive)
 					Text(L("When you're plugged in and the Mac has room, a background app that's doing real work runs at full speed so it finishes sooner. On battery, in Low Power Mode or when the Mac is hot, apps move to the efficiency cores after 10 seconds. Memory is relieved early, one app at a time, and frozen apps resume one by one."))
+						.font(.caption).foregroundStyle(.secondary)
+					Toggle(L("When I'm in a call, make room for it"), isOn: $autoMeeting)
+					Text(L("An app recording from the microphone for a few seconds counts as a call. Until it ends, that app gets everything it needs and everything else steps back: other apps move to the efficiency cores, work that can wait is paused, and idle apps are frozen if memory gets short. Nothing touching the call is ever slowed."))
 						.font(.caption).foregroundStyle(.secondary)
 					Toggle(L("Also manage command-line processes"), isOn: $autoProcesses)
 					Text(L("Processes that run hot move to the efficiency cores, but only while the Mac needs its resources (busy, on battery or hot). They are never capped or frozen, and build tools, system software and anything a terminal is waiting for are left alone."))

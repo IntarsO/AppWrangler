@@ -135,6 +135,7 @@ enum Prefs {
 	static let autoAway = "AWAutoAway"
 	static let autoAwayMinutes = "AWAutoAwayMinutes"
 	static let autoLearn = "AWAutoLearn"
+	static let autoMeeting = "AWAutoMeeting"
 	/// "Make room for" an app: JSON of RoomFor (MakeRoom.swift).
 	static let roomFor = "AWRoomFor"
 	static let dismissedAdvice = "AWDismissedAdvice"
@@ -158,6 +159,7 @@ enum Prefs {
 		s.away = d.bool(forKey: autoAway)
 		s.awayAfter = min(max(d.double(forKey: autoAwayMinutes), 1), 120) * 60
 		s.learn = d.bool(forKey: autoLearn)
+		s.meeting = d.bool(forKey: autoMeeting)
 		return s
 	}
 
@@ -190,6 +192,7 @@ enum Prefs {
 			autoAway: true,
 			autoAwayMinutes: 5,
 			autoLearn: true,
+			autoMeeting: true,
 			showPanelOnAction: true,
 		])
 	}
