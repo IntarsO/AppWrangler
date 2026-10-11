@@ -15,6 +15,12 @@ on:
 permissions:
   contents: write
 
+# Two pushes in a row (a merge, then a release commit) each sync the wiki; run them one after
+# another, or the slower one is rejected as a non-fast-forward push.
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
 jobs:
   wiki:
     runs-on: ubuntu-latest
