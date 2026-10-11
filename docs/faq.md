@@ -86,7 +86,7 @@ Allow them in **System Settings → Notifications → AppWrangler**, and check *
 Raise the threshold or duration, or turn them off (**Settings → General → Runaway apps**). For a single app, choose **Ignore this app** on the alert.
 
 ### Does AppWrangler slow my Mac down?
-It uses well under 1% of one core: about 0.2–0.5% with Auto mode and runaway alerts on (the defaults), and about 50 MB of memory. With the panel closed, it measures your apps (not every process) every 2 s for Auto mode, plus a light full scan every 5 s for runaway alerts. With Auto and runaway alerts off and no rules, it doesn't sample at all. Settings → Impact shows its actual cost on your Mac.
+Typically **1–2% of one core** and about 30 MB of memory. Measured on a busy 8 GB M1: about 2% with Auto mode, runaway alerts and the menu bar percentage on, and about 0.2% with all of those off. With the panel closed it measures your apps (not every process) every 2 s for Auto mode, plus a light scan every 5–10 s for runaway alerts and hot processes. With Auto and runaway alerts off and no rules, it doesn't sample at all. Settings → Impact shows its actual cost on your Mac. (Versions before 1.7.1 could cost 5–9% of a core on a busy Mac, because the panel's hidden view was redrawn on every update; that's fixed.)
 
 ### Does it collect any data?
 No. AppWrangler makes no network connections and has no analytics. Rules and preferences stay on your Mac.

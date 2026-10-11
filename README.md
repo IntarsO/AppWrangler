@@ -27,7 +27,7 @@
 - 🧊 **Rescues low-memory Macs.** When memory runs short, it can freeze the apps you haven't touched for a while, and each one wakes the moment you click it. It also tells you which app is eating your RAM and what to do about it.
 - 🎛 **Puts you in charge when you want it.** Per-app CPU limits, efficiency cores and memory limits, with conditions such as "only on battery". You can also ask Claude to tune your Mac for you.
 
-Free and open source (GPL-2.0), for macOS 13+ on Apple Silicon. It uses well under 1% of one core and never connects to the network.
+Free and open source (GPL-2.0), for macOS 13+ on Apple Silicon. It typically uses 1–2% of one core and about 30 MB of memory, and never connects to the network.
 
 ```bash
 brew tap intarso/appwrangler https://github.com/IntarsO/AppWrangler
