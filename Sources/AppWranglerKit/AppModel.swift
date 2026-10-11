@@ -44,6 +44,13 @@ final class AppModel: ObservableObject {
 	@Published private(set) var roomFor: RoomFor? = RoomFor.load()
 	/// The running group being made room for, if it's running.
 	private var roomGroupID: String?
+	/// Who you're in a call with (Meeting.swift).
+	let meeting = MeetingDetector()
+	private var micPids: Set<pid_t> = []
+	private var cameraOn = false
+	/// The UI wants per-process thread counts (a row is expanded) and is being looked at.
+	var detailOpen = false { didSet { if detailOpen != oldValue { reschedule() } } }
+	var uiFocused = false { didSet { if uiFocused != oldValue { reschedule() } } }
 	private var userIdle: TimeInterval = 0
 	private var lastRoutineRecord = Date()
 	private var lastPatternSave = Date()
@@ -365,7 +372,8 @@ final class AppModel: ObservableObject {
 		let d = UserDefaults.standard
 		let interval: TimeInterval?
 		if uiVisible {
-			interval = max(0.5, d.double(forKey: Prefs.uiInterval))
+			// A window that's open but not in front refreshes slowly, so AppWrangler costs little while you work.
+			interval = max(0.5, d.double(forKey: Prefs.uiInterval)) * (uiFocused ? 1 : 3)
 		} else if needsBackgroundSampling {
 			interval = max(1, d.double(forKey: Prefs.enforceInterval))
 		} else {
@@ -458,7 +466,12 @@ final class AppModel: ObservableObject {
 
 	private func refreshAudio() {
 		let needed = autoPilot.settings.enabled || rules.rules.contains { $0.enabled && $0.pressureAction != .none }
-		audioPids = needed ? AudioActivity.activePids() : []
+		guard needed else { audioPids = []; micPids = []; return }
+		let a = AudioActivity.activity()
+		audioPids = a.output.union(a.input)
+		micPids = a.input
+		// The camera is only read while something is recording or a call is on (it's a device query).
+		cameraOn = (!micPids.isEmpty || meeting.callGroupID != nil) && CameraActivity.isAnyCameraRunning()
 	}
 
 	/// Apps Auto may manage: real apps without their own CPU / E-core rule,
@@ -483,6 +496,30 @@ final class AppModel: ObservableObject {
 		}
 	}
 
+	/// Each app's priority, with a process started by a prioritized app (or the app you're making
+	/// room for) counting as prioritized too: a test run from Codex is never held.
+	private func priorityMap(_ groups: [AppGroup], all: [AppGroup]) -> [String: AppPriority] {
+		var byPid: [pid_t: AppPriority] = [:]
+		for g in all where g.kind != .process {
+			let p = Priorities.of(g, rule: rules.rule(for: g))
+			byPid[g.ownerPid] = g.id == roomGroupID ? .high : p
+		}
+		var out: [String: AppPriority] = [:]
+		for g in groups {
+			var p = Priorities.of(g, rule: rules.rule(for: g))
+			if g.kind == .process, p == .normal, let parent = g.spawnedBy, let inherited = byPid[parent], inherited == .high { p = .high }
+			if p != .normal { out[g.id] = p }
+		}
+		return out
+	}
+
+	/// True when a process was started by a prioritized app (so it's never held or paused).
+	func isSpawnedByPrioritized(_ g: AppGroup, in groups: [AppGroup]) -> Bool {
+		guard g.kind == .process, let parent = g.spawnedBy,
+			  let app = groups.first(where: { $0.ownerPid == parent && $0.kind != .process }) else { return false }
+		return app.id == roomGroupID || Priorities.of(app, rule: rules.rule(for: app)) == .high
+	}
+
 	private func decideAuto(_ snapshot: Snapshot, state: SystemState, newSample: Bool) -> [String: AutoDecision] {
 		guard autoPilot.settings.enabled else {
 			autoPilot.reset()
@@ -496,10 +533,7 @@ final class AppModel: ObservableObject {
 		let demand = enforcer.limiterStatus().mapValues(\.demand_cores)
 		updateRoom(snapshot)
 		let eligible = autoEligible(snapshot)
-		let priorities = Dictionary(eligible.compactMap { g -> (String, AppPriority)? in
-			let p = Priorities.of(g, rule: rules.rule(for: g))
-			return p == .normal ? nil : (g.id, p)
-		}, uniquingKeysWith: { a, _ in a })
+		let priorities = priorityMap(eligible, all: snapshot.groups)
 		let now = Date()
 		let likely: Set<String> = autoPilot.settings.learn && !patterns.isEmpty
 			? Set(eligible.filter { patterns.expected(ImpactKey.of($0), at: now) >= 0.6 }.map(\.id)) : []
@@ -533,13 +567,15 @@ final class AppModel: ObservableObject {
 		writeState()
 	}
 
-	func stopMakingRoom(timeUp: Bool = false) {
+	func stopMakingRoom(timeUp: Bool = false, callEnded: Bool = false) {
 		guard let room = roomFor else { return }
 		roomFor = nil
+		if room.automatic && !callEnded, let id = roomGroupID { meeting.snooze(id) }	// you stopped it: not again this call
 		roomGroupID = nil
 		enforcer.exemptGroupID = nil
 		RoomFor.save(nil)
-		log.add(room.name, timeUp ? L("Stopped making room for it: time's up") : L("Stopped making room for it"))
+		log.add(room.name, callEnded ? L("The call ended: stopped making room for it")
+				: timeUp ? L("Stopped making room for it: time's up") : L("Stopped making room for it"))
 		reapply()
 		writeState()
 	}
@@ -547,7 +583,7 @@ final class AppModel: ObservableObject {
 	/// Find the app being made room for; end it when the time is up.
 	private func updateRoom(_ snapshot: Snapshot, now: Date = Date()) {
 		guard let room = roomFor else { roomGroupID = nil; enforcer.exemptGroupID = nil; return }
-		guard room.isActive(at: now) else { stopMakingRoom(timeUp: true); return }
+		guard room.automatic || room.isActive(at: now) else { stopMakingRoom(timeUp: true); return }
 		let group = snapshot.groups.first { ($0.kind == .app || $0.kind == .background) && room.matches($0) }
 		roomGroupID = group?.id
 		enforcer.exemptGroupID = group?.id
@@ -567,6 +603,36 @@ final class AppModel: ObservableObject {
 	var frozenApps: [(id: String, name: String, reason: FreezeReason)] {
 		enforcer.frozen.map { (id: $0.key, name: enforcer.name(of: $0.key) ?? $0.key, reason: $0.value) }
 			.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+	}
+
+	// MARK: Calls
+
+	/// An app has been recording from the microphone for a few seconds: you're in a call.
+	/// Make room for that app until the call ends, unless you've made room for something by hand.
+	private func updateMeeting(_ snapshot: Snapshot, now: Date = Date()) {
+		let s = autoPilot.settings
+		guard s.enabled, s.meeting else {
+			if roomFor?.automatic == true { stopMakingRoom(callEnded: true) }
+			meeting.reset()
+			return
+		}
+		let recording = Set(snapshot.groups.filter { g in
+			g.kind != .process && g.pids.contains(where: micPids.contains)
+		}.map(\.id))
+		let call = meeting.update(recording: recording, cameraOn: cameraOn, now: now)
+		switch (call, roomFor) {
+		case (let id?, nil):
+			guard let g = snapshot.groups.first(where: { $0.id == id }) else { return }
+			roomFor = RoomFor(name: g.name, bundleID: g.bundleID, until: nil, automatic: true)
+			for frozen in snapshot.groups where frozen.id == id && isFrozen(frozen) { unfreeze(frozen) }
+			log.add(g.name, L("You're in a call: making room for it until the call ends"))
+			reapply()
+			writeState()
+		case (nil, let room?) where room.automatic:
+			stopMakingRoom(callEnded: true)
+		default:
+			break
+		}
 	}
 
 	// MARK: Away and routine
@@ -635,6 +701,7 @@ final class AppModel: ObservableObject {
 			: autoPilot.busy && mattersWorking ? .cpu : .none
 		let candidates: [Shedder.Candidate] = snapshot.groups.compactMap { g in
 			guard g.measured, g.ownerPid != me, !Protected.contains(g), !g.pids.contains(frontmostPid), g.id != roomGroupID,
+				  !isSpawnedByPrioritized(g, in: snapshot.groups),
 				  !g.pids.contains(where: audioPids.contains), Priorities.of(g, rule: rules.rule(for: g)) == .low else { return nil }
 			return Shedder.Candidate(id: g.id, name: g.name, cpu: g.cpu, footprint: g.footprint)
 		}
@@ -755,7 +822,7 @@ final class AppModel: ObservableObject {
 			includeAll: full,
 			includeApps: autoPilot.settings.enabled,
 			includeOtherUsers: d.bool(forKey: Prefs.showOtherUsers),
-			withThreads: uiVisible,
+			withThreads: uiVisible && detailOpen,
 			matcher: matcher)
 		let accepted = sampler.sample(request) { [weak self] snapshot in
 			self?.didSample(snapshot, state: state)
@@ -771,6 +838,7 @@ final class AppModel: ObservableObject {
 		#endif
 		lastSnapshot = snapshot
 		refreshAudio()
+		updateMeeting(snapshot)
 		updateAway(state)
 		let auto = decideAuto(snapshot, state: state, newSample: true)
 		enforcer.apply(snapshot, rules: rules, state: state, frontmostPid: frontmostPid, auto: auto, audioPids: audioPids,
@@ -973,6 +1041,16 @@ final class AppModel: ObservableObject {
 			case .removed(let rule): log.add(rule.displayName, L("Rule removed"))
 			case .failed(let message): log.add(target, message)
 			}
+		case "browser_memory_saver":
+			// Chrome's policies, as `defaults write` would set them: Memory Saver at maximum, call sites kept alive.
+			guard let bundle = action.arguments["bundle_id"] as? String, Suggestions.chromiumPolicyBundles.contains(bundle) else { return }
+			let domain = bundle as CFString
+			CFPreferencesSetAppValue("HighEfficiencyModeEnabled" as CFString, kCFBooleanTrue, domain)
+			CFPreferencesSetAppValue("MemorySaverModeSavings" as CFString, 2 as CFNumber, domain)
+			CFPreferencesSetAppValue("TabDiscardingExceptions" as CFString, Suggestions.keepAliveSites as CFArray, domain)
+			CFPreferencesAppSynchronize(domain)
+			let name = action.arguments["app"] as? String ?? bundle
+			log.add(name, L("Memory Saver set to maximum, with call sites kept alive. Restart %@ for it to take effect. Undo: defaults delete %@ HighEfficiencyModeEnabled MemorySaverModeSavings TabDiscardingExceptions", name, bundle))
 		case "set_auto_mode":
 			if let on = action.arguments["enabled"] as? Bool { d.set(on, forKey: Prefs.autoEnabled) }
 			if let on = action.arguments["freeze_idle_apps"] as? Bool { d.set(on, forKey: Prefs.autoFreezeIdle) }

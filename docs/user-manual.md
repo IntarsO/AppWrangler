@@ -311,7 +311,9 @@ Some work matters more than the rest. When the Mac needs its resources, **work t
 | **Normal** (`normal`) | The default. [Auto mode](#auto-mode) handles the app as described above. |
 | **Can wait** (`low`) | It goes to the efficiency cores at once (no 30 s wait), never runs free, and is paused first when the Mac needs its resources. |
 
-**Calls are prioritized automatically.** An app playing or recording audio (Zoom, Teams, FaceTime, or Google Meet in a browser) already runs at full speed and is never frozen. While it's working, it also counts as what matters, so work that can wait is paused and the rest makes way, just as for a prioritized app. You don't count as away while something plays or records audio. To be sure, [make room](#make-room-for-an-app) for the app.
+**Calls are handled by themselves.** When an app has been recording from the microphone for a few seconds (Zoom, Teams, FaceTime, Google Meet in a browser), you're in a call, and AppWrangler **[makes room](#make-room-for-an-app) for that app** until the call ends: everything else steps back, and nothing touching the call is ever slowed or frozen. The panel says *In a call: making room for Brave*. It ends a minute after the microphone goes quiet (the camera being on keeps it going, so a muted call with video still counts). **Stop** on the banner ends it and leaves that app alone for 30 minutes. If you've made room for something by hand, that wins. Switch off with *When I'm in a call, make room for it* in Settings → General → Auto mode, or `appwrangler prefs auto_meeting=off`. An app playing audio (music, a video) still runs at full speed and you don't count as away, but that alone doesn't start a call.
+
+**Processes started by a prioritized app are prioritized.** A test run, a build or a script that Codex, Claude, a terminal app or an IDE started (through any number of shells) follows that app's priority: it's never held on the efficiency cores or paused while the app is *Prioritized*, even though it isn't part of the app. The same goes for the app you're making room for.
 
 **What can wait by default.** The built-in list is short on purpose:
 - Spotlight indexing helpers (`mdworker`) and photo and media analysis (`photoanalysisd`, `mediaanalysisd`);
@@ -342,7 +344,7 @@ It never includes an app you use, Apple's own updaters, command-line tools from 
 
 For a meeting, a recording, a render or a game: **one app gets everything it needs for a while**, and everything else steps back. It ends by itself.
 
-**Start it:**
+**It starts by itself for calls** (see [Priorities](#priorities)). To start it yourself:
 - right-click the menu bar icon → **Make Room for** → the app → **30 minutes**, **1 hour**, **3 hours** or **Until I stop it**;
 - in the main window, open the app's details → **Make room for it…**;
 - `appwrangler make-room Zoom 1h` (also `30m`, `3h`, `2h30m`, `until-stop`; one hour if you leave it out);
@@ -353,7 +355,8 @@ For a meeting, a recording, a render or a game: **one app gets everything it nee
 
 | | |
 |---|---|
-| The app | Full speed and never capped, held on the efficiency cores or frozen, even in the background. Its own CPU limit or efficiency-core setting is set aside for now. Its memory limits still apply. |
+| The app | Full speed and never capped, held on the efficiency cores or frozen, even in the background. Its own CPU limit or efficiency-core setting is set aside for now. Its memory limits still apply. Processes it started (a build, a script) are treated the same. |
+| A browser you're in a call with | Granular: the main process, the GPU and network helpers, anything recording, and the busy renderers (the tab with the call) stay at full speed; renderers of idle tabs move to the efficiency cores, as the browser itself does to background tabs. |
 | Every other background app | To the efficiency cores at once (no 30 s wait); nothing runs free. The Mac counts as busy from 60% CPU (instead of 75%), and then the rest shares one core less, so one more core is always free for the app. |
 | Command-line processes that run hot | To the efficiency cores. |
 | Work that can wait | Paused at once. |
@@ -508,7 +511,7 @@ The widget updates within a few seconds of a button press. Click anywhere else o
 
 AppWrangler looks at your Mac and recommends settings. You'll find them:
 
-- in the **Suggestions** section of the main window (the panel links to it), with a button that applies the main one in one click and, for CPU suggestions, **Set manually…** for the rest. A busy command-line process is only suggested after a few minutes of history, so a short spike isn't flagged, and the suggestion says that Auto mode looks after apps, not processes;
+- in the **Suggestions** section of the main window (the panel links to it), with a button that applies the main one in one click and, for CPU suggestions, **Set manually…** for the rest. For Chrome and Brave, the one-click action sets **Memory Saver to maximum** with call sites (Meet, Teams, Zoom, Slack, Discord) kept alive: it writes the browser's own policy settings, takes effect after a restart, and `defaults delete <bundle id> HighEfficiencyModeEnabled MemorySaverModeSavings TabDiscardingExceptions` undoes it. Docker Desktop and virtual machines get a tip to lower the memory they reserve. A busy command-line process is only suggested after a few minutes of history, so a short spike isn't flagged, and the suggestion says that Auto mode looks after apps, not processes;
 - in Terminal:
 
   ```bash

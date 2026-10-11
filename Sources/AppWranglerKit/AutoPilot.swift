@@ -100,6 +100,8 @@ struct AutoSettings: Equatable {
 	var awayAfter: TimeInterval = 300
 	/// Learn which apps you use when, and keep the ones you usually use now at full speed longer.
 	var learn = true
+	/// When you're in a call (an app records from the microphone), make room for that app by itself.
+	var meeting = true
 	/// An app you usually use around now stays at full speed this long after you leave it.
 	var likelyGrace: TimeInterval = 300
 	/// Pause low priority work (updaters, indexing, anything you marked Low) while the Mac needs
@@ -240,6 +242,10 @@ final class AutoPilot {
 			present.insert(g.id)
 			owners[g.id] = g.ownerPid
 			groupPids[g.id] = Set(g.pids)
+			if g.kind == .process && priorities[g.id] == .high {
+				result[g.id] = AutoDecision(reason: .priority)	// started by a prioritized app: never held
+				continue
+			}
 			if g.kind == .process {
 				// Only while the Mac needs its resources, and never anything but the efficiency cores.
 				if let d = processDecision(g, needsResources: making || (!away && (busy || strained)), now: now) {

@@ -36,6 +36,7 @@ enum PreferenceSettings {
 		Spec(key: "auto_away", defaultsKey: Prefs.autoAway, kind: .bool, help: "When you're away (no input, plugged in), nothing is held back so background work finishes at full speed; restored the moment you're back."),
 		Spec(key: "auto_away_minutes", defaultsKey: Prefs.autoAwayMinutes, kind: .number(1...120), help: "Minutes without input before you count as away (default 5)."),
 		Spec(key: "auto_learn", defaultsKey: Prefs.autoLearn, kind: .bool, help: "Learn which apps you use when (kept on this Mac), to keep the ones you usually use around now at full speed and unfrozen."),
+		Spec(key: "auto_meeting", defaultsKey: Prefs.autoMeeting, kind: .bool, help: "When you're in a call (an app records from the microphone), make room for that app by itself until the call ends."),
 		Spec(key: "freeze_idle", defaultsKey: Prefs.autoFreezeIdle, kind: .bool, help: "Auto freezes apps you haven't used for a while when the Mac is low on memory."),
 		Spec(key: "freeze_idle_minutes", defaultsKey: Prefs.autoFreezeIdleMinutes, kind: .number(1...1440), help: "How long an app must be unused first (default 10)."),
 		Spec(key: "low_memory_level", defaultsKey: Prefs.pressureLevel, kind: .choice(["warning": 2, "critical": 4]), help: "Memory pressure at which low-memory actions happen: warning or critical (default)."),

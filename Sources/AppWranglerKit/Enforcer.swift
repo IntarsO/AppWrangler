@@ -307,6 +307,13 @@ final class Enforcer {
 					// A command-line process is never slowed while a terminal is waiting for it.
 					for pid in (group.kind == .process ? stoppable : appPids) { wantBackground[pid] = group.id }
 				}
+				// Making room for a browser: the tab you're in (busy renderers, audio, the GPU and
+				// network helpers, the main process) stays free; renderers of idle tabs step back.
+				if group.id == exemptGroupID {
+					for p in group.processes where p.name.contains("(Renderer)") && p.cpu < 0.05 && !audioPids.contains(p.pid) {
+						wantBackground[p.pid] = group.id
+					}
+				}
 			}
 			guard let rule else { continue }
 

@@ -124,6 +124,8 @@ struct PopoverView: View {
 		.frame(minWidth: 480, idealWidth: inWindow ? 560 : 480, maxWidth: inWindow ? .infinity : 480,
 			   minHeight: inWindow ? 480 : 660, idealHeight: inWindow ? 760 : 660, maxHeight: inWindow ? .infinity : 660)
 		.onChange(of: model.snapshot.seq) { _ in refreshOrder() }
+		.onChange(of: expanded) { _ in model.detailOpen = expanded != nil }
+		.onDisappear { model.detailOpen = false }
 		.onChange(of: sortRaw) { _ in order.update(with: sortedIDs(model.snapshot.groups), frozen: false) }
 		.onAppear { order.update(with: sortedIDs(model.snapshot.groups), frozen: false) }
 	}

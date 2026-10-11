@@ -164,9 +164,9 @@ struct PanelView: View {
 	private func roomBanner(_ room: RoomFor) -> some View {
 		TimelineView(.periodic(from: .now, by: 30)) { context in
 			HStack(spacing: 8) {
-				Image(systemName: "person.wave.2.fill").foregroundStyle(.green)
+				Image(systemName: room.automatic ? "phone.fill" : "person.wave.2.fill").foregroundStyle(.green)
 				VStack(alignment: .leading, spacing: 1) {
-					Text(L("Making room for %@", room.name)).font(.caption.weight(.semibold))
+					Text(room.automatic ? L("In a call: making room for %@", room.name) : L("Making room for %@", room.name)).font(.caption.weight(.semibold))
 					Text(room.remainingText(at: context.date) + " · " + L("everything else steps back"))
 						.font(.caption2).foregroundStyle(.secondary)
 				}

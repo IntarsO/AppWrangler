@@ -435,12 +435,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 	func popoverWillShow(_ notification: Notification) {
 		model.surfaceDidAppear()
 		model.panelDidAppear()
+		model.uiFocused = true
 	}
 
 	func popoverDidClose(_ notification: Notification) {
 		panelAutoOpened = false
 		model.surfaceDidDisappear()
 		model.panelDidDisappear()
+		model.uiFocused = mainWindow?.isKeyWindow == true
+	}
+
+	/// The main window refreshes every second only while it's in front; behind other windows it slows down.
+	func windowDidBecomeKey(_ notification: Notification) {
+		if (notification.object as? NSWindow) === mainWindow { model.uiFocused = true }
+	}
+
+	func windowDidResignKey(_ notification: Notification) {
+		if (notification.object as? NSWindow) === mainWindow { model.uiFocused = popover.isShown }
 	}
 
 	// MARK: Settings window
