@@ -2,7 +2,7 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.7.0] — 2026-10-11
 
 ### Added
 - **Calls are handled by themselves.** When an app has been recording from the microphone for a few seconds, AppWrangler makes room for it until the call ends (a minute after the mic goes quiet; the camera keeps it going). Inside a browser it's granular: the busy renderer, the GPU and network helpers, the main process and anything recording stay at full speed; renderers of idle tabs move to the efficiency cores. Nothing touching the call is ever slowed or frozen. The panel says *In a call: making room for …* with **Stop** (which leaves that app alone for 30 minutes). Setting `auto_meeting`, on by default. No permission is needed and nothing is sent anywhere.
