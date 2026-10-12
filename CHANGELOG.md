@@ -2,7 +2,7 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.7.1] — 2026-10-12
 
 ### Fixed
 - **AppWrangler no longer stops what you work with.** Idle freezing never touches browsers, AI and coding assistants, dictation tools, Finder, Activity Monitor, System Settings, Calendar or Reminders (messaging, terminals, editors and VMs were already excluded). The rule editor warns if you ask for it anyway. CPU caps, which stop and start an app many times a second, are never applied to those same apps; they still move to the efficiency cores.
