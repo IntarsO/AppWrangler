@@ -101,6 +101,9 @@ An app counts as part of your routine after about 45 minutes in a weekday-hour (
   - menu bar apps;
   - apps you've told AppWrangler to ignore, or whose own rule already has a low-memory action;
   - anything while limits are [paused](#pausing-all-limits).
+  - browsers (Safari, Chrome, Brave, Firefox, Edge, Arc…): they hold calls, downloads and web chats. Use the browser's own Memory Saver (the Suggestions give a one-click setting for Chrome and Brave);
+  - AI assistants and coding agents (Claude, ChatGPT/Codex, Cursor, Copilot…) and dictation tools, which do long jobs for you;
+  - Finder, Activity Monitor, System Settings, Calendar, Reminders and other parts of macOS you use constantly;
 - **Why it helps.** Frozen apps stop pulling their memory back in, so macOS can compress or swap it out and the app in front stays responsive.
 - **Getting them back:**
   - An app **resumes the moment you switch to it**.
@@ -319,7 +322,7 @@ Some work matters more than the rest. When the Mac needs its resources, **work t
 - Spotlight indexing helpers (`mdworker`) and photo and media analysis (`photoanalysisd`, `mediaanalysisd`);
 - updaters from other companies, such as Google Software Update, Microsoft AutoUpdate or an app's own *Updater* helper, but only background apps and processes inside an app or Library folder.
 
-It never includes an app you use, Apple's own updaters, command-line tools from Homebrew or your projects, build tools, or anything critical to macOS.
+It never includes an app you use, Apple's own updaters, command-line tools from Homebrew or your projects, build tools, or anything critical to macOS. **These built-in ones are slowed, never stopped:** when the Mac needs its resources they move to the efficiency cores, which is macOS's own way of throttling background work. Other processes depend on them answering, so stopping them can leave jobs stuck and make Spotlight work harder. Only an app you mark **Can wait** yourself is paused.
 
 **When work that can wait is paused.** Auto looks at what the Mac needs:
 - **The Mac is busy with what matters.** The Mac has been saturated (see *busy* above) for 15 s while the app in front, a call, or a prioritized app is working: work that can wait and is using CPU is paused.

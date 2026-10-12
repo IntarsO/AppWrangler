@@ -2,6 +2,16 @@
 
 All notable changes to AppWrangler are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **AppWrangler no longer stops what you work with.** Idle freezing never touches browsers, AI and coding assistants, dictation tools, Finder, Activity Monitor, System Settings, Calendar or Reminders (messaging, terminals, editors and VMs were already excluded). The rule editor warns if you ask for it anyway. CPU caps, which stop and start an app many times a second, are never applied to those same apps; they still move to the efficiency cores.
+- **Spotlight and photo-analysis helpers and updaters are slowed, not stopped.** The built-in *Can wait* items move to the efficiency cores when the Mac needs its resources; only an app you mark **Can wait** yourself is paused. Stopping a daemon that other processes wait on can leave jobs stuck.
+- **Idle CPU:** while no window was open the panel's hidden view was still laid out and redrawn on every state change, costing 5–9% of a core on a busy Mac (the sampling and Auto logic together cost about 1%). The panel's view now only exists while the popover is open, and the menu bar item is only touched when something changed. Measured on a real 8 GB M1 at a load average of ~20: **8.8% → 2.1% of a core**.
+
+### Added
+- **A log that survives restarts.** What AppWrangler did is kept in `activity.json` (the last 500 events) and shown by `appwrangler log [N]`, with or without the app running; Settings → Activity loads it at launch.
+
 ## [1.7.0] — 2026-10-11
 
 ### Added

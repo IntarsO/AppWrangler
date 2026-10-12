@@ -81,8 +81,8 @@ enum SystemInfo {
 	}
 }
 
-struct ActivityEvent: Identifiable {
-	let id = UUID()
+struct ActivityEvent: Identifiable, Codable {
+	var id = UUID()
 	var date = Date()
 	let app: String
 	let message: String
@@ -94,13 +94,53 @@ final class ActivityLog: ObservableObject {
 	/// Set by the app to deliver notifications.
 	var notifier: ((String, String) -> Void)?
 
+	private let url: URL?
+	private var saveWork: DispatchWorkItem?
+	static let keep = 500
+
+	/// - Parameter url: where the log is kept between runs (`activity.json`); nil keeps it in memory only.
+	init(url: URL? = nil) {
+		self.url = url
+		if let url { events = Self.read(url) }
+	}
+
+	static func fileURL(directory: URL) -> URL { directory.appendingPathComponent("activity.json") }
+
+	/// The saved log, newest first (also used by `appwrangler log` when the app isn't running).
+	static func read(_ url: URL, limit: Int = keep) -> [ActivityEvent] {
+		guard let data = try? Data(contentsOf: url) else { return [] }
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		return Array(((try? decoder.decode([ActivityEvent].self, from: data)) ?? []).prefix(limit))
+	}
+
 	func add(_ app: String, _ message: String, notify: Bool = false) {
 		events.insert(ActivityEvent(app: app, message: message), at: 0)
-		if events.count > 300 { events.removeLast(events.count - 300) }
+		if events.count > Self.keep { events.removeLast(events.count - Self.keep) }
+		scheduleSave()
 		if notify { notifier?(app, message) }
 	}
 
-	func clear() { events.removeAll() }
+	func clear() {
+		events.removeAll()
+		scheduleSave()
+	}
+
+	private func scheduleSave() {
+		guard url != nil else { return }
+		saveWork?.cancel()
+		let work = DispatchWorkItem { [weak self] in self?.saveNow() }
+		saveWork = work
+		DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+	}
+
+	func saveNow() {
+		guard let url else { return }
+		saveWork?.cancel()
+		let encoder = JSONEncoder()
+		encoder.dateEncodingStrategy = .iso8601
+		if let data = try? encoder.encode(events) { try? data.write(to: url, options: .atomic) }
+	}
 
 	#if DEBUG
 	func replace(with events: [ActivityEvent]) { self.events = events }
